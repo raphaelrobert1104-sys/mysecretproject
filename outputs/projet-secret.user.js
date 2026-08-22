@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Projet secret — boucle multi-liens
 // @namespace    local.projet-secret
-// @version      6.2.1
+// @version      6.2.2
 // @updateURL    https://raw.githubusercontent.com/raphaelrobert1104-sys/mysecretproject/main/outputs/projet-secret.user.js
 // @downloadURL  https://raw.githubusercontent.com/raphaelrobert1104-sys/mysecretproject/main/outputs/projet-secret.user.js
 // @description  Automatise Ressources, Expéditions, Forme de vie, Import et Constructions avec configurations privées.
@@ -69,6 +69,7 @@
         r2: '#crystal',
         r3: '#deuterium',
     };
+    const CONSTRUCTION_CONTINUE_SELECTOR = '#continueToFleet2 > span';
     const CONSTRUCTION_SEND_SELECTOR = '#sendFleet > span';
 
     class ElementNotFoundError extends Error {
@@ -2104,13 +2105,59 @@
                     }
 
                     updateRun(runId, {
+                        phase: 'construction-continue',
+                        constructionPendingDelayMs: getRandomDelayMs(
+                            500,
+                            1500
+                        ),
+                        constructionPendingDelayLabel: 'la saisie de R1, R2 et R3',
+                        message:
+                            'Constructions — action 5/6 : R1, R2 et R3 saisis, préparation du clic sur Continuer…',
+                    });
+                    refreshUi();
+                    continue;
+                }
+
+                if (run.phase === 'construction-continue') {
+                    updateRun(runId, {
+                        message: 'Constructions — action 5/6 : cliquer sur Continuer…',
+                    });
+                    refreshUi();
+                    const continueButton = await waitForElement(CONSTRUCTION_CONTINUE_SELECTOR, {
+                        timeoutMs: ELEMENT_TIMEOUT_MS,
+                        clickable: true,
+                    });
+                    if (!getActiveRun(runId)) return;
+
+                    const pageExitPromise = waitForPageExit(3000);
+                    updateRun(runId, {
+                        phase: 'construction-wait-send-page',
+                        message:
+                            'Constructions — action 5/6 terminée : attente de la page d’envoi…',
+                    });
+                    refreshUi();
+                    continueButton.click();
+                    const pageExited = await pageExitPromise;
+                    if (pageExited) return;
+                    continue;
+                }
+
+                if (run.phase === 'construction-wait-send-page') {
+                    const renderResult = await waitUntilPageUsable(PAGE_TIMEOUT_MS);
+                    if (renderResult.timedOut) {
+                        throw new Error('La page d’envoi Constructions ne s’est pas chargée à temps.');
+                    }
+                    if (!getActiveRun(runId)) return;
+
+                    updateRun(runId, {
                         phase: 'construction-send',
                         constructionPendingDelayMs: getRandomDelayMs(
                             CONSTRUCTION_DELAY_MIN_MS,
                             CONSTRUCTION_DELAY_MAX_MS
                         ),
-                        constructionPendingDelayLabel: 'la saisie de R1, R2 et R3',
-                        message: 'Constructions — action 5/6 terminée : R1, R2 et R3 saisis.',
+                        constructionPendingDelayLabel: 'le chargement de la page d’envoi',
+                        message:
+                            'Constructions — page d’envoi chargée, préparation de l’action 6/6…',
                     });
                     refreshUi();
                     continue;
@@ -2930,6 +2977,8 @@
                 'construction-open-link': `Action 3/6 — charger ${destination}`,
                 'construction-fill-transporters': 'Action 4/6 — saisir les petites voitures',
                 'construction-fill-resources': 'Action 5/6 — saisir R1, R2 et R3',
+                'construction-continue': 'Action 5/6 — cliquer sur Continuer',
+                'construction-wait-send-page': 'Action 5/6 — charger la page d’envoi',
                 'construction-send': 'Action 6/6 — cliquer sur Envoyer',
                 'construction-completed': 'Constructions terminée',
             };
