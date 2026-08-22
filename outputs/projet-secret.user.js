@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Projet secret — boucle multi-liens
 // @namespace    local.projet-secret
-// @version      6.2.0
+// @version      6.2.1
 // @updateURL    https://raw.githubusercontent.com/raphaelrobert1104-sys/mysecretproject/main/outputs/projet-secret.user.js
 // @downloadURL  https://raw.githubusercontent.com/raphaelrobert1104-sys/mysecretproject/main/outputs/projet-secret.user.js
 // @description  Automatise Ressources, Expéditions, Forme de vie, Import et Constructions avec configurations privées.
@@ -64,13 +64,12 @@
         '#div_importexport > div.content > div.right_box > div.right_content > div.bargain_overlay > a.bargain.import_bargain.take';
     const CONSTRUCTION_TRANSPORTER_SELECTOR =
         '#civil > li.technology.transporterSmall.interactive.hasDetails.tooltip.hideTooltipOnMouseenter.js_hideTipOnMobile.ipiHintable > input[type="text"]';
-    // À compléter dès que les sélecteurs X, Y, Z et Envoyer seront fournis.
     const CONSTRUCTION_RESOURCE_SELECTORS = {
-        r1: '',
-        r2: '',
-        r3: '',
+        r1: '#metal',
+        r2: '#crystal',
+        r3: '#deuterium',
     };
-    const CONSTRUCTION_SEND_SELECTOR = '';
+    const CONSTRUCTION_SEND_SELECTOR = '#sendFleet > span';
 
     class ElementNotFoundError extends Error {
         constructor(selector, timeoutMs) {
