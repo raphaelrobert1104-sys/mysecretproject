@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Projet secret — boucle multi-liens
 // @namespace    local.projet-secret
-// @version      6.2.2
+// @version      6.3.0
 // @updateURL    https://raw.githubusercontent.com/raphaelrobert1104-sys/mysecretproject/main/outputs/projet-secret.user.js
 // @downloadURL  https://raw.githubusercontent.com/raphaelrobert1104-sys/mysecretproject/main/outputs/projet-secret.user.js
 // @description  Automatise Ressources, Expéditions, Forme de vie, Import et Constructions avec configurations privées.
@@ -368,6 +368,11 @@
         shadow.innerHTML = `
             <style>
                 *, *::before, *::after { box-sizing: border-box; }
+                :host { color-scheme: dark; }
+                @keyframes secret-enter {
+                    from { opacity: 0; transform: translateY(-7px) scale(.985); }
+                    to { opacity: 1; transform: translateY(0) scale(1); }
+                }
                 .dock {
                     position: relative;
                     font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
@@ -420,7 +425,7 @@
                     backdrop-filter: blur(22px);
                     -webkit-backdrop-filter: blur(22px);
                 }
-                .dropdown-menu.open { display: grid; gap: 7px; }
+                .dropdown-menu.open { display: grid; gap: 7px; animation: secret-enter .18s ease-out; }
                 .dropdown-menu .control-group { width: 100%; }
                 .dropdown-menu .quick { flex: 1 1 auto; min-width: 0 !important; text-align: left; }
                 .control-group {
@@ -440,6 +445,10 @@
                     cursor: pointer;
                     touch-action: manipulation;
                     -webkit-tap-highlight-color: transparent;
+                }
+                button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible {
+                    outline: 2px solid #7dd3fc;
+                    outline-offset: 2px;
                 }
                 .quick, .settings {
                     border: 0;
@@ -509,7 +518,7 @@
                     backdrop-filter: blur(22px);
                     -webkit-backdrop-filter: blur(22px);
                 }
-                .panel.open { display: block; }
+                .panel.open { display: block; animation: secret-enter .2s ease-out; }
                 .header {
                     display: flex;
                     align-items: center;
@@ -642,14 +651,18 @@
                 .actions button {
                     padding: 8px 11px;
                     border: 0;
-                    border-radius: 7px;
+                    border-radius: 9px;
                     color: #fff;
                     font-weight: 650;
                     font-size: 12px;
+                    box-shadow: inset 0 1px 0 rgba(255,255,255,.12), 0 7px 18px rgba(2,6,23,.18);
+                    transition: transform .16s ease, filter .16s ease, box-shadow .16s ease;
                 }
-                .save { background: #475569; }
-                .start { background: #2563eb; }
-                .stop { background: #9f2436; }
+                .actions button:hover { filter: brightness(1.1); transform: translateY(-1px); }
+                .actions button:active { transform: translateY(0) scale(.98); }
+                .save { background: linear-gradient(135deg, #475569, #334155); }
+                .start { background: linear-gradient(135deg, #2563eb, #4f46e5); }
+                .stop { background: linear-gradient(135deg, #9f2436, #be123c); }
                 .debug-progress {
                     display: none;
                     position: absolute;
@@ -680,13 +693,47 @@
                     top: 62px;
                     width: min(390px, calc(100vw - 20px));
                     padding: 18px;
-                    border: 1px solid rgba(251, 191, 36, .72);
-                    border-radius: 16px;
-                    background: linear-gradient(150deg, rgba(15, 23, 42, .98), rgba(51, 65, 85, .97));
+                    border: 1px solid rgba(251, 191, 36, .58);
+                    border-radius: 20px;
+                    background:
+                        radial-gradient(circle at 92% 4%, rgba(245, 158, 11, .22), transparent 34%),
+                        linear-gradient(150deg, rgba(9, 15, 29, .985), rgba(30, 41, 59, .975));
                     color: #fff;
-                    box-shadow: 0 24px 70px rgba(2, 6, 23, .52), inset 0 1px 0 rgba(255,255,255,.08);
+                    box-shadow: 0 26px 80px rgba(2, 6, 23, .58), inset 0 1px 0 rgba(255,255,255,.1);
+                    backdrop-filter: blur(24px) saturate(145%);
+                    -webkit-backdrop-filter: blur(24px) saturate(145%);
                 }
-                .construction-runner.open { display: block; }
+                .construction-runner.open { display: block; animation: secret-enter .22s ease-out; }
+                .construction-kicker {
+                    display: block;
+                    margin-bottom: 3px;
+                    color: #fbbf24;
+                    font-size: 9px;
+                    font-weight: 850;
+                    letter-spacing: .16em;
+                }
+                .construction-flow {
+                    display: grid;
+                    grid-template-columns: repeat(3, 1fr);
+                    gap: 5px;
+                    margin: 13px 0;
+                    padding: 4px;
+                    border: 1px solid rgba(148, 163, 184, .16);
+                    border-radius: 11px;
+                    background: rgba(2, 6, 23, .28);
+                }
+                .construction-flow span {
+                    padding: 6px 4px;
+                    border-radius: 8px;
+                    color: #cbd5e1;
+                    font-size: 10px;
+                    font-weight: 720;
+                    text-align: center;
+                }
+                .construction-flow span:first-child {
+                    background: rgba(245, 158, 11, .18);
+                    color: #fde68a;
+                }
                 .construction-runner-grid {
                     display: grid;
                     grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -695,15 +742,36 @@
                 }
                 .construction-runner-grid label,
                 .construction-link-choice label { margin-bottom: 5px; }
+                .amount-input-shell { position: relative; }
+                .amount-input-shell input { padding-right: 31px; }
+                .amount-input-shell > span {
+                    position: absolute;
+                    right: 10px;
+                    top: 50%;
+                    transform: translateY(-50%);
+                    color: #fbbf24;
+                    font-size: 11px;
+                    font-weight: 850;
+                    pointer-events: none;
+                }
                 .construction-link-choice { margin-bottom: 12px; }
+                .construction-runner input,
+                .construction-runner select {
+                    border-color: rgba(148, 163, 184, .38);
+                    background: rgba(15, 23, 42, .76);
+                    color: #f8fafc;
+                    box-shadow: inset 0 1px 0 rgba(255,255,255,.04);
+                }
+                .construction-runner select option { background: #0f172a; color: #f8fafc; }
                 .construction-calculation {
                     margin: 12px 0;
                     padding: 10px 11px;
                     border: 1px solid rgba(251, 191, 36, .28);
                     border-radius: 9px;
-                    background: rgba(120, 53, 15, .3);
+                    background: linear-gradient(135deg, rgba(120, 53, 15, .34), rgba(67, 56, 202, .16));
                     color: #fef3c7;
                     font-size: 12px;
+                    font-weight: 720;
                     line-height: 1.45;
                 }
                 .construction-runner-error {
@@ -728,6 +796,10 @@
                     .named-link-row { grid-template-columns: 22px minmax(82px, .7fr) minmax(145px, 1.3fr); }
                     .named-link-row input, .construction-runner input, .construction-runner select { font-size: 16px; }
                     .construction-runner { padding: 14px; }
+                }
+                @media (prefers-reduced-motion: reduce) {
+                    .dropdown-menu.open, .panel.open, .construction-runner.open { animation: none; }
+                    *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; }
                 }
             </style>
             <div class="dock">
@@ -826,30 +898,45 @@
                 </section>
                 <section class="construction-runner" role="dialog" aria-label="Lancer Constructions">
                     <div class="header">
-                        <h2>Constructions</h2>
+                        <div>
+                            <span class="construction-kicker">NOUVEL ORDRE</span>
+                            <h2>Constructions</h2>
+                        </div>
                         <button type="button" class="close construction-runner-close" aria-label="Fermer">×</button>
                     </div>
-                    <p class="help">Saisissez les trois ressources puis choisissez la destination configurée.</p>
+                    <div class="construction-flow" aria-hidden="true">
+                        <span>1 · Montants</span><span>2 · Destination</span><span>3 · Exécution</span>
+                    </div>
+                    <p class="help">Saisissez les ressources en millions, puis choisissez la destination configurée.</p>
                     <div class="construction-runner-grid">
                         <div>
                             <label for="construction-r1">R1</label>
-                            <input id="construction-r1" class="construction-r1" type="number" min="0" step="1" inputmode="numeric" value="0">
+                            <div class="amount-input-shell">
+                                <input id="construction-r1" class="construction-r1" type="text" inputmode="decimal" autocomplete="off" placeholder="3.3" value="0">
+                                <span>M</span>
+                            </div>
                         </div>
                         <div>
                             <label for="construction-r2">R2</label>
-                            <input id="construction-r2" class="construction-r2" type="number" min="0" step="1" inputmode="numeric" value="0">
+                            <div class="amount-input-shell">
+                                <input id="construction-r2" class="construction-r2" type="text" inputmode="decimal" autocomplete="off" placeholder="2.0" value="0">
+                                <span>M</span>
+                            </div>
                         </div>
                         <div>
                             <label for="construction-r3">R3</label>
-                            <input id="construction-r3" class="construction-r3" type="number" min="0" step="1" inputmode="numeric" value="0">
+                            <div class="amount-input-shell">
+                                <input id="construction-r3" class="construction-r3" type="text" inputmode="decimal" autocomplete="off" placeholder="1" value="0">
+                                <span>M</span>
+                            </div>
                         </div>
                     </div>
                     <div class="construction-link-choice">
                         <label for="construction-link-select">Destination</label>
                         <select id="construction-link-select" class="construction-link-select"></select>
                     </div>
-                    <div class="construction-calculation">Total : 0 · Petites voitures : 0</div>
-                    <p class="field-help">Le nombre de petites voitures est calculé avec l’arrondi supérieur de (R1 + R2 + R3) ÷ 9000.</p>
+                    <div class="construction-calculation">Total réel : 0 · Petites voitures : 0</div>
+                    <p class="field-help">Exemple : 3.3 M devient 3 300 000. Le total réel est ensuite divisé par 9000 et arrondi au supérieur.</p>
                     <div class="construction-runner-error" role="alert"></div>
                     <div class="actions">
                         <button type="button" class="save construction-runner-cancel">Annuler</button>
@@ -1079,22 +1166,25 @@
 
         function updateConstructionCalculation() {
             const values = [refs.constructionR1, refs.constructionR2, refs.constructionR3]
-                .map((input) => parseConstructionAmount(input.value));
+                .map((input) => parseConstructionMillions(input.value));
             if (values.some((value) => value === null)) {
-                refs.constructionCalculation.textContent = 'Saisissez trois montants entiers positifs ou nuls.';
+                refs.constructionCalculation.textContent =
+                    'Saisissez trois montants positifs en millions, par exemple 3.3.';
                 return;
             }
             const total = values.reduce((sum, value) => sum + value, 0);
             const transporterCount = Math.ceil(total / 9000);
             refs.constructionCalculation.textContent =
-                `Total : ${formatInteger(total)} · Petites voitures : ${formatInteger(transporterCount)}`;
+                `Total réel : ${formatInteger(total)} · Petites voitures : ${formatInteger(transporterCount)}`;
         }
 
         function launchConstructionFromRunner() {
             const amounts = [refs.constructionR1, refs.constructionR2, refs.constructionR3]
-                .map((input) => parseConstructionAmount(input.value));
+                .map((input) => parseConstructionMillions(input.value));
             if (amounts.some((value) => value === null)) {
-                showConstructionRunnerError('R1, R2 et R3 doivent être des nombres entiers positifs ou nuls.');
+                showConstructionRunnerError(
+                    'R1, R2 et R3 doivent être des montants positifs en millions (exemple : 3.3).'
+                );
                 return;
             }
 
@@ -2063,15 +2153,64 @@
 
                     setFormControlValue(input, String(run.constructionTransporterCount));
                     updateRun(runId, {
+                        phase: 'construction-continue',
+                        constructionPendingDelayMs: getRandomDelayMs(
+                            500,
+                            1500
+                        ),
+                        constructionPendingDelayLabel: 'la saisie du nombre de petites voitures',
+                        message:
+                            `Constructions — action 4/6 : ` +
+                            `${formatInteger(run.constructionTransporterCount)} petites voitures saisies, ` +
+                            'préparation du clic sur Continuer…',
+                    });
+                    refreshUi();
+                    continue;
+                }
+
+                if (run.phase === 'construction-continue') {
+                    updateRun(runId, {
+                        message: 'Constructions — action 4/6 : cliquer sur Continuer…',
+                    });
+                    refreshUi();
+                    const continueButton = await waitForElement(CONSTRUCTION_CONTINUE_SELECTOR, {
+                        timeoutMs: ELEMENT_TIMEOUT_MS,
+                        clickable: true,
+                    });
+                    if (!getActiveRun(runId)) return;
+
+                    const pageExitPromise = waitForPageExit(3000);
+                    updateRun(runId, {
+                        phase: 'construction-wait-resources-page',
+                        message:
+                            'Constructions — action 4/6 terminée : attente de la page des ressources…',
+                    });
+                    refreshUi();
+                    continueButton.click();
+                    const pageExited = await pageExitPromise;
+                    if (pageExited) return;
+                    continue;
+                }
+
+                if (
+                    run.phase === 'construction-wait-resources-page' ||
+                    run.phase === 'construction-wait-send-page'
+                ) {
+                    const renderResult = await waitUntilPageUsable(PAGE_TIMEOUT_MS);
+                    if (renderResult.timedOut) {
+                        throw new Error('La page des ressources Constructions ne s’est pas chargée à temps.');
+                    }
+                    if (!getActiveRun(runId)) return;
+
+                    updateRun(runId, {
                         phase: 'construction-fill-resources',
                         constructionPendingDelayMs: getRandomDelayMs(
                             CONSTRUCTION_DELAY_MIN_MS,
                             CONSTRUCTION_DELAY_MAX_MS
                         ),
-                        constructionPendingDelayLabel: 'la saisie du nombre de petites voitures',
+                        constructionPendingDelayLabel: 'le chargement de la page des ressources',
                         message:
-                            `Constructions — action 4/6 terminée : ` +
-                            `${formatInteger(run.constructionTransporterCount)} petites voitures saisies.`,
+                            'Constructions — page des ressources chargée, préparation de l’action 5/6…',
                     });
                     refreshUi();
                     continue;
@@ -2105,59 +2244,13 @@
                     }
 
                     updateRun(runId, {
-                        phase: 'construction-continue',
-                        constructionPendingDelayMs: getRandomDelayMs(
-                            500,
-                            1500
-                        ),
-                        constructionPendingDelayLabel: 'la saisie de R1, R2 et R3',
-                        message:
-                            'Constructions — action 5/6 : R1, R2 et R3 saisis, préparation du clic sur Continuer…',
-                    });
-                    refreshUi();
-                    continue;
-                }
-
-                if (run.phase === 'construction-continue') {
-                    updateRun(runId, {
-                        message: 'Constructions — action 5/6 : cliquer sur Continuer…',
-                    });
-                    refreshUi();
-                    const continueButton = await waitForElement(CONSTRUCTION_CONTINUE_SELECTOR, {
-                        timeoutMs: ELEMENT_TIMEOUT_MS,
-                        clickable: true,
-                    });
-                    if (!getActiveRun(runId)) return;
-
-                    const pageExitPromise = waitForPageExit(3000);
-                    updateRun(runId, {
-                        phase: 'construction-wait-send-page',
-                        message:
-                            'Constructions — action 5/6 terminée : attente de la page d’envoi…',
-                    });
-                    refreshUi();
-                    continueButton.click();
-                    const pageExited = await pageExitPromise;
-                    if (pageExited) return;
-                    continue;
-                }
-
-                if (run.phase === 'construction-wait-send-page') {
-                    const renderResult = await waitUntilPageUsable(PAGE_TIMEOUT_MS);
-                    if (renderResult.timedOut) {
-                        throw new Error('La page d’envoi Constructions ne s’est pas chargée à temps.');
-                    }
-                    if (!getActiveRun(runId)) return;
-
-                    updateRun(runId, {
                         phase: 'construction-send',
                         constructionPendingDelayMs: getRandomDelayMs(
                             CONSTRUCTION_DELAY_MIN_MS,
                             CONSTRUCTION_DELAY_MAX_MS
                         ),
-                        constructionPendingDelayLabel: 'le chargement de la page d’envoi',
-                        message:
-                            'Constructions — page d’envoi chargée, préparation de l’action 6/6…',
+                        constructionPendingDelayLabel: 'la saisie de R1, R2 et R3',
+                        message: 'Constructions — action 5/6 terminée : R1, R2 et R3 saisis.',
                     });
                     refreshUi();
                     continue;
@@ -2976,9 +3069,10 @@
                 'construction-before-open-link': 'Actions 1–2/6 — paramètres et destination validés',
                 'construction-open-link': `Action 3/6 — charger ${destination}`,
                 'construction-fill-transporters': 'Action 4/6 — saisir les petites voitures',
+                'construction-continue': 'Action 4/6 — cliquer sur Continuer',
+                'construction-wait-resources-page': 'Action 4/6 — charger la page des ressources',
+                'construction-wait-send-page': 'Action 4/6 — charger la page des ressources',
                 'construction-fill-resources': 'Action 5/6 — saisir R1, R2 et R3',
-                'construction-continue': 'Action 5/6 — cliquer sur Continuer',
-                'construction-wait-send-page': 'Action 5/6 — charger la page d’envoi',
                 'construction-send': 'Action 6/6 — cliquer sur Envoyer',
                 'construction-completed': 'Constructions terminée',
             };
@@ -2988,8 +3082,9 @@
         const message = typeof run.message === 'string' ? run.message : '';
         return (
             `Constructions — ${destination}\n${actionLabel}\n` +
-            `R1 ${formatInteger(run.constructionR1)} · R2 ${formatInteger(run.constructionR2)} · ` +
-            `R3 ${formatInteger(run.constructionR3)}` +
+            `R1 ${formatMillions(run.constructionR1)} M · ` +
+            `R2 ${formatMillions(run.constructionR2)} M · ` +
+            `R3 ${formatMillions(run.constructionR3)} M` +
             (message ? `\n${message}` : '')
         );
     }
@@ -3150,11 +3245,33 @@
         return normalized;
     }
 
+    function parseConstructionMillions(value) {
+        if (value === '' || value === null || value === undefined) return null;
+        const normalized = String(value).trim().replace(',', '.');
+        if (!/^\d+(?:\.\d+)?$/.test(normalized)) return null;
+
+        const millions = Number(normalized);
+        const baseAmount = Math.round(millions * 1000000);
+        if (!Number.isFinite(millions) || millions < 0 || !Number.isSafeInteger(baseAmount)) {
+            return null;
+        }
+        return baseAmount;
+    }
+
     function parseConstructionAmount(value) {
         if (value === '' || value === null || value === undefined) return null;
         const parsed = Number(value);
         if (!Number.isSafeInteger(parsed) || parsed < 0) return null;
         return parsed;
+    }
+
+    function formatMillions(value) {
+        const parsed = Number(value);
+        if (!Number.isFinite(parsed)) return '0';
+        return (parsed / 1000000).toLocaleString('fr-FR', {
+            minimumFractionDigits: 0,
+            maximumFractionDigits: 6,
+        });
     }
 
     function formatInteger(value) {
