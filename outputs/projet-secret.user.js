@@ -1,10 +1,10 @@
 // ==UserScript==
 // @name         Projet secret — boucle multi-liens
 // @namespace    local.projet-secret
-// @version      6.1.2
+// @version      6.2.0
 // @updateURL    https://raw.githubusercontent.com/raphaelrobert1104-sys/mysecretproject/main/outputs/projet-secret.user.js
 // @downloadURL  https://raw.githubusercontent.com/raphaelrobert1104-sys/mysecretproject/main/outputs/projet-secret.user.js
-// @description  Automatise Ressources, Expéditions, Forme de vie et Import avec configurations privées et modes combinés.
+// @description  Automatise Ressources, Expéditions, Forme de vie, Import et Constructions avec configurations privées.
 // @author       Vous
 // @match        http://*/*
 // @match        https://*/*
@@ -26,6 +26,7 @@
         2: 'secretMultiLinkConfig2',
         4: 'secretLifeformConfig',
         6: 'secretImportConfig',
+        7: 'secretConstructionConfig',
     };
     const RUN_KEY = 'secretMultiLinkRun';
     const TAB_RUN_ID_KEY = 'secretMultiLinkRunId';
@@ -34,6 +35,7 @@
         2: 10,
         4: 14,
         6: 1,
+        7: 13,
     };
     const PAGE_TIMEOUT_MS = 45000;
     const ELEMENT_TIMEOUT_MS = 7000;
@@ -44,6 +46,8 @@
     const LIFEFORM_DELAY_MAX_MS = POST_ACTION_DELAY_MAX_MS;
     const IMPORT_DELAY_MIN_MS = POST_ACTION_DELAY_MIN_MS;
     const IMPORT_DELAY_MAX_MS = POST_ACTION_DELAY_MAX_MS;
+    const CONSTRUCTION_DELAY_MIN_MS = POST_ACTION_DELAY_MIN_MS;
+    const CONSTRUCTION_DELAY_MAX_MS = POST_ACTION_DELAY_MAX_MS;
     const EXPEDITION_SLOTS_SELECTOR = '#slots > div:nth-child(2) > span';
     const LIFEFORM_DISCOVER_SELECTOR = '#discoverSystemBtn';
     const LIFEFORM_SLOT_USED_SELECTOR = '#slots #slotUsed';
@@ -58,6 +62,15 @@
         '#div_importexport > div.content > div.right_box > div.right_content > div.payment > a';
     const IMPORT_TAKE_SELECTOR =
         '#div_importexport > div.content > div.right_box > div.right_content > div.bargain_overlay > a.bargain.import_bargain.take';
+    const CONSTRUCTION_TRANSPORTER_SELECTOR =
+        '#civil > li.technology.transporterSmall.interactive.hasDetails.tooltip.hideTooltipOnMouseenter.js_hideTipOnMobile.ipiHintable > input[type="text"]';
+    // À compléter dès que les sélecteurs X, Y, Z et Envoyer seront fournis.
+    const CONSTRUCTION_RESOURCE_SELECTORS = {
+        r1: '',
+        r2: '',
+        r3: '',
+    };
+    const CONSTRUCTION_SEND_SELECTOR = '';
 
     class ElementNotFoundError extends Error {
         constructor(selector, timeoutMs) {
@@ -190,6 +203,12 @@
     });
     registerMenuCommandSafely('Démarrer Import', () => {
         void startFromStoredConfiguration(6);
+    });
+    registerMenuCommandSafely('Configurer Constructions', () => {
+        void openControlPanel(7);
+    });
+    registerMenuCommandSafely('Démarrer Constructions', () => {
+        void startFromStoredConfiguration(7);
     });
     registerMenuCommandSafely('Arrêter la boucle', () => {
         void stopAutomation('Arrêt demandé depuis le menu Tampermonkey.');
@@ -338,6 +357,13 @@
         host.style.setProperty('opacity', '1', 'important');
         host.style.setProperty('pointer-events', 'auto', 'important');
 
+        const constructionLinkRows = Array.from({ length: 13 }, (_, index) => `
+            <div class="named-link-row">
+                <span>${index + 1}</span>
+                <input class="named-link-name" type="text" maxlength="60" autocomplete="off" placeholder="Nom">
+                <input class="named-link-url" type="url" spellcheck="false" autocomplete="off" placeholder="https://…">
+            </div>
+        `).join('');
         const shadow = host.attachShadow({ mode: 'closed' });
         shadow.innerHTML = `
             <style>
@@ -408,7 +434,7 @@
                     background: rgba(255, 255, 255, .055);
                     box-shadow: inset 0 1px 0 rgba(255, 255, 255, .08);
                 }
-                button, textarea, input { font: inherit; }
+                button, textarea, input, select { font: inherit; }
                 button {
                     min-height: 42px;
                     cursor: pointer;
@@ -446,6 +472,9 @@
                 }
                 .control-group.import .quick {
                     background: linear-gradient(135deg, rgba(14, 116, 144, .97), rgba(37, 99, 235, .96));
+                }
+                .control-group.constructions .quick {
+                    background: linear-gradient(135deg, rgba(180, 83, 9, .97), rgba(202, 138, 4, .96));
                 }
                 .quick:hover, .settings:hover { filter: brightness(1.1); }
                 .quick:active, .settings:active { transform: translateY(1px) scale(.985); }
@@ -543,6 +572,43 @@
                     outline: none;
                 }
                 textarea:focus { border-color: #60a5fa; box-shadow: 0 0 0 2px rgba(96, 165, 250, .25); }
+                .named-links-field-group { display: none; }
+                .named-links-grid {
+                    display: grid;
+                    gap: 7px;
+                    max-height: min(430px, calc(100vh - 290px));
+                    overflow: auto;
+                    padding-right: 3px;
+                }
+                .named-link-row {
+                    display: grid;
+                    grid-template-columns: 24px minmax(92px, .8fr) minmax(170px, 1.45fr);
+                    align-items: center;
+                    gap: 7px;
+                }
+                .named-link-row > span {
+                    color: #94a3b8;
+                    font-size: 11px;
+                    text-align: right;
+                }
+                .named-link-row input,
+                .construction-runner input,
+                .construction-runner select {
+                    width: 100%;
+                    min-width: 0;
+                    padding: 9px 10px;
+                    border: 1px solid #64748b;
+                    border-radius: 7px;
+                    background: #fff;
+                    color: #111827;
+                    outline: none;
+                }
+                .named-link-row input:focus,
+                .construction-runner input:focus,
+                .construction-runner select:focus {
+                    border-color: #60a5fa;
+                    box-shadow: 0 0 0 2px rgba(96, 165, 250, .25);
+                }
                 .under-input {
                     display: flex;
                     justify-content: space-between;
@@ -607,6 +673,46 @@
                     background: rgba(127, 29, 29, .64);
                     color: #fff;
                 }
+                .construction-runner {
+                    display: none;
+                    position: absolute;
+                    right: 0;
+                    top: 62px;
+                    width: min(390px, calc(100vw - 20px));
+                    padding: 18px;
+                    border: 1px solid rgba(251, 191, 36, .72);
+                    border-radius: 16px;
+                    background: linear-gradient(150deg, rgba(15, 23, 42, .98), rgba(51, 65, 85, .97));
+                    color: #fff;
+                    box-shadow: 0 24px 70px rgba(2, 6, 23, .52), inset 0 1px 0 rgba(255,255,255,.08);
+                }
+                .construction-runner.open { display: block; }
+                .construction-runner-grid {
+                    display: grid;
+                    grid-template-columns: repeat(3, minmax(0, 1fr));
+                    gap: 9px;
+                    margin: 14px 0;
+                }
+                .construction-runner-grid label,
+                .construction-link-choice label { margin-bottom: 5px; }
+                .construction-link-choice { margin-bottom: 12px; }
+                .construction-calculation {
+                    margin: 12px 0;
+                    padding: 10px 11px;
+                    border: 1px solid rgba(251, 191, 36, .28);
+                    border-radius: 9px;
+                    background: rgba(120, 53, 15, .3);
+                    color: #fef3c7;
+                    font-size: 12px;
+                    line-height: 1.45;
+                }
+                .construction-runner-error {
+                    display: none;
+                    margin: 9px 0;
+                    color: #fecaca;
+                    font-size: 12px;
+                }
+                .construction-runner-error.visible { display: block; }
                 @media (max-width: 600px) {
                     .toolbar { justify-content: flex-end; gap: 6px; }
                     .menu-toggle { padding-inline: 11px; }
@@ -619,6 +725,9 @@
                     .start-url, .small-vehicle-count, textarea { font-size: 16px; }
                     textarea { min-height: 165px; }
                     .actions button { min-height: 44px; }
+                    .named-link-row { grid-template-columns: 22px minmax(82px, .7fr) minmax(145px, 1.3fr); }
+                    .named-link-row input, .construction-runner input, .construction-runner select { font-size: 16px; }
+                    .construction-runner { padding: 14px; }
                 }
             </style>
             <div class="dock">
@@ -642,6 +751,10 @@
                             <div class="control-group import">
                                 <button type="button" class="quick quick-6" title="Lancer Import">Import</button>
                                 <button type="button" class="settings settings-6" title="Configurer Import" aria-label="Configurer Import">⚙</button>
+                            </div>
+                            <div class="control-group constructions">
+                                <button type="button" class="quick quick-7" title="Lancer Constructions">Constructions</button>
+                                <button type="button" class="settings settings-7" title="Configurer Constructions" aria-label="Configurer Constructions">⚙</button>
                             </div>
                         </div>
                     </div>
@@ -686,6 +799,15 @@
                             <span class="counter">0 / 15</span>
                         </div>
                     </div>
+                    <div class="named-links-field-group">
+                        <label>Destinations de Constructions</label>
+                        <p class="field-help">Renseignez un nom d’affichage et son URL. Les lignes entièrement vides sont ignorées.</p>
+                        <div class="named-links-grid">${constructionLinkRows}</div>
+                        <div class="under-input">
+                            <span>Minimum 1, maximum 13</span>
+                            <span class="named-links-counter">0 / 13</span>
+                        </div>
+                    </div>
                     <label class="repeat-row">
                         <input type="checkbox" class="repeat">
                         Recommencer au premier lien après le dernier
@@ -702,6 +824,38 @@
                         <button type="button" class="start">Enregistrer et lancer</button>
                     </div>
                 </section>
+                <section class="construction-runner" role="dialog" aria-label="Lancer Constructions">
+                    <div class="header">
+                        <h2>Constructions</h2>
+                        <button type="button" class="close construction-runner-close" aria-label="Fermer">×</button>
+                    </div>
+                    <p class="help">Saisissez les trois ressources puis choisissez la destination configurée.</p>
+                    <div class="construction-runner-grid">
+                        <div>
+                            <label for="construction-r1">R1</label>
+                            <input id="construction-r1" class="construction-r1" type="number" min="0" step="1" inputmode="numeric" value="0">
+                        </div>
+                        <div>
+                            <label for="construction-r2">R2</label>
+                            <input id="construction-r2" class="construction-r2" type="number" min="0" step="1" inputmode="numeric" value="0">
+                        </div>
+                        <div>
+                            <label for="construction-r3">R3</label>
+                            <input id="construction-r3" class="construction-r3" type="number" min="0" step="1" inputmode="numeric" value="0">
+                        </div>
+                    </div>
+                    <div class="construction-link-choice">
+                        <label for="construction-link-select">Destination</label>
+                        <select id="construction-link-select" class="construction-link-select"></select>
+                    </div>
+                    <div class="construction-calculation">Total : 0 · Petites voitures : 0</div>
+                    <p class="field-help">Le nombre de petites voitures est calculé avec l’arrondi supérieur de (R1 + R2 + R3) ÷ 9000.</p>
+                    <div class="construction-runner-error" role="alert"></div>
+                    <div class="actions">
+                        <button type="button" class="save construction-runner-cancel">Annuler</button>
+                        <button type="button" class="start construction-runner-start">Démarrer</button>
+                    </div>
+                </section>
             </div>
         `;
 
@@ -712,6 +866,7 @@
             quick4: shadow.querySelector('.quick-4'),
             quick5: shadow.querySelector('.quick-5'),
             quick6: shadow.querySelector('.quick-6'),
+            quick7: shadow.querySelector('.quick-7'),
             simpleMenuToggle: shadow.querySelector('.simple-menu-toggle'),
             groupedMenuToggle: shadow.querySelector('.grouped-menu-toggle'),
             simpleMenu: shadow.querySelector('.simple-menu'),
@@ -723,6 +878,7 @@
             settings4: shadow.querySelector('.settings-4'),
             settings5: shadow.querySelector('.settings-5'),
             settings6: shadow.querySelector('.settings-6'),
+            settings7: shadow.querySelector('.settings-7'),
             panel: shadow.querySelector('.panel'),
             panelTitle: shadow.querySelector('.panel-title'),
             help: shadow.querySelector('.help'),
@@ -732,6 +888,10 @@
             smallVehicleCount: shadow.querySelector('.small-vehicle-count'),
             linksFieldGroup: shadow.querySelector('.links-field-group'),
             linksLabel: shadow.querySelector('.links-label'),
+            namedLinksFieldGroup: shadow.querySelector('.named-links-field-group'),
+            namedLinkNames: [...shadow.querySelectorAll('.named-link-name')],
+            namedLinkUrls: [...shadow.querySelectorAll('.named-link-url')],
+            namedLinksCounter: shadow.querySelector('.named-links-counter'),
             combinedConfig: shadow.querySelector('.combined-config'),
             combinedResources: shadow.querySelector('.combined-resources'),
             combinedExpeditions: shadow.querySelector('.combined-expeditions'),
@@ -746,6 +906,16 @@
             save: shadow.querySelector('.save'),
             start: shadow.querySelector('.start'),
             stop: shadow.querySelector('.stop'),
+            constructionRunner: shadow.querySelector('.construction-runner'),
+            constructionRunnerClose: shadow.querySelector('.construction-runner-close'),
+            constructionRunnerCancel: shadow.querySelector('.construction-runner-cancel'),
+            constructionRunnerStart: shadow.querySelector('.construction-runner-start'),
+            constructionR1: shadow.querySelector('.construction-r1'),
+            constructionR2: shadow.querySelector('.construction-r2'),
+            constructionR3: shadow.querySelector('.construction-r3'),
+            constructionLinkSelect: shadow.querySelector('.construction-link-select'),
+            constructionCalculation: shadow.querySelector('.construction-calculation'),
+            constructionRunnerError: shadow.querySelector('.construction-runner-error'),
         };
 
         let editingProfileId = 1;
@@ -758,10 +928,13 @@
         refs.settings4.addEventListener('click', () => togglePanel(4));
         refs.settings5.addEventListener('click', () => togglePanel(5));
         refs.settings6.addEventListener('click', () => togglePanel(6));
+        refs.settings7.addEventListener('click', () => togglePanel(7));
         refs.combinedResources.addEventListener('click', () => open(combinedTargetProfiles[0]));
         refs.combinedExpeditions.addEventListener('click', () => open(combinedTargetProfiles[1]));
         refs.close.addEventListener('click', () => closePanel());
         refs.textarea.addEventListener('input', () => updateCounter());
+        refs.namedLinkNames.forEach((input) => input.addEventListener('input', updateCounter));
+        refs.namedLinkUrls.forEach((input) => input.addEventListener('input', updateCounter));
         refs.save.addEventListener('click', () => saveFromPanel(false));
         refs.start.addEventListener('click', () => saveFromPanel(true));
         refs.stop.addEventListener('click', () => {
@@ -773,6 +946,13 @@
         refs.quick4.addEventListener('click', () => quickAction(4));
         refs.quick5.addEventListener('click', () => quickExpeditionsLifeformAction());
         refs.quick6.addEventListener('click', () => quickAction(6));
+        refs.quick7.addEventListener('click', () => quickAction(7));
+        refs.constructionRunnerClose.addEventListener('click', closeConstructionRunner);
+        refs.constructionRunnerCancel.addEventListener('click', closeConstructionRunner);
+        refs.constructionRunnerStart.addEventListener('click', launchConstructionFromRunner);
+        [refs.constructionR1, refs.constructionR2, refs.constructionR3].forEach((input) => {
+            input.addEventListener('input', updateConstructionCalculation);
+        });
         refs.simpleMenuToggle.addEventListener('click', () => toggleDropdown('simple'));
         refs.groupedMenuToggle.addEventListener('click', () => toggleDropdown('grouped'));
         shadow.querySelectorAll('.quick, .settings').forEach((button) => {
@@ -817,7 +997,10 @@
             const opensSimple = menuName === 'simple' && !refs.simpleMenu.classList.contains('open');
             const opensGrouped = menuName === 'grouped' && !refs.groupedMenu.classList.contains('open');
             closeDropdowns();
-            if (opensSimple || opensGrouped) closePanel();
+            if (opensSimple || opensGrouped) {
+                closePanel();
+                closeConstructionRunner();
+            }
             if (opensSimple) {
                 refs.simpleMenu.classList.add('open');
                 refs.simpleMenuToggle.classList.add('open');
@@ -848,6 +1031,7 @@
         }
 
         function open(profileId = 1) {
+            closeConstructionRunner();
             loadProfileIntoPanel(profileId);
             refs.panel.classList.add('open');
             refresh();
@@ -855,6 +1039,80 @@
 
         function closePanel() {
             refs.panel.classList.remove('open');
+        }
+
+        function openConstructionRunner() {
+            const config = getStoredConfig(7);
+            if (config.namedLinks.length === 0) {
+                open(7);
+                showError('Configurez au moins une destination nommée avant de lancer Constructions.');
+                return;
+            }
+
+            closeDropdowns();
+            closePanel();
+            refs.constructionLinkSelect.replaceChildren();
+            for (const [index, entry] of config.namedLinks.entries()) {
+                const option = document.createElement('option');
+                option.value = String(index);
+                option.textContent = entry.name;
+                refs.constructionLinkSelect.appendChild(option);
+            }
+            refs.constructionR1.value = '0';
+            refs.constructionR2.value = '0';
+            refs.constructionR3.value = '0';
+            showConstructionRunnerError('');
+            updateConstructionCalculation();
+            refs.constructionRunner.classList.add('open');
+            refs.constructionR1.focus();
+        }
+
+        function closeConstructionRunner() {
+            refs.constructionRunner.classList.remove('open');
+            showConstructionRunnerError('');
+        }
+
+        function showConstructionRunnerError(message) {
+            refs.constructionRunnerError.textContent = message;
+            refs.constructionRunnerError.classList.toggle('visible', Boolean(message));
+        }
+
+        function updateConstructionCalculation() {
+            const values = [refs.constructionR1, refs.constructionR2, refs.constructionR3]
+                .map((input) => parseConstructionAmount(input.value));
+            if (values.some((value) => value === null)) {
+                refs.constructionCalculation.textContent = 'Saisissez trois montants entiers positifs ou nuls.';
+                return;
+            }
+            const total = values.reduce((sum, value) => sum + value, 0);
+            const transporterCount = Math.ceil(total / 9000);
+            refs.constructionCalculation.textContent =
+                `Total : ${formatInteger(total)} · Petites voitures : ${formatInteger(transporterCount)}`;
+        }
+
+        function launchConstructionFromRunner() {
+            const amounts = [refs.constructionR1, refs.constructionR2, refs.constructionR3]
+                .map((input) => parseConstructionAmount(input.value));
+            if (amounts.some((value) => value === null)) {
+                showConstructionRunnerError('R1, R2 et R3 doivent être des nombres entiers positifs ou nuls.');
+                return;
+            }
+
+            const selectedLinkIndex = Number(refs.constructionLinkSelect.value);
+            const config = getStoredConfig(7);
+            if (!Number.isInteger(selectedLinkIndex) || !config.namedLinks[selectedLinkIndex]) {
+                showConstructionRunnerError('Choisissez une destination valide.');
+                return;
+            }
+
+            showConstructionRunnerError('');
+            closeConstructionRunner();
+            void startConstructionAutomation({
+                r1: amounts[0],
+                r2: amounts[1],
+                r3: amounts[2],
+                selectedLinkIndex,
+            });
         }
 
         function loadProfileIntoPanel(profileId) {
@@ -875,6 +1133,7 @@
                 refs.startUrlGroup.style.display = 'none';
                 refs.smallVehicleGroup.style.display = 'none';
                 refs.linksFieldGroup.style.display = 'none';
+                refs.namedLinksFieldGroup.style.display = 'none';
                 refs.repeatRow.style.display = 'none';
                 refs.combinedConfig.style.display = 'grid';
                 refs.save.style.display = 'none';
@@ -911,18 +1170,27 @@
                       ? 'Jusqu’à 14 URL. Une URL et une direction sont choisies aléatoirement une seule fois au lancement.'
                       : editingProfileId === 6
                         ? 'Une URL unique. Import clique sur le maximum, sur Payer, puis récupère l’objet.'
+                        : editingProfileId === 7
+                          ? 'Jusqu’à 13 destinations. Chaque URL possède un nom affiché dans la fenêtre de lancement.'
                     : 'Un lien par ligne. Les adresses sont conservées dans le stockage privé de Tampermonkey, jamais dans le code du script.';
             refs.startUrlGroup.style.display = editingProfileId === 2 ? 'block' : 'none';
             refs.startUrl.value = editingProfileId === 2 ? config.startUrl : '';
             refs.smallVehicleGroup.style.display = editingProfileId === 2 ? 'block' : 'none';
             refs.smallVehicleCount.value =
                 editingProfileId === 2 ? String(config.smallVehicleCount) : '6400';
-            refs.linksFieldGroup.style.display = 'block';
+            refs.linksFieldGroup.style.display = editingProfileId === 7 ? 'none' : 'block';
+            refs.namedLinksFieldGroup.style.display = editingProfileId === 7 ? 'block' : 'none';
             refs.combinedConfig.style.display = 'none';
             refs.linksLabel.textContent = editingProfileId === 6 ? 'URL à ouvrir' : 'Liens à traiter';
             refs.textarea.value = links.join('\n');
             refs.textarea.placeholder = editingProfileId === 6 ? 'https://…' : 'Lien 1\nLien 2\n…';
             refs.textarea.style.minHeight = editingProfileId === 6 ? '58px' : '';
+            refs.namedLinkNames.forEach((input, index) => {
+                input.value = editingProfileId === 7 ? config.namedLinks[index]?.name || '' : '';
+            });
+            refs.namedLinkUrls.forEach((input, index) => {
+                input.value = editingProfileId === 7 ? config.namedLinks[index]?.url || '' : '';
+            });
             refs.repeat.checked = config.repeat;
             refs.repeatRow.style.display = editingProfileId === 1 ? 'flex' : 'none';
             refs.save.style.display = '';
@@ -933,6 +1201,14 @@
 
         function updateCounter() {
             if (editingProfileId === 3 || editingProfileId === 5) return;
+            if (editingProfileId === 7) {
+                const count = refs.namedLinkNames.reduce((total, input, index) => {
+                    return total + (input.value.trim() || refs.namedLinkUrls[index].value.trim() ? 1 : 0);
+                }, 0);
+                refs.namedLinksCounter.textContent = `${count} / 13`;
+                refs.namedLinksCounter.style.color = count > 13 ? '#fecaca' : '#94a3b8';
+                return;
+            }
             const count = refs.textarea.value.split(/\r?\n/).map((line) => line.trim()).filter(Boolean).length;
             const maximum = getProfileLinkLimit(editingProfileId);
             refs.limitLabel.textContent = `Minimum 1, maximum ${maximum}`;
@@ -955,6 +1231,26 @@
                         void startExpeditionsLifeformAutomation();
                     }
                 }
+                return;
+            }
+
+            if (editingProfileId === 7) {
+                const parsedNamedLinks = parseNamedLinks(
+                    refs.namedLinkNames.map((input, index) => ({
+                        name: input.value,
+                        url: refs.namedLinkUrls[index].value,
+                    }))
+                );
+                if (parsedNamedLinks.error) {
+                    showError(parsedNamedLinks.error);
+                    return;
+                }
+
+                showError('');
+                saveConfig(7, { namedLinks: parsedNamedLinks.namedLinks });
+                refs.status.textContent =
+                    `Constructions : ${parsedNamedLinks.namedLinks.length} destination(s) enregistrée(s) dans Tampermonkey.`;
+                if (shouldStart) openConstructionRunner();
                 return;
             }
 
@@ -1018,8 +1314,10 @@
                 run.status === 'running' && run.profileId === 4 && !run.combinedMode;
             const profile6Running =
                 run.status === 'running' && run.profileId === 6 && !run.combinedMode;
+            const profile7Running =
+                run.status === 'running' && run.profileId === 7 && !run.combinedMode;
             const simpleActionRunning =
-                profile1Running || profile2Running || profile4Running || profile6Running;
+                profile1Running || profile2Running || profile4Running || profile6Running || profile7Running;
             const groupedActionRunning =
                 resourcesExpeditionsRunning || expeditionsLifeformRunning;
 
@@ -1029,6 +1327,7 @@
             refs.quick4.classList.toggle('running', profile4Running);
             refs.quick5.classList.toggle('running', expeditionsLifeformRunning);
             refs.quick6.classList.toggle('running', profile6Running);
+            refs.quick7.classList.toggle('running', profile7Running);
             refs.simpleMenuToggle.classList.toggle('running', simpleActionRunning);
             refs.groupedMenuToggle.classList.toggle('running', groupedActionRunning);
             refs.quick1.textContent = profile1Running ? '■ Arrêter' : 'Ressources';
@@ -1039,6 +1338,7 @@
                 ? '■ Arrêter le combiné'
                 : 'Expédition & Forme de vie';
             refs.quick6.textContent = profile6Running ? '■ Arrêter' : 'Import';
+            refs.quick7.textContent = profile7Running ? '■ Arrêter' : 'Constructions';
             refs.quick1.title = profile1Running ? 'Arrêter Ressources' : 'Lancer Ressources';
             refs.quick2.title = profile2Running ? 'Arrêter Expéditions' : 'Lancer Expéditions';
             refs.quick3.title = resourcesExpeditionsRunning
@@ -1049,6 +1349,7 @@
                 ? 'Arrêter Expédition & Forme de vie'
                 : 'Lancer Expédition puis Forme de vie';
             refs.quick6.title = profile6Running ? 'Arrêter Import' : 'Lancer Import';
+            refs.quick7.title = profile7Running ? 'Arrêter Constructions' : 'Lancer Constructions';
 
             const debugText = formatDebugProgress(run);
             refs.debugProgress.textContent = debugText;
@@ -1078,8 +1379,10 @@
 
         return {
             open,
+            openConstructionRunner,
             refresh,
             showError,
+            showConstructionError: showConstructionRunnerError,
             isMounted: () => host.isConnected && document.documentElement.contains(host),
         };
     }
@@ -1111,6 +1414,11 @@
         }
         if (normalizedProfileId === 6) {
             await startImportAutomation();
+            return;
+        }
+        if (normalizedProfileId === 7) {
+            const ui = await ensureUi();
+            ui.openConstructionRunner();
             return;
         }
 
@@ -1624,6 +1932,268 @@
         return true;
     }
 
+    async function startConstructionAutomation(parameters) {
+        const config = getStoredConfig(7);
+        const selectedLinkIndex = Number(parameters?.selectedLinkIndex);
+        const selectedLink = config.namedLinks[selectedLinkIndex];
+        const amounts = [parameters?.r1, parameters?.r2, parameters?.r3]
+            .map((value) => parseConstructionAmount(value));
+
+        if (!selectedLink || amounts.some((value) => value === null)) {
+            const ui = await ensureUi();
+            ui.openConstructionRunner();
+            ui.refresh();
+            return;
+        }
+
+        const total = amounts.reduce((sum, value) => sum + value, 0);
+        if (!Number.isSafeInteger(total)) {
+            const ui = await ensureUi();
+            ui.openConstructionRunner();
+            ui.showConstructionError('Le total R1 + R2 + R3 est trop élevé.');
+            ui.refresh();
+            return;
+        }
+
+        const transporterCount = Math.ceil(total / 9000);
+        const now = Date.now();
+        const runId = createRunId();
+        const run = {
+            runId,
+            profileId: 7,
+            status: 'running',
+            combinedMode: false,
+            combinedKind: '',
+            nextProfileId: null,
+            phase: 'construction-before-open-link',
+            currentLinkIndex: selectedLinkIndex,
+            constructionR1: amounts[0],
+            constructionR2: amounts[1],
+            constructionR3: amounts[2],
+            constructionTotal: total,
+            constructionTransporterCount: transporterCount,
+            constructionPendingDelayMs: getRandomDelayMs(
+                CONSTRUCTION_DELAY_MIN_MS,
+                CONSTRUCTION_DELAY_MAX_MS
+            ),
+            constructionPendingDelayLabel: 'la validation des montants et de la destination',
+            startedAt: now,
+            updatedAt: now,
+            message:
+                `Constructions — actions 1 et 2/6 validées : ${selectedLink.name}, ` +
+                `${formatInteger(total)} ressources, ${formatInteger(transporterCount)} petites voitures…`,
+        };
+
+        GM_setValue(RUN_KEY, run);
+        await setThisTabRunId(runId);
+        refreshUi();
+        await resumeConstructionAutomation(runId);
+    }
+
+    async function resumeConstructionAutomation(runId) {
+        try {
+            let run = getActiveRun(runId);
+            if (!run || run.profileId !== 7) return;
+
+            const config = getStoredConfig(7);
+            const selectedLink = config.namedLinks[run.currentLinkIndex];
+            if (!selectedLink) {
+                throw new Error('La destination Constructions choisie n’existe plus.');
+            }
+
+            while (true) {
+                run = getActiveRun(runId);
+                if (!run) return;
+
+                if (Number(run.constructionPendingDelayMs) > 0) {
+                    const canContinue = await consumeConstructionDelay(runId);
+                    if (!canContinue) return;
+                    continue;
+                }
+
+                if (run.phase === 'construction-before-open-link') {
+                    updateRun(runId, {
+                        phase: 'construction-open-link',
+                        message:
+                            `Constructions — action 3/6 : ouverture de ${selectedLink.name}…`,
+                    });
+                    refreshUi();
+                    navigateToUrl(selectedLink.url, true);
+                    return;
+                }
+
+                if (run.phase === 'construction-open-link') {
+                    if (!isConfiguredPage(selectedLink.url, window.location.href)) {
+                        navigateToUrl(selectedLink.url, false);
+                        return;
+                    }
+
+                    const renderResult = await waitUntilPageUsable(PAGE_TIMEOUT_MS);
+                    if (renderResult.timedOut) {
+                        throw new Error('La page Constructions ne s’est pas chargée à temps.');
+                    }
+                    if (!getActiveRun(runId)) return;
+
+                    updateRun(runId, {
+                        phase: 'construction-fill-transporters',
+                        constructionPendingDelayMs: getRandomDelayMs(
+                            CONSTRUCTION_DELAY_MIN_MS,
+                            CONSTRUCTION_DELAY_MAX_MS
+                        ),
+                        constructionPendingDelayLabel: 'le chargement de la destination',
+                        message:
+                            `Constructions — action 3/6 terminée : ${selectedLink.name} est chargée.`,
+                    });
+                    refreshUi();
+                    continue;
+                }
+
+                if (run.phase === 'construction-fill-transporters') {
+                    updateRun(runId, {
+                        message:
+                            `Constructions — action 4/6 : saisir ` +
+                            `${formatInteger(run.constructionTransporterCount)} petites voitures…`,
+                    });
+                    refreshUi();
+                    const input = await waitForElement(CONSTRUCTION_TRANSPORTER_SELECTOR, {
+                        timeoutMs: ELEMENT_TIMEOUT_MS,
+                        clickable: false,
+                    });
+                    if (!getActiveRun(runId)) return;
+
+                    setFormControlValue(input, String(run.constructionTransporterCount));
+                    updateRun(runId, {
+                        phase: 'construction-fill-resources',
+                        constructionPendingDelayMs: getRandomDelayMs(
+                            CONSTRUCTION_DELAY_MIN_MS,
+                            CONSTRUCTION_DELAY_MAX_MS
+                        ),
+                        constructionPendingDelayLabel: 'la saisie du nombre de petites voitures',
+                        message:
+                            `Constructions — action 4/6 terminée : ` +
+                            `${formatInteger(run.constructionTransporterCount)} petites voitures saisies.`,
+                    });
+                    refreshUi();
+                    continue;
+                }
+
+                if (run.phase === 'construction-fill-resources') {
+                    const resourceEntries = [
+                        ['R1', CONSTRUCTION_RESOURCE_SELECTORS.r1, run.constructionR1],
+                        ['R2', CONSTRUCTION_RESOURCE_SELECTORS.r2, run.constructionR2],
+                        ['R3', CONSTRUCTION_RESOURCE_SELECTORS.r3, run.constructionR3],
+                    ];
+                    if (resourceEntries.some(([, selector]) => !selector)) {
+                        await pauseConstructionForMissingActions(
+                            runId,
+                            'Constructions prête jusqu’à l’action 4/6. Les sélecteurs X, Y et Z de l’action 5 restent à ajouter.'
+                        );
+                        return;
+                    }
+
+                    updateRun(runId, {
+                        message: 'Constructions — action 5/6 : saisir R1, R2 et R3…',
+                    });
+                    refreshUi();
+                    for (const [, selector, value] of resourceEntries) {
+                        const resourceInput = await waitForElement(selector, {
+                            timeoutMs: ELEMENT_TIMEOUT_MS,
+                            clickable: false,
+                        });
+                        if (!getActiveRun(runId)) return;
+                        setFormControlValue(resourceInput, String(value));
+                    }
+
+                    updateRun(runId, {
+                        phase: 'construction-send',
+                        constructionPendingDelayMs: getRandomDelayMs(
+                            CONSTRUCTION_DELAY_MIN_MS,
+                            CONSTRUCTION_DELAY_MAX_MS
+                        ),
+                        constructionPendingDelayLabel: 'la saisie de R1, R2 et R3',
+                        message: 'Constructions — action 5/6 terminée : R1, R2 et R3 saisis.',
+                    });
+                    refreshUi();
+                    continue;
+                }
+
+                if (run.phase === 'construction-send') {
+                    if (!CONSTRUCTION_SEND_SELECTOR) {
+                        await pauseConstructionForMissingActions(
+                            runId,
+                            'Constructions prête jusqu’à l’action 5/6. Le sélecteur du bouton Envoyer reste à ajouter.'
+                        );
+                        return;
+                    }
+
+                    updateRun(runId, {
+                        message: 'Constructions — action 6/6 : cliquer sur Envoyer…',
+                    });
+                    refreshUi();
+                    const sendButton = await waitForElement(CONSTRUCTION_SEND_SELECTOR, {
+                        timeoutMs: ELEMENT_TIMEOUT_MS,
+                        clickable: true,
+                    });
+                    const activeRun = getActiveRun(runId);
+                    if (!activeRun) return;
+
+                    GM_setValue(RUN_KEY, {
+                        ...activeRun,
+                        status: 'completed',
+                        phase: 'construction-completed',
+                        updatedAt: Date.now(),
+                        message: `Constructions terminée pour ${selectedLink.name}.`,
+                    });
+                    void clearThisTabRunId(runId);
+                    refreshUi();
+                    sendButton.click();
+                    return;
+                }
+
+                throw new Error(`Phase Constructions inconnue : ${run.phase}`);
+            }
+        } catch (error) {
+            await failRun(runId, error instanceof Error ? error.message : String(error), error);
+        }
+    }
+
+    async function pauseConstructionForMissingActions(runId, message) {
+        const run = getActiveRun(runId);
+        if (!run) return;
+        GM_setValue(RUN_KEY, {
+            ...run,
+            status: 'needs-actions',
+            updatedAt: Date.now(),
+            message,
+        });
+        await clearThisTabRunId(runId);
+        refreshUi();
+    }
+
+    async function consumeConstructionDelay(runId) {
+        const run = getActiveRun(runId);
+        if (!run) return false;
+
+        const delayMs = Math.max(0, Math.floor(Number(run.constructionPendingDelayMs) || 0));
+        if (delayMs === 0) return true;
+
+        const label = run.constructionPendingDelayLabel || 'l’action précédente';
+        updateRun(runId, {
+            message:
+                `Constructions — attente aléatoire ${(delayMs / 1000).toFixed(2)} s après ${label}…`,
+        });
+        refreshUi();
+        await delay(delayMs);
+        if (!getActiveRun(runId)) return false;
+
+        updateRun(runId, {
+            constructionPendingDelayMs: 0,
+            constructionPendingDelayLabel: '',
+        });
+        refreshUi();
+        return true;
+    }
+
     async function resumeAutomationForThisTab() {
         const run = getRunState();
         if (run.status !== 'running' || !run.runId) {
@@ -1646,6 +2216,10 @@
         }
         if (run.profileId === 6) {
             await resumeImportAutomation(run.runId);
+            return;
+        }
+        if (run.profileId === 7) {
+            await resumeConstructionAutomation(run.runId);
             return;
         }
         if (run.profileId === 2 && !config.startUrl) {
@@ -2202,7 +2776,7 @@
 
     function normalizeProfileId(profileId) {
         const value = Number(profileId);
-        if (value === 4 || value === 6) return value;
+        if (value === 4 || value === 6 || value === 7) return value;
         return value === 2 ? 2 : 1;
     }
 
@@ -2216,6 +2790,7 @@
         const normalizedProfileId = normalizeProfileId(profileId);
         if (normalizedProfileId === 4) return 'Forme de vie';
         if (normalizedProfileId === 6) return 'Import';
+        if (normalizedProfileId === 7) return 'Constructions';
         return normalizedProfileId === 2 ? 'Expéditions' : 'Ressources';
     }
 
@@ -2226,7 +2801,7 @@
 
     function getActionSteps(profileId) {
         const normalizedProfileId = normalizeProfileId(profileId);
-        if (normalizedProfileId === 4 || normalizedProfileId === 6) return [];
+        if (normalizedProfileId === 4 || normalizedProfileId === 6 || normalizedProfileId === 7) return [];
         return normalizedProfileId === 2 ? ACTION_STEPS_2 : ACTION_STEPS_1;
     }
 
@@ -2239,6 +2814,9 @@
         }
         if (profileId === 6) {
             return formatImportDebugProgress(run);
+        }
+        if (profileId === 7) {
+            return formatConstructionDebugProgress(run);
         }
         const config = getStoredConfig(profileId);
         const actionSteps = getActionSteps(profileId);
@@ -2336,6 +2914,38 @@
         return `Import\n${actionLabel}` + (message ? `\n${message}` : '');
     }
 
+    function formatConstructionDebugProgress(run) {
+        const config = getStoredConfig(7);
+        const destination = config.namedLinks[run.currentLinkIndex]?.name || 'destination inconnue';
+        let actionLabel;
+
+        if (run.status !== 'running') {
+            actionLabel = `État : ${run.status}`;
+        } else if (Number(run.constructionPendingDelayMs) > 0) {
+            actionLabel =
+                `Pause après ${run.constructionPendingDelayLabel || 'l’action précédente'} — ` +
+                `${(Number(run.constructionPendingDelayMs) / 1000).toFixed(2)} s`;
+        } else {
+            const labels = {
+                'construction-before-open-link': 'Actions 1–2/6 — paramètres et destination validés',
+                'construction-open-link': `Action 3/6 — charger ${destination}`,
+                'construction-fill-transporters': 'Action 4/6 — saisir les petites voitures',
+                'construction-fill-resources': 'Action 5/6 — saisir R1, R2 et R3',
+                'construction-send': 'Action 6/6 — cliquer sur Envoyer',
+                'construction-completed': 'Constructions terminée',
+            };
+            actionLabel = labels[run.phase] || `Phase inconnue : ${run.phase}`;
+        }
+
+        const message = typeof run.message === 'string' ? run.message : '';
+        return (
+            `Constructions — ${destination}\n${actionLabel}\n` +
+            `R1 ${formatInteger(run.constructionR1)} · R2 ${formatInteger(run.constructionR2)} · ` +
+            `R3 ${formatInteger(run.constructionR3)}` +
+            (message ? `\n${message}` : '')
+        );
+    }
+
     function getProfileLinkLimit(profileId) {
         return MAX_LINKS_BY_PROFILE[normalizeProfileId(profileId)];
     }
@@ -2344,11 +2954,16 @@
         const normalizedProfileId = normalizeProfileId(profileId);
         const stored = GM_getValue(CONFIG_KEYS[normalizedProfileId], null);
         if (!stored || typeof stored !== 'object') {
-            return { links: [], repeat: false, startUrl: '', smallVehicleCount: 6400 };
+            return { links: [], namedLinks: [], repeat: false, startUrl: '', smallVehicleCount: 6400 };
         }
 
         const maximum = getProfileLinkLimit(normalizedProfileId);
-        const links = Array.isArray(stored.links)
+        const namedLinks = normalizedProfileId === 7
+            ? normalizeStoredNamedLinks(stored.namedLinks)
+            : [];
+        const links = normalizedProfileId === 7
+            ? namedLinks.map((entry) => entry.url)
+            : Array.isArray(stored.links)
             ? stored.links.filter((value) => typeof value === 'string').slice(0, maximum)
             : [];
         const startUrl = normalizedProfileId === 2 ? validateHttpUrl(stored.startUrl) || '' : '';
@@ -2357,11 +2972,23 @@
             normalizedProfileId === 2 && parsedSmallVehicleCount !== null
                 ? parsedSmallVehicleCount
                 : 6400;
-        return { links, repeat: Boolean(stored.repeat), startUrl, smallVehicleCount };
+        return { links, namedLinks, repeat: Boolean(stored.repeat), startUrl, smallVehicleCount };
     }
 
     function saveConfig(profileId, config) {
         const normalizedProfileId = normalizeProfileId(profileId);
+        if (normalizedProfileId === 7) {
+            const namedLinks = normalizeStoredNamedLinks(config.namedLinks);
+            GM_setValue(CONFIG_KEYS[normalizedProfileId], {
+                namedLinks,
+                links: namedLinks.map((entry) => entry.url),
+                repeat: false,
+                startUrl: '',
+                smallVehicleCount: 6400,
+            });
+            return;
+        }
+
         GM_setValue(CONFIG_KEYS[normalizedProfileId], {
             links: config.links.slice(0, getProfileLinkLimit(normalizedProfileId)),
             repeat: Boolean(config.repeat),
@@ -2416,6 +3043,75 @@
         }
 
         return { links, error: '' };
+    }
+
+    function parseNamedLinks(rows) {
+        const namedLinks = [];
+        const usedNames = new Set();
+        const sourceRows = Array.isArray(rows) ? rows.slice(0, getProfileLinkLimit(7)) : [];
+
+        for (let index = 0; index < sourceRows.length; index += 1) {
+            const name = typeof sourceRows[index]?.name === 'string'
+                ? sourceRows[index].name.trim()
+                : '';
+            const rawUrl = typeof sourceRows[index]?.url === 'string'
+                ? sourceRows[index].url.trim()
+                : '';
+            if (!name && !rawUrl) continue;
+            if (!name) {
+                return { namedLinks: [], error: `Ajoutez un nom à la destination de la ligne ${index + 1}.` };
+            }
+            if (!rawUrl) {
+                return { namedLinks: [], error: `Ajoutez une URL à la destination « ${name} ».` };
+            }
+
+            const url = validateHttpUrl(rawUrl);
+            if (!url) {
+                return {
+                    namedLinks: [],
+                    error: `L’URL de « ${name} » doit commencer par http:// ou https://.`,
+                };
+            }
+
+            const normalizedName = name.toLocaleLowerCase('fr-FR');
+            if (usedNames.has(normalizedName)) {
+                return { namedLinks: [], error: `Le nom « ${name} » est utilisé plusieurs fois.` };
+            }
+            usedNames.add(normalizedName);
+            namedLinks.push({ name, url });
+        }
+
+        if (namedLinks.length === 0) {
+            return { namedLinks: [], error: 'Ajoutez au moins une destination avec son nom et son URL.' };
+        }
+        return { namedLinks, error: '' };
+    }
+
+    function normalizeStoredNamedLinks(rows) {
+        if (!Array.isArray(rows)) return [];
+        const normalized = [];
+        const usedNames = new Set();
+        for (const row of rows.slice(0, getProfileLinkLimit(7))) {
+            const name = typeof row?.name === 'string' ? row.name.trim() : '';
+            const url = validateHttpUrl(row?.url);
+            const normalizedName = name.toLocaleLowerCase('fr-FR');
+            if (!name || !url || usedNames.has(normalizedName)) continue;
+            usedNames.add(normalizedName);
+            normalized.push({ name, url });
+        }
+        return normalized;
+    }
+
+    function parseConstructionAmount(value) {
+        if (value === '' || value === null || value === undefined) return null;
+        const parsed = Number(value);
+        if (!Number.isSafeInteger(parsed) || parsed < 0) return null;
+        return parsed;
+    }
+
+    function formatInteger(value) {
+        const parsed = Number(value);
+        return Number.isFinite(parsed) ? Math.trunc(parsed).toLocaleString('fr-FR') : '0';
     }
 
     function parseSmallVehicleCount(value) {
