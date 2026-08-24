@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Projet secret — boucle multi-liens
 // @namespace    local.projet-secret
-// @version      6.3.0
+// @version      6.3.1
 // @updateURL    https://raw.githubusercontent.com/raphaelrobert1104-sys/mysecretproject/main/outputs/projet-secret.user.js
 // @downloadURL  https://raw.githubusercontent.com/raphaelrobert1104-sys/mysecretproject/main/outputs/projet-secret.user.js
 // @description  Automatise Ressources, Expéditions, Forme de vie, Import et Constructions avec configurations privées.
@@ -30,6 +30,7 @@
     };
     const RUN_KEY = 'secretMultiLinkRun';
     const TAB_RUN_ID_KEY = 'secretMultiLinkRunId';
+    const DEBUG_DISMISSED_RUN_KEY = 'secretMultiLinkDebugDismissedRunId';
     const MAX_LINKS_BY_PROFILE = {
         1: 15,
         2: 10,
@@ -669,22 +670,88 @@
                     right: 0;
                     top: 62px;
                     width: min(390px, calc(100vw - 20px));
-                    padding: 10px 12px;
+                    grid-template-columns: 8px minmax(0, 1fr) 28px;
+                    align-items: start;
+                    gap: 10px;
+                    padding: 11px 10px 11px 12px;
                     border: 1px solid rgba(147, 197, 253, .9);
-                    border-radius: 9px;
+                    border-radius: 14px;
                     background: linear-gradient(135deg, rgba(15, 23, 42, .62), rgba(15, 23, 42, .48));
                     color: #f0f9ff;
                     box-shadow: 0 8px 24px rgba(0, 0, 0, .18);
                     font: 750 12px/1.45 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
                     text-shadow: 0 1px 3px rgba(0, 0, 0, .95);
+                    pointer-events: auto;
+                    backdrop-filter: blur(12px) saturate(135%);
+                    -webkit-backdrop-filter: blur(12px) saturate(135%);
+                    transition: border-color .2s ease, background .2s ease, box-shadow .2s ease;
+                }
+                .debug-progress::before {
+                    content: '';
+                    width: 8px;
+                    height: 8px;
+                    margin-top: 5px;
+                    border-radius: 999px;
+                    background: #93c5fd;
+                    box-shadow: 0 0 0 4px rgba(147, 197, 253, .14);
+                }
+                .debug-progress-content {
+                    min-width: 0;
                     white-space: pre-line;
                     overflow-wrap: anywhere;
-                    pointer-events: none;
+                }
+                .debug-progress-close {
+                    display: grid;
+                    place-items: center;
+                    width: 28px;
+                    height: 28px;
+                    margin: -4px -3px 0 0;
+                    padding: 0;
+                    border: 1px solid rgba(255, 255, 255, .14);
+                    border-radius: 9px;
+                    background: rgba(15, 23, 42, .28);
+                    color: currentColor;
+                    font: 700 18px/1 system-ui, sans-serif;
+                    text-shadow: none;
+                    cursor: pointer;
+                    opacity: .78;
+                    transition: opacity .16s ease, background .16s ease, transform .16s ease;
+                }
+                .debug-progress-close:hover {
+                    background: rgba(255, 255, 255, .14);
+                    opacity: 1;
+                    transform: scale(1.05);
+                }
+                .debug-progress-close:active { transform: scale(.94); }
+                .debug-progress.running {
+                    border-color: rgba(251, 146, 60, .92);
+                    background: linear-gradient(135deg, rgba(124, 45, 18, .66), rgba(67, 31, 14, .56));
+                    color: #fff7ed;
+                    box-shadow: 0 10px 30px rgba(124, 45, 18, .24);
+                }
+                .debug-progress.running::before {
+                    background: #fb923c;
+                    box-shadow: 0 0 0 4px rgba(251, 146, 60, .18), 0 0 14px rgba(251, 146, 60, .7);
+                }
+                .debug-progress.completed {
+                    border-color: rgba(74, 222, 128, .92);
+                    background: linear-gradient(135deg, rgba(20, 83, 45, .68), rgba(10, 52, 31, .58));
+                    color: #ecfdf5;
+                    box-shadow: 0 10px 30px rgba(20, 83, 45, .24);
+                }
+                .debug-progress.completed::before {
+                    background: #4ade80;
+                    box-shadow: 0 0 0 4px rgba(74, 222, 128, .17), 0 0 14px rgba(74, 222, 128, .55);
                 }
                 .debug-progress.error {
                     border-color: #f87171;
-                    background: rgba(127, 29, 29, .64);
+                    background: linear-gradient(135deg, rgba(127, 29, 29, .7), rgba(69, 10, 10, .62));
                     color: #fff;
+                    box-shadow: 0 10px 30px rgba(127, 29, 29, .25);
+                }
+                .debug-progress.error::before {
+                    background: #f87171;
+                    box-shadow: 0 0 0 4px rgba(248, 113, 113, .17), 0 0 14px rgba(248, 113, 113, .55);
                 }
                 .construction-runner {
                     display: none;
@@ -803,7 +870,10 @@
                 }
             </style>
             <div class="dock">
-                <div class="debug-progress" role="status" aria-live="polite"></div>
+                <div class="debug-progress">
+                    <div class="debug-progress-content" role="status" aria-live="polite"></div>
+                    <button type="button" class="debug-progress-close" title="Fermer le résumé" aria-label="Fermer le résumé des actions">×</button>
+                </div>
                 <div class="toolbar">
                     <div class="menu-group simple-menu-group">
                         <button type="button" class="menu-toggle simple-menu-toggle" aria-expanded="false">Actions simples</button>
@@ -959,6 +1029,8 @@
             simpleMenu: shadow.querySelector('.simple-menu'),
             groupedMenu: shadow.querySelector('.grouped-menu'),
             debugProgress: shadow.querySelector('.debug-progress'),
+            debugProgressContent: shadow.querySelector('.debug-progress-content'),
+            debugProgressClose: shadow.querySelector('.debug-progress-close'),
             settings1: shadow.querySelector('.settings-1'),
             settings2: shadow.querySelector('.settings-2'),
             settings3: shadow.querySelector('.settings-3'),
@@ -1037,6 +1109,13 @@
         refs.constructionRunnerClose.addEventListener('click', closeConstructionRunner);
         refs.constructionRunnerCancel.addEventListener('click', closeConstructionRunner);
         refs.constructionRunnerStart.addEventListener('click', launchConstructionFromRunner);
+        refs.debugProgressClose.addEventListener('click', () => {
+            const run = getRunState();
+            if (run.runId) {
+                GM_setValue(DEBUG_DISMISSED_RUN_KEY, run.runId);
+            }
+            refs.debugProgress.style.display = 'none';
+        });
         [refs.constructionR1, refs.constructionR2, refs.constructionR3].forEach((input) => {
             input.addEventListener('input', updateConstructionCalculation);
         });
@@ -1442,8 +1521,12 @@
             refs.quick7.title = profile7Running ? 'Arrêter Constructions' : 'Lancer Constructions';
 
             const debugText = formatDebugProgress(run);
-            refs.debugProgress.textContent = debugText;
-            refs.debugProgress.style.display = debugText ? 'block' : 'none';
+            const debugWasDismissed =
+                Boolean(run.runId) && GM_getValue(DEBUG_DISMISSED_RUN_KEY, '') === run.runId;
+            refs.debugProgressContent.textContent = debugText;
+            refs.debugProgress.style.display = debugText && !debugWasDismissed ? 'grid' : 'none';
+            refs.debugProgress.classList.toggle('running', run.status === 'running');
+            refs.debugProgress.classList.toggle('completed', run.status === 'completed');
             refs.debugProgress.classList.toggle(
                 'error',
                 run.status === 'error' || run.status === 'needs-actions'
