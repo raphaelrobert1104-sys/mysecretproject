@@ -1,10 +1,10 @@
 // ==UserScript==
 // @name         Projet secret — boucle multi-liens
 // @namespace    local.projet-secret
-// @version      6.5.1
+// @version      6.6.0
 // @updateURL    https://raw.githubusercontent.com/raphaelrobert1104-sys/mysecretproject/main/outputs/projet-secret.user.js
 // @downloadURL  https://raw.githubusercontent.com/raphaelrobert1104-sys/mysecretproject/main/outputs/projet-secret.user.js
-// @description  Automatise Ressources, Expéditions, Forme de vie, Import, Constructions et Ghost avec configurations privées.
+// @description  Automatise Ressources, Expéditions V1/V2, Forme de vie, Import, Constructions et Ghost avec configurations privées.
 // @author       Vous
 // @match        http://*/*
 // @match        https://*/*
@@ -27,6 +27,7 @@
         4: 'secretLifeformConfig',
         6: 'secretImportConfig',
         7: 'secretConstructionConfig',
+        9: 'secretExpeditionV2Config',
     };
     const RUN_KEY = 'secretMultiLinkRun';
     const TAB_RUN_ID_KEY = 'secretMultiLinkRunId';
@@ -38,6 +39,7 @@
         4: 14,
         6: 1,
         7: 13,
+        9: 1,
     };
     const PAGE_TIMEOUT_MS = 45000;
     const ELEMENT_TIMEOUT_MS = 7000;
@@ -52,6 +54,8 @@
     const IMPORT_DELAY_MAX_MS = POST_ACTION_DELAY_MAX_MS;
     const CONSTRUCTION_DELAY_MIN_MS = POST_ACTION_DELAY_MIN_MS;
     const CONSTRUCTION_DELAY_MAX_MS = POST_ACTION_DELAY_MAX_MS;
+    const EXPEDITION_V2_DELAY_MIN_MS = POST_ACTION_DELAY_MIN_MS;
+    const EXPEDITION_V2_DELAY_MAX_MS = POST_ACTION_DELAY_MAX_MS;
     const EXPEDITION_SLOTS_SELECTOR = '#slots > div:nth-child(2) > span';
     const LIFEFORM_DISCOVER_SELECTOR = '#discoverSystemBtn';
     const LIFEFORM_SLOT_USED_SELECTOR = '#slots #slotUsed';
@@ -60,6 +64,10 @@
         next: '#galaxyHeader > form > span.galaxy_icons.next.ipiHintable',
         prev: '#galaxyHeader > form > span.galaxy_icons.prev.ipiHintable',
     };
+    const EXPEDITION_V2_EXPE_SELECTOR = '#dropdown579 > li:nth-child(2) > a';
+    const EXPEDITION_V2_BUTTON_SELECTOR = '#expeditionbutton';
+    const EXPEDITION_V2_STOP_TEXT = 'trop d`expéditions simultanées';
+    const EXPEDITION_V2_MAX_LAUNCHES = 100;
     const IMPORT_MAX_SELECTOR =
         '#div_importexport > div.content > div.right_box > div.right_content > div.payment > div > table > tbody > tr:nth-child(5) > td:nth-child(5) > a';
     const IMPORT_PAY_SELECTOR =
@@ -213,6 +221,18 @@
     });
     registerMenuCommandSafely('Démarrer Constructions', () => {
         void startFromStoredConfiguration(7);
+    });
+    registerMenuCommandSafely('Configurer Expédition V2', () => {
+        void openControlPanel(9);
+    });
+    registerMenuCommandSafely('Démarrer Expédition V2', () => {
+        void startFromStoredConfiguration(9);
+    });
+    registerMenuCommandSafely('Configurer Expédition V2 & Forme de vie', () => {
+        void openControlPanel(10);
+    });
+    registerMenuCommandSafely('Démarrer Expédition V2 & Forme de vie', () => {
+        void startExpeditionV2LifeformAutomation();
     });
     registerMenuCommandSafely('Arrêter la boucle', () => {
         void stopAutomation('Arrêt demandé depuis le menu Tampermonkey.');
@@ -1078,7 +1098,8 @@
                                 <button type="button" class="settings settings-2" title="Configurer Expéditions" aria-label="Configurer Expéditions">⚙</button>
                             </div>
                             <div class="control-group expeditions-v2">
-                                <button type="button" class="quick quick-9 pending" title="Actions Expédition V2 à définir" disabled>Expédition V2</button>
+                                <button type="button" class="quick quick-9" title="Lancer Expédition V2">Expédition V2</button>
+                                <button type="button" class="settings settings-9" title="Configurer Expédition V2" aria-label="Configurer Expédition V2">⚙</button>
                             </div>
                             <div class="control-group lifeform">
                                 <button type="button" class="quick quick-4" title="Lancer Forme de vie">Forme de vie</button>
@@ -1109,7 +1130,8 @@
                                 <button type="button" class="settings settings-5" title="Configurer Expédition et Forme de vie" aria-label="Configurer Expédition et Forme de vie">⚙</button>
                             </div>
                             <div class="control-group expeditions-v2-lifeform">
-                                <button type="button" class="quick quick-10 pending" title="Actions Expédition V2 et Forme de vie à définir" disabled>Expédition V2 &amp; Forme de vie</button>
+                                <button type="button" class="quick quick-10" title="Lancer Expédition V2 puis Forme de vie">Expédition V2 &amp; Forme de vie</button>
+                                <button type="button" class="settings settings-10" title="Configurer Expédition V2 et Forme de vie" aria-label="Configurer Expédition V2 et Forme de vie">⚙</button>
                             </div>
                         </div>
                     </div>
@@ -1232,6 +1254,8 @@
             quick6: shadow.querySelector('.quick-6'),
             quick7: shadow.querySelector('.quick-7'),
             quick8: shadow.querySelector('.quick-8'),
+            quick9: shadow.querySelector('.quick-9'),
+            quick10: shadow.querySelector('.quick-10'),
             simpleMenuToggle: shadow.querySelector('.simple-menu-toggle'),
             groupedMenuToggle: shadow.querySelector('.grouped-menu-toggle'),
             simpleMenu: shadow.querySelector('.simple-menu'),
@@ -1246,6 +1270,8 @@
             settings5: shadow.querySelector('.settings-5'),
             settings6: shadow.querySelector('.settings-6'),
             settings7: shadow.querySelector('.settings-7'),
+            settings9: shadow.querySelector('.settings-9'),
+            settings10: shadow.querySelector('.settings-10'),
             panel: shadow.querySelector('.panel'),
             panelTitle: shadow.querySelector('.panel-title'),
             help: shadow.querySelector('.help'),
@@ -1302,6 +1328,8 @@
         refs.settings5.addEventListener('click', () => togglePanel(5));
         refs.settings6.addEventListener('click', () => togglePanel(6));
         refs.settings7.addEventListener('click', () => togglePanel(7));
+        refs.settings9.addEventListener('click', () => togglePanel(9));
+        refs.settings10.addEventListener('click', () => togglePanel(10));
         refs.combinedResources.addEventListener('click', () => open(combinedTargetProfiles[0]));
         refs.combinedExpeditions.addEventListener('click', () => open(combinedTargetProfiles[1]));
         refs.close.addEventListener('click', () => closePanel());
@@ -1321,6 +1349,8 @@
         refs.quick6.addEventListener('click', () => quickAction(6));
         refs.quick7.addEventListener('click', () => quickAction(7));
         refs.quick8.addEventListener('click', openGhostRunner);
+        refs.quick9.addEventListener('click', () => quickAction(9));
+        refs.quick10.addEventListener('click', () => quickExpeditionV2LifeformAction());
         refs.constructionRunnerClose.addEventListener('click', closeConstructionRunner);
         refs.constructionRunnerCancel.addEventListener('click', closeConstructionRunner);
         refs.constructionRunnerStart.addEventListener('click', launchConstructionFromRunner);
@@ -1377,6 +1407,15 @@
                 void stopAutomation('Arrêt d’Expédition & Forme de vie demandé avec le bouton flottant.');
             } else {
                 void startExpeditionsLifeformAutomation();
+            }
+        }
+
+        function quickExpeditionV2LifeformAction() {
+            const run = getRunState();
+            if (run.status === 'running' && run.combinedKind === 'expedition-v2-lifeform') {
+                void stopAutomation('Arrêt d’Expédition V2 & Forme de vie demandé avec le bouton flottant.');
+            } else {
+                void startExpeditionV2LifeformAutomation();
             }
         }
 
@@ -1681,18 +1720,32 @@
         function loadProfileIntoPanel(profileId) {
             editingProfileId = normalizeEditorProfileId(profileId);
 
-            if (editingProfileId === 3 || editingProfileId === 5) {
-                const expeditionsConfig = getStoredConfig(2);
-                const isResourcesExpeditions = editingProfileId === 3;
-                const firstConfig = getStoredConfig(isResourcesExpeditions ? 1 : 2);
-                const secondConfig = getStoredConfig(isResourcesExpeditions ? 2 : 4);
-                combinedTargetProfiles = isResourcesExpeditions ? [1, 2] : [2, 4];
-                refs.panelTitle.textContent = isResourcesExpeditions
-                    ? 'Configuration — Ressources & Expéditions'
-                    : 'Configuration — Expédition & Forme de vie';
-                refs.help.textContent = isResourcesExpeditions
-                    ? 'Le mode combiné exécute Ressources une fois, puis démarre automatiquement Expéditions avec leurs réglages respectifs.'
-                    : 'Le mode combiné exécute Expéditions, puis démarre automatiquement Forme de vie avec leurs réglages respectifs.';
+            if ([3, 5, 10].includes(editingProfileId)) {
+                const combinedDetails = editingProfileId === 3
+                    ? {
+                        targets: [1, 2],
+                        title: 'Configuration — Ressources & Expéditions',
+                        help: 'Le mode combiné exécute Ressources une fois, puis démarre automatiquement Expéditions avec leurs réglages respectifs.',
+                        startLabel: 'Lancer Ressources & Expéditions',
+                    }
+                    : editingProfileId === 5
+                      ? {
+                          targets: [2, 4],
+                          title: 'Configuration — Expédition & Forme de vie',
+                          help: 'Le mode combiné exécute Expéditions, puis démarre automatiquement Forme de vie avec leurs réglages respectifs.',
+                          startLabel: 'Lancer Expédition & Forme de vie',
+                      }
+                      : {
+                          targets: [9, 4],
+                          title: 'Configuration — Expédition V2 & Forme de vie',
+                          help: 'Le mode combiné exécute Expédition V2 jusqu’au message d’arrêt, puis démarre automatiquement Forme de vie.',
+                          startLabel: 'Lancer Expédition V2 & Forme de vie',
+                      };
+                combinedTargetProfiles = combinedDetails.targets;
+                const firstConfig = getStoredConfig(combinedTargetProfiles[0]);
+                const secondConfig = getStoredConfig(combinedTargetProfiles[1]);
+                refs.panelTitle.textContent = combinedDetails.title;
+                refs.help.textContent = combinedDetails.help;
                 refs.startUrlGroup.style.display = 'none';
                 refs.smallVehicleGroup.style.display = 'none';
                 refs.linksFieldGroup.style.display = 'none';
@@ -1704,15 +1757,10 @@
                     `Configurer ${getProfileLabel(combinedTargetProfiles[0])}`;
                 refs.combinedExpeditions.textContent =
                     `Configurer ${getProfileLabel(combinedTargetProfiles[1])}`;
-                refs.start.textContent = isResourcesExpeditions
-                    ? 'Lancer Ressources & Expéditions'
-                    : 'Lancer Expédition & Forme de vie';
+                refs.start.textContent = combinedDetails.startLabel;
                 refs.status.textContent =
                     `${getProfileLabel(combinedTargetProfiles[0])} : ${firstConfig.links.length} lien(s) · ` +
-                    `${getProfileLabel(combinedTargetProfiles[1])} : ${secondConfig.links.length} lien(s)` +
-                    (isResourcesExpeditions
-                        ? `, ${expeditionsConfig.smallVehicleCount} petites voitures.`
-                        : '.');
+                    `${getProfileLabel(combinedTargetProfiles[1])} : ${secondConfig.links.length} lien(s).`;
                 showError('');
                 return;
             }
@@ -1735,6 +1783,8 @@
                         ? 'Une URL unique. Import clique sur le maximum, sur Payer, puis récupère l’objet.'
                         : editingProfileId === 7
                           ? 'Jusqu’à 13 destinations. Chaque URL possède un nom affiché dans la fenêtre de lancement.'
+                          : editingProfileId === 9
+                            ? 'Une URL unique. Expédition V2 choisit une direction et 0 à 6 déplacements, sélectionne EXPE, puis lance les expéditions jusqu’au message d’arrêt.'
                     : 'Un lien par ligne. Les adresses sont conservées dans le stockage privé de Tampermonkey, jamais dans le code du script.';
             refs.startUrlGroup.style.display = editingProfileId === 2 ? 'block' : 'none';
             refs.startUrl.value = editingProfileId === 2 ? config.startUrl : '';
@@ -1744,10 +1794,11 @@
             refs.linksFieldGroup.style.display = editingProfileId === 7 ? 'none' : 'block';
             refs.namedLinksFieldGroup.style.display = editingProfileId === 7 ? 'block' : 'none';
             refs.combinedConfig.style.display = 'none';
-            refs.linksLabel.textContent = editingProfileId === 6 ? 'URL à ouvrir' : 'Liens à traiter';
+            const usesSingleUrl = editingProfileId === 6 || editingProfileId === 9;
+            refs.linksLabel.textContent = usesSingleUrl ? 'URL à ouvrir' : 'Liens à traiter';
             refs.textarea.value = links.join('\n');
-            refs.textarea.placeholder = editingProfileId === 6 ? 'https://…' : 'Lien 1\nLien 2\n…';
-            refs.textarea.style.minHeight = editingProfileId === 6 ? '58px' : '';
+            refs.textarea.placeholder = usesSingleUrl ? 'https://…' : 'Lien 1\nLien 2\n…';
+            refs.textarea.style.minHeight = usesSingleUrl ? '58px' : '';
             refs.namedLinkNames.forEach((input, index) => {
                 input.value = editingProfileId === 7 ? config.namedLinks[index]?.name || '' : '';
             });
@@ -1763,7 +1814,7 @@
         }
 
         function updateCounter() {
-            if (editingProfileId === 3 || editingProfileId === 5) return;
+            if ([3, 5, 10].includes(editingProfileId)) return;
             if (editingProfileId === 7) {
                 const count = refs.namedLinkNames.reduce((total, input, index) => {
                     return total + (input.value.trim() || refs.namedLinkUrls[index].value.trim() ? 1 : 0);
@@ -1785,13 +1836,15 @@
         }
 
         function saveFromPanel(shouldStart) {
-            if (editingProfileId === 3 || editingProfileId === 5) {
+            if ([3, 5, 10].includes(editingProfileId)) {
                 showError('');
                 if (shouldStart) {
                     if (editingProfileId === 3) {
                         void startCombinedAutomation();
-                    } else {
+                    } else if (editingProfileId === 5) {
                         void startExpeditionsLifeformAutomation();
+                    } else {
+                        void startExpeditionV2LifeformAutomation();
                     }
                 }
                 return;
@@ -1855,6 +1908,8 @@
                     void startLifeformAutomation();
                 } else if (editingProfileId === 6) {
                     void startImportAutomation();
+                } else if (editingProfileId === 9) {
+                    void startExpeditionV2Automation();
                 } else {
                     void startAutomation(editingProfileId, parsed.links);
                 }
@@ -1863,12 +1918,14 @@
 
         function refresh() {
             const run = getRunState();
-            const isCombinedPanel = editingProfileId === 3 || editingProfileId === 5;
+            const isCombinedPanel = [3, 5, 10].includes(editingProfileId);
             const config = isCombinedPanel ? null : getStoredConfig(editingProfileId);
             const resourcesExpeditionsRunning =
                 run.status === 'running' && run.combinedKind === 'resources-expeditions';
             const expeditionsLifeformRunning =
                 run.status === 'running' && run.combinedKind === 'expeditions-lifeform';
+            const expeditionV2LifeformRunning =
+                run.status === 'running' && run.combinedKind === 'expedition-v2-lifeform';
             const profile1Running =
                 run.status === 'running' && run.profileId === 1 && !run.combinedMode;
             const profile2Running =
@@ -1879,10 +1936,13 @@
                 run.status === 'running' && run.profileId === 6 && !run.combinedMode;
             const profile7Running =
                 run.status === 'running' && run.profileId === 7 && !run.combinedMode;
+            const profile9Running =
+                run.status === 'running' && run.profileId === 9 && !run.combinedMode;
             const simpleActionRunning =
-                profile1Running || profile2Running || profile4Running || profile6Running || profile7Running;
+                profile1Running || profile2Running || profile4Running || profile6Running ||
+                profile7Running || profile9Running;
             const groupedActionRunning =
-                resourcesExpeditionsRunning || expeditionsLifeformRunning;
+                resourcesExpeditionsRunning || expeditionsLifeformRunning || expeditionV2LifeformRunning;
 
             refs.quick1.classList.toggle('running', profile1Running);
             refs.quick2.classList.toggle('running', profile2Running);
@@ -1891,6 +1951,8 @@
             refs.quick5.classList.toggle('running', expeditionsLifeformRunning);
             refs.quick6.classList.toggle('running', profile6Running);
             refs.quick7.classList.toggle('running', profile7Running);
+            refs.quick9.classList.toggle('running', profile9Running);
+            refs.quick10.classList.toggle('running', expeditionV2LifeformRunning);
             refs.simpleMenuToggle.classList.toggle('running', simpleActionRunning);
             refs.groupedMenuToggle.classList.toggle('running', groupedActionRunning);
             refs.quick1.textContent = profile1Running ? '■ Arrêter' : 'Ressources';
@@ -1902,6 +1964,10 @@
                 : 'Expédition & Forme de vie';
             refs.quick6.textContent = profile6Running ? '■ Arrêter' : 'Import';
             refs.quick7.textContent = profile7Running ? '■ Arrêter' : 'Constructions';
+            refs.quick9.textContent = profile9Running ? '■ Arrêter' : 'Expédition V2';
+            refs.quick10.textContent = expeditionV2LifeformRunning
+                ? '■ Arrêter le combiné'
+                : 'Expédition V2 & Forme de vie';
             refs.quick1.title = profile1Running ? 'Arrêter Ressources' : 'Lancer Ressources';
             refs.quick2.title = profile2Running ? 'Arrêter Expéditions' : 'Lancer Expéditions';
             refs.quick3.title = resourcesExpeditionsRunning
@@ -1913,6 +1979,10 @@
                 : 'Lancer Expédition puis Forme de vie';
             refs.quick6.title = profile6Running ? 'Arrêter Import' : 'Lancer Import';
             refs.quick7.title = profile7Running ? 'Arrêter Constructions' : 'Lancer Constructions';
+            refs.quick9.title = profile9Running ? 'Arrêter Expédition V2' : 'Lancer Expédition V2';
+            refs.quick10.title = expeditionV2LifeformRunning
+                ? 'Arrêter Expédition V2 & Forme de vie'
+                : 'Lancer Expédition V2 puis Forme de vie';
 
             const debugText = formatDebugProgress(run);
             const debugWasDismissed =
@@ -1929,7 +1999,11 @@
             if (run.message) {
                 refs.status.textContent = run.message;
             } else if (isCombinedPanel) {
-                const targets = editingProfileId === 3 ? [1, 2] : [2, 4];
+                const targets = editingProfileId === 3
+                    ? [1, 2]
+                    : editingProfileId === 5
+                      ? [2, 4]
+                      : [9, 4];
                 const firstConfig = getStoredConfig(targets[0]);
                 const secondConfig = getStoredConfig(targets[1]);
                 refs.status.textContent =
@@ -1986,6 +2060,10 @@
         if (normalizedProfileId === 7) {
             const ui = await ensureUi();
             ui.openConstructionRunner();
+            return;
+        }
+        if (normalizedProfileId === 9) {
+            await startExpeditionV2Automation();
             return;
         }
 
@@ -2048,6 +2126,33 @@
         await startAutomation(2, expeditionsConfig.links, {
             combinedMode: true,
             combinedKind: 'expeditions-lifeform',
+            nextProfileId: 4,
+        });
+    }
+
+    async function startExpeditionV2LifeformAutomation() {
+        const expeditionV2Config = getStoredConfig(9);
+        const lifeformConfig = getStoredConfig(4);
+        const errors = [];
+
+        if (expeditionV2Config.links.length !== 1) {
+            errors.push('Ajoutez l’URL unique dans Expédition V2.');
+        }
+        if (lifeformConfig.links.length === 0) {
+            errors.push('Ajoutez au moins une URL dans Forme de vie.');
+        }
+
+        if (errors.length > 0) {
+            const ui = await ensureUi();
+            ui.open(10);
+            ui.showError(errors.join(' '));
+            ui.refresh();
+            return;
+        }
+
+        await startExpeditionV2Automation({
+            combinedMode: true,
+            combinedKind: 'expedition-v2-lifeform',
             nextProfileId: 4,
         });
     }
@@ -2499,6 +2604,296 @@
         return true;
     }
 
+    async function startExpeditionV2Automation(options = {}) {
+        const config = getStoredConfig(9);
+        if (config.links.length !== 1) {
+            const ui = await ensureUi();
+            ui.open(9);
+            ui.showError('Configurez l’URL unique d’Expédition V2 avant de lancer.');
+            ui.refresh();
+            return;
+        }
+
+        const directionKeys = Object.keys(LIFEFORM_DIRECTIONS);
+        const direction = directionKeys[getSecureRandomIndex(directionKeys.length)];
+        const directionTarget = getSecureRandomIndex(7);
+        const now = Date.now();
+        const runId = createRunId();
+        const run = {
+            runId,
+            profileId: 9,
+            status: 'running',
+            combinedMode: Boolean(options.combinedMode),
+            combinedKind: typeof options.combinedKind === 'string' ? options.combinedKind : '',
+            nextProfileId: Number(options.nextProfileId) === 4 ? 4 : null,
+            phase: 'expedition-v2-open-link',
+            currentLinkIndex: 0,
+            expeditionV2Direction: direction,
+            expeditionV2DirectionTarget: directionTarget,
+            expeditionV2DirectionClicks: 0,
+            expeditionV2LaunchCount: 0,
+            expeditionV2PendingDelayMs: 0,
+            expeditionV2PendingDelayLabel: '',
+            startedAt: now,
+            updatedAt: now,
+            message:
+                `Expédition V2 — ouverture de l’URL. Direction ` +
+                `${direction === 'next' ? 'suivante' : 'précédente'}, ${directionTarget} clic(s) prévu(s).`,
+        };
+
+        GM_setValue(RUN_KEY, run);
+        await setThisTabRunId(runId);
+        refreshUi();
+        navigateToUrl(config.links[0], true);
+    }
+
+    async function resumeExpeditionV2Automation(runId) {
+        try {
+            let run = getActiveRun(runId);
+            if (!run || run.profileId !== 9) return;
+
+            const config = getStoredConfig(9);
+            const configuredUrl = config.links[0];
+            if (!configuredUrl) {
+                throw new Error('L’URL d’Expédition V2 est absente ou invalide.');
+            }
+
+            while (true) {
+                run = getActiveRun(runId);
+                if (!run) return;
+
+                if (Number(run.expeditionV2PendingDelayMs) > 0) {
+                    const canContinue = await consumeExpeditionV2Delay(runId);
+                    if (!canContinue) return;
+                    continue;
+                }
+
+                if (run.phase === 'expedition-v2-open-link') {
+                    if (!isConfiguredPage(configuredUrl, window.location.href)) {
+                        navigateToUrl(configuredUrl, false);
+                        return;
+                    }
+
+                    const renderResult = await waitUntilPageUsable(PAGE_TIMEOUT_MS);
+                    if (renderResult.timedOut) {
+                        throw new Error('La page Expédition V2 ne s’est pas chargée à temps.');
+                    }
+                    if (!getActiveRun(runId)) return;
+
+                    const directionTarget = Math.max(
+                        0,
+                        Math.min(6, Math.floor(Number(run.expeditionV2DirectionTarget) || 0))
+                    );
+                    updateRun(runId, {
+                        phase: directionTarget === 0
+                            ? 'expedition-v2-select-expe'
+                            : 'expedition-v2-direction',
+                        expeditionV2PendingDelayMs: getRandomDelayMs(
+                            EXPEDITION_V2_DELAY_MIN_MS,
+                            EXPEDITION_V2_DELAY_MAX_MS
+                        ),
+                        expeditionV2PendingDelayLabel: 'le chargement de l’URL',
+                        message:
+                            `Expédition V2 — étape 1/4 terminée. ` +
+                            `${directionTarget} déplacement(s) ` +
+                            `${run.expeditionV2Direction === 'next' ? 'suivant(s)' : 'précédent(s)'} prévu(s).`,
+                    });
+                    refreshUi();
+                    continue;
+                }
+
+                if (run.phase === 'expedition-v2-direction') {
+                    const direction = run.expeditionV2Direction === 'next' ? 'next' : 'prev';
+                    const directionTarget = Math.max(
+                        0,
+                        Math.min(6, Math.floor(Number(run.expeditionV2DirectionTarget) || 0))
+                    );
+                    const completedClicks = Math.max(
+                        0,
+                        Math.floor(Number(run.expeditionV2DirectionClicks) || 0)
+                    );
+                    if (completedClicks >= directionTarget) {
+                        updateRun(runId, {
+                            phase: 'expedition-v2-select-expe',
+                            message: 'Expédition V2 — étape 2/4 terminée, préparation de la sélection EXPE…',
+                        });
+                        refreshUi();
+                        continue;
+                    }
+
+                    updateRun(runId, {
+                        message:
+                            `Expédition V2 — étape 2/4 : déplacement ` +
+                            `${completedClicks + 1}/${directionTarget} vers la ` +
+                            `${direction === 'next' ? 'galaxie suivante' : 'galaxie précédente'}…`,
+                    });
+                    refreshUi();
+                    const directionButton = await waitForElement(LIFEFORM_DIRECTIONS[direction], {
+                        timeoutMs: ELEMENT_TIMEOUT_MS,
+                        clickable: true,
+                    });
+                    if (!getActiveRun(runId)) return;
+
+                    const nextClickCount = completedClicks + 1;
+                    updateRun(runId, {
+                        phase: nextClickCount >= directionTarget
+                            ? 'expedition-v2-select-expe'
+                            : 'expedition-v2-direction',
+                        expeditionV2DirectionClicks: nextClickCount,
+                        expeditionV2PendingDelayMs: getRandomDelayMs(
+                            EXPEDITION_V2_DELAY_MIN_MS,
+                            EXPEDITION_V2_DELAY_MAX_MS
+                        ),
+                        expeditionV2PendingDelayLabel:
+                            `le déplacement ${nextClickCount}/${directionTarget}`,
+                        message:
+                            `Expédition V2 — déplacement ${nextClickCount}/${directionTarget} effectué ` +
+                            `vers la ${direction === 'next' ? 'galaxie suivante' : 'galaxie précédente'}.`,
+                    });
+                    refreshUi();
+                    directionButton.click();
+                    continue;
+                }
+
+                if (run.phase === 'expedition-v2-select-expe') {
+                    updateRun(runId, {
+                        message: 'Expédition V2 — étape 3/4 : sélectionner EXPE…',
+                    });
+                    refreshUi();
+                    const expeButton = await waitForElement(EXPEDITION_V2_EXPE_SELECTOR, {
+                        timeoutMs: ELEMENT_TIMEOUT_MS,
+                        clickable: true,
+                    });
+                    if (!getActiveRun(runId)) return;
+
+                    updateRun(runId, {
+                        phase: 'expedition-v2-expeditions',
+                        expeditionV2PendingDelayMs: getRandomDelayMs(
+                            EXPEDITION_V2_DELAY_MIN_MS,
+                            EXPEDITION_V2_DELAY_MAX_MS
+                        ),
+                        expeditionV2PendingDelayLabel: 'la sélection de EXPE',
+                        message: 'Expédition V2 — étape 3/4 terminée : EXPE sélectionné.',
+                    });
+                    refreshUi();
+                    expeButton.click();
+                    continue;
+                }
+
+                if (run.phase === 'expedition-v2-expeditions') {
+                    if (hasExpeditionV2StopText()) {
+                        await completeExpeditionV2(runId);
+                        return;
+                    }
+
+                    const launchCount = Math.max(
+                        0,
+                        Math.floor(Number(run.expeditionV2LaunchCount) || 0)
+                    );
+                    if (launchCount >= EXPEDITION_V2_MAX_LAUNCHES) {
+                        throw new Error(
+                            `Le texte « Trop d’expéditions simultanées » n’est pas apparu après ` +
+                            `${EXPEDITION_V2_MAX_LAUNCHES} tentatives.`
+                        );
+                    }
+
+                    updateRun(runId, {
+                        message:
+                            `Expédition V2 — étape 4/4 : lancement de l’expédition ` +
+                            `${launchCount + 1}…`,
+                    });
+                    refreshUi();
+                    const expeditionButton = await waitForElement(EXPEDITION_V2_BUTTON_SELECTOR, {
+                        timeoutMs: ELEMENT_TIMEOUT_MS,
+                        clickable: true,
+                    });
+                    if (!getActiveRun(runId)) return;
+
+                    const nextLaunchCount = launchCount + 1;
+                    updateRun(runId, {
+                        expeditionV2LaunchCount: nextLaunchCount,
+                        expeditionV2PendingDelayMs: getRandomDelayMs(
+                            EXPEDITION_V2_DELAY_MIN_MS,
+                            EXPEDITION_V2_DELAY_MAX_MS
+                        ),
+                        expeditionV2PendingDelayLabel:
+                            `le lancement de l’expédition ${nextLaunchCount}`,
+                        message:
+                            `Expédition V2 — ${nextLaunchCount} expédition(s) lancée(s), ` +
+                            'recherche du message d’arrêt…',
+                    });
+                    refreshUi();
+                    expeditionButton.click();
+                    continue;
+                }
+
+                throw new Error(`Phase Expédition V2 inconnue : ${run.phase}`);
+            }
+        } catch (error) {
+            await failRun(runId, error instanceof Error ? error.message : String(error), error);
+        }
+    }
+
+    async function consumeExpeditionV2Delay(runId) {
+        const run = getActiveRun(runId);
+        if (!run) return false;
+        const delayMs = Math.max(0, Math.floor(Number(run.expeditionV2PendingDelayMs) || 0));
+        if (delayMs === 0) return true;
+
+        const label = run.expeditionV2PendingDelayLabel || 'l’action précédente';
+        updateRun(runId, {
+            message:
+                `Expédition V2 — attente aléatoire ${(delayMs / 1000).toFixed(2)} s après ${label}…`,
+        });
+        refreshUi();
+        await delay(delayMs);
+        if (!getActiveRun(runId)) return false;
+
+        updateRun(runId, {
+            expeditionV2PendingDelayMs: 0,
+            expeditionV2PendingDelayLabel: '',
+        });
+        refreshUi();
+        return true;
+    }
+
+    function hasExpeditionV2StopText() {
+        const pageText = String(document.body?.textContent || document.documentElement?.textContent || '')
+            .normalize('NFC')
+            .replace(/[’']/g, '`')
+            .replace(/\s+/g, ' ')
+            .toLocaleLowerCase('fr-FR');
+        return pageText.includes(EXPEDITION_V2_STOP_TEXT);
+    }
+
+    async function completeExpeditionV2(runId) {
+        const run = getActiveRun(runId);
+        if (!run) return;
+
+        if (
+            run.combinedKind === 'expedition-v2-lifeform' &&
+            run.nextProfileId === 4
+        ) {
+            await startLifeformAutomation({
+                combinedMode: true,
+                combinedKind: 'expedition-v2-lifeform',
+            });
+            return;
+        }
+
+        GM_setValue(RUN_KEY, {
+            ...run,
+            status: 'completed',
+            phase: 'expedition-v2-completed',
+            updatedAt: Date.now(),
+            message:
+                `Expédition V2 terminée après ${Math.max(0, Number(run.expeditionV2LaunchCount) || 0)} ` +
+                'lancement(s) : le message d’arrêt a été détecté.',
+        });
+        await clearThisTabRunId(runId);
+        refreshUi();
+    }
+
     async function startConstructionAutomation(parameters) {
         const config = getStoredConfig(7);
         const sourceOrders = Array.isArray(parameters?.orders)
@@ -2923,6 +3318,10 @@
         }
         if (run.profileId === 7) {
             await resumeConstructionAutomation(run.runId);
+            return;
+        }
+        if (run.profileId === 9) {
+            await resumeExpeditionV2Automation(run.runId);
             return;
         }
         if (run.profileId === 2 && !config.startUrl) {
@@ -3479,13 +3878,13 @@
 
     function normalizeProfileId(profileId) {
         const value = Number(profileId);
-        if (value === 4 || value === 6 || value === 7) return value;
+        if (value === 4 || value === 6 || value === 7 || value === 9) return value;
         return value === 2 ? 2 : 1;
     }
 
     function normalizeEditorProfileId(profileId) {
         const value = Number(profileId);
-        if (value === 3 || value === 5) return value;
+        if (value === 3 || value === 5 || value === 10) return value;
         return normalizeProfileId(value);
     }
 
@@ -3494,6 +3893,7 @@
         if (normalizedProfileId === 4) return 'Forme de vie';
         if (normalizedProfileId === 6) return 'Import';
         if (normalizedProfileId === 7) return 'Constructions';
+        if (normalizedProfileId === 9) return 'Expédition V2';
         return normalizedProfileId === 2 ? 'Expéditions' : 'Ressources';
     }
 
@@ -3504,7 +3904,12 @@
 
     function getActionSteps(profileId) {
         const normalizedProfileId = normalizeProfileId(profileId);
-        if (normalizedProfileId === 4 || normalizedProfileId === 6 || normalizedProfileId === 7) return [];
+        if (
+            normalizedProfileId === 4 ||
+            normalizedProfileId === 6 ||
+            normalizedProfileId === 7 ||
+            normalizedProfileId === 9
+        ) return [];
         return normalizedProfileId === 2 ? ACTION_STEPS_2 : ACTION_STEPS_1;
     }
 
@@ -3520,6 +3925,9 @@
         }
         if (profileId === 7) {
             return formatConstructionDebugProgress(run);
+        }
+        if (profileId === 9) {
+            return formatExpeditionV2DebugProgress(run);
         }
         const config = getStoredConfig(profileId);
         const actionSteps = getActionSteps(profileId);
@@ -3586,10 +3994,55 @@
 
         const runLabel = run.combinedKind === 'expeditions-lifeform'
             ? 'Expédition & Forme de vie — étape Forme de vie'
-            : 'Forme de vie';
+            : run.combinedKind === 'expedition-v2-lifeform'
+              ? 'Expédition V2 & Forme de vie — étape Forme de vie'
+              : 'Forme de vie';
         const message = typeof run.message === 'string' ? run.message : '';
         return (
             `${runLabel} — Boucle ${loopNumber} — direction ${directionLabel}\n${actionLabel}` +
+            (message ? `\n${message}` : '')
+        );
+    }
+
+    function formatExpeditionV2DebugProgress(run) {
+        const direction = run.expeditionV2Direction === 'next' ? 'suivante' : 'précédente';
+        const directionTarget = Math.max(
+            0,
+            Math.min(6, Math.floor(Number(run.expeditionV2DirectionTarget) || 0))
+        );
+        const directionClicks = Math.max(
+            0,
+            Math.floor(Number(run.expeditionV2DirectionClicks) || 0)
+        );
+        const launchCount = Math.max(0, Math.floor(Number(run.expeditionV2LaunchCount) || 0));
+        let actionLabel;
+
+        if (run.status !== 'running') {
+            actionLabel = `État : ${run.status}`;
+        } else if (Number(run.expeditionV2PendingDelayMs) > 0) {
+            actionLabel =
+                `Pause après ${run.expeditionV2PendingDelayLabel || 'l’action précédente'} — ` +
+                `${(Number(run.expeditionV2PendingDelayMs) / 1000).toFixed(2)} s`;
+        } else {
+            const labels = {
+                'expedition-v2-open-link': 'Étape 1/4 — charger l’URL',
+                'expedition-v2-direction':
+                    `Étape 2/4 — direction ${direction}, ${directionClicks}/${directionTarget} clic(s)`,
+                'expedition-v2-select-expe': 'Étape 3/4 — sélectionner EXPE',
+                'expedition-v2-expeditions':
+                    `Étape 4/4 — ${launchCount} lancement(s), attente du message d’arrêt`,
+                'expedition-v2-completed': 'Expédition V2 terminée',
+            };
+            actionLabel = labels[run.phase] || `Phase inconnue : ${run.phase}`;
+        }
+
+        const runLabel = run.combinedKind === 'expedition-v2-lifeform'
+            ? 'Expédition V2 & Forme de vie — étape Expédition V2'
+            : 'Expédition V2';
+        const message = typeof run.message === 'string' ? run.message : '';
+        return (
+            `${runLabel}\nDirection ${direction} · Déplacements ${directionClicks}/${directionTarget} · ` +
+            `Expéditions ${launchCount}\n${actionLabel}` +
             (message ? `\n${message}` : '')
         );
     }
