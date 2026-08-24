@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Projet secret — boucle multi-liens
 // @namespace    local.projet-secret
-// @version      6.6.0
+// @version      6.6.1
 // @updateURL    https://raw.githubusercontent.com/raphaelrobert1104-sys/mysecretproject/main/outputs/projet-secret.user.js
 // @downloadURL  https://raw.githubusercontent.com/raphaelrobert1104-sys/mysecretproject/main/outputs/projet-secret.user.js
 // @description  Automatise Ressources, Expéditions V1/V2, Forme de vie, Import, Constructions et Ghost avec configurations privées.
@@ -27,6 +27,7 @@
         4: 'secretLifeformConfig',
         6: 'secretImportConfig',
         7: 'secretConstructionConfig',
+        8: 'secretGhostConfig',
         9: 'secretExpeditionV2Config',
     };
     const RUN_KEY = 'secretMultiLinkRun';
@@ -39,6 +40,7 @@
         4: 14,
         6: 1,
         7: 13,
+        8: 1,
         9: 1,
     };
     const PAGE_TIMEOUT_MS = 45000;
@@ -221,6 +223,12 @@
     });
     registerMenuCommandSafely('Démarrer Constructions', () => {
         void startFromStoredConfiguration(7);
+    });
+    registerMenuCommandSafely('Configurer Ghost', () => {
+        void openControlPanel(8);
+    });
+    registerMenuCommandSafely('Ouvrir Ghost', () => {
+        void ensureUi().then((ui) => ui.openGhostRunner());
     });
     registerMenuCommandSafely('Configurer Expédition V2', () => {
         void openControlPanel(9);
@@ -1115,6 +1123,7 @@
                             </div>
                             <div class="control-group ghost">
                                 <button type="button" class="quick quick-8" title="Ouvrir Ghost">Ghost</button>
+                                <button type="button" class="settings settings-8" title="Configurer Ghost" aria-label="Configurer Ghost">⚙</button>
                             </div>
                         </div>
                     </div>
@@ -1270,6 +1279,7 @@
             settings5: shadow.querySelector('.settings-5'),
             settings6: shadow.querySelector('.settings-6'),
             settings7: shadow.querySelector('.settings-7'),
+            settings8: shadow.querySelector('.settings-8'),
             settings9: shadow.querySelector('.settings-9'),
             settings10: shadow.querySelector('.settings-10'),
             panel: shadow.querySelector('.panel'),
@@ -1328,6 +1338,7 @@
         refs.settings5.addEventListener('click', () => togglePanel(5));
         refs.settings6.addEventListener('click', () => togglePanel(6));
         refs.settings7.addEventListener('click', () => togglePanel(7));
+        refs.settings8.addEventListener('click', () => togglePanel(8));
         refs.settings9.addEventListener('click', () => togglePanel(9));
         refs.settings10.addEventListener('click', () => togglePanel(10));
         refs.combinedResources.addEventListener('click', () => open(combinedTargetProfiles[0]));
@@ -1470,6 +1481,13 @@
         }
 
         function openGhostRunner() {
+            const config = getStoredConfig(8);
+            if (config.links.length !== 1) {
+                open(8);
+                showError('Configurez l’URL unique de Ghost avant de choisir l’heure.');
+                return;
+            }
+
             const storedTime = getStoredGhostTime();
             closeDropdowns();
             closePanel();
@@ -1781,8 +1799,10 @@
                       ? 'Jusqu’à 14 URL. Une URL et une direction sont choisies aléatoirement une seule fois au lancement.'
                       : editingProfileId === 6
                         ? 'Une URL unique. Import clique sur le maximum, sur Payer, puis récupère l’objet.'
-                        : editingProfileId === 7
+                      : editingProfileId === 7
                           ? 'Jusqu’à 13 destinations. Chaque URL possède un nom affiché dans la fenêtre de lancement.'
+                          : editingProfileId === 8
+                            ? 'Une URL unique pour Ghost. Elle reste enregistrée dans le stockage privé de Tampermonkey.'
                           : editingProfileId === 9
                             ? 'Une URL unique. Expédition V2 choisit une direction et 0 à 6 déplacements, sélectionne EXPE, puis lance les expéditions jusqu’au message d’arrêt.'
                     : 'Un lien par ligne. Les adresses sont conservées dans le stockage privé de Tampermonkey, jamais dans le code du script.';
@@ -1794,7 +1814,7 @@
             refs.linksFieldGroup.style.display = editingProfileId === 7 ? 'none' : 'block';
             refs.namedLinksFieldGroup.style.display = editingProfileId === 7 ? 'block' : 'none';
             refs.combinedConfig.style.display = 'none';
-            const usesSingleUrl = editingProfileId === 6 || editingProfileId === 9;
+            const usesSingleUrl = [6, 8, 9].includes(editingProfileId);
             refs.linksLabel.textContent = usesSingleUrl ? 'URL à ouvrir' : 'Liens à traiter';
             refs.textarea.value = links.join('\n');
             refs.textarea.placeholder = usesSingleUrl ? 'https://…' : 'Lien 1\nLien 2\n…';
@@ -1808,7 +1828,9 @@
             refs.repeat.checked = config.repeat;
             refs.repeatRow.style.display = editingProfileId === 1 ? 'flex' : 'none';
             refs.save.style.display = '';
-            refs.start.textContent = 'Enregistrer et lancer';
+            refs.start.textContent = editingProfileId === 8
+                ? 'Enregistrer et choisir l’heure'
+                : 'Enregistrer et lancer';
             showError('');
             updateCounter();
         }
@@ -1908,6 +1930,8 @@
                     void startLifeformAutomation();
                 } else if (editingProfileId === 6) {
                     void startImportAutomation();
+                } else if (editingProfileId === 8) {
+                    openGhostRunner();
                 } else if (editingProfileId === 9) {
                     void startExpeditionV2Automation();
                 } else {
@@ -2021,6 +2045,7 @@
         return {
             open,
             openConstructionRunner,
+            openGhostRunner,
             refresh,
             showError,
             showConstructionError: showConstructionRunnerError,
@@ -3878,7 +3903,7 @@
 
     function normalizeProfileId(profileId) {
         const value = Number(profileId);
-        if (value === 4 || value === 6 || value === 7 || value === 9) return value;
+        if (value === 4 || value === 6 || value === 7 || value === 8 || value === 9) return value;
         return value === 2 ? 2 : 1;
     }
 
@@ -3893,6 +3918,7 @@
         if (normalizedProfileId === 4) return 'Forme de vie';
         if (normalizedProfileId === 6) return 'Import';
         if (normalizedProfileId === 7) return 'Constructions';
+        if (normalizedProfileId === 8) return 'Ghost';
         if (normalizedProfileId === 9) return 'Expédition V2';
         return normalizedProfileId === 2 ? 'Expéditions' : 'Ressources';
     }
@@ -3908,6 +3934,7 @@
             normalizedProfileId === 4 ||
             normalizedProfileId === 6 ||
             normalizedProfileId === 7 ||
+            normalizedProfileId === 8 ||
             normalizedProfileId === 9
         ) return [];
         return normalizedProfileId === 2 ? ACTION_STEPS_2 : ACTION_STEPS_1;
