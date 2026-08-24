@@ -1,10 +1,10 @@
 // ==UserScript==
 // @name         Projet secret — boucle multi-liens
 // @namespace    local.projet-secret
-// @version      6.3.0
+// @version      6.7.0
 // @updateURL    https://raw.githubusercontent.com/raphaelrobert1104-sys/mysecretproject/main/outputs/projet-secret.user.js
 // @downloadURL  https://raw.githubusercontent.com/raphaelrobert1104-sys/mysecretproject/main/outputs/projet-secret.user.js
-// @description  Automatise Ressources, Expéditions, Forme de vie, Import et Constructions avec configurations privées.
+// @description  Automatise Ressources, Expéditions V1/V2, Forme de vie, Import, Constructions et Ghost avec configurations privées.
 // @author       Vous
 // @match        http://*/*
 // @match        https://*/*
@@ -27,19 +27,27 @@
         4: 'secretLifeformConfig',
         6: 'secretImportConfig',
         7: 'secretConstructionConfig',
+        8: 'secretGhostConfig',
+        9: 'secretExpeditionV2Config',
     };
     const RUN_KEY = 'secretMultiLinkRun';
     const TAB_RUN_ID_KEY = 'secretMultiLinkRunId';
+    const DEBUG_DISMISSED_RUN_KEY = 'secretMultiLinkDebugDismissedRunId';
+    const GHOST_TIME_KEY = 'secretMultiLinkGhostTime';
     const MAX_LINKS_BY_PROFILE = {
         1: 15,
         2: 10,
         4: 14,
         6: 1,
         7: 13,
+        8: 1,
+        9: 1,
     };
     const PAGE_TIMEOUT_MS = 45000;
     const ELEMENT_TIMEOUT_MS = 7000;
     const DOM_QUIET_MS = 1200;
+    const ACTION_DELAY_FACTOR = 0.7;
+    const MAX_CONSTRUCTION_ORDERS = 13;
     const POST_ACTION_DELAY_MIN_MS = 700;
     const POST_ACTION_DELAY_MAX_MS = 1700;
     const LIFEFORM_DELAY_MIN_MS = POST_ACTION_DELAY_MIN_MS;
@@ -48,6 +56,10 @@
     const IMPORT_DELAY_MAX_MS = POST_ACTION_DELAY_MAX_MS;
     const CONSTRUCTION_DELAY_MIN_MS = POST_ACTION_DELAY_MIN_MS;
     const CONSTRUCTION_DELAY_MAX_MS = POST_ACTION_DELAY_MAX_MS;
+    const GHOST_DELAY_MIN_MS = POST_ACTION_DELAY_MIN_MS;
+    const GHOST_DELAY_MAX_MS = POST_ACTION_DELAY_MAX_MS;
+    const EXPEDITION_V2_DELAY_MIN_MS = POST_ACTION_DELAY_MIN_MS;
+    const EXPEDITION_V2_DELAY_MAX_MS = POST_ACTION_DELAY_MAX_MS;
     const EXPEDITION_SLOTS_SELECTOR = '#slots > div:nth-child(2) > span';
     const LIFEFORM_DISCOVER_SELECTOR = '#discoverSystemBtn';
     const LIFEFORM_SLOT_USED_SELECTOR = '#slots #slotUsed';
@@ -56,6 +68,10 @@
         next: '#galaxyHeader > form > span.galaxy_icons.next.ipiHintable',
         prev: '#galaxyHeader > form > span.galaxy_icons.prev.ipiHintable',
     };
+    const EXPEDITION_V2_EXPE_SELECTOR = '#dropdown579 > li:nth-child(2) > a';
+    const EXPEDITION_V2_BUTTON_SELECTOR = '#expeditionbutton';
+    const EXPEDITION_V2_STOP_TEXT = 'trop d`expéditions simultanées';
+    const EXPEDITION_V2_MAX_LAUNCHES = 100;
     const IMPORT_MAX_SELECTOR =
         '#div_importexport > div.content > div.right_box > div.right_content > div.payment > div > table > tbody > tr:nth-child(5) > td:nth-child(5) > a';
     const IMPORT_PAY_SELECTOR =
@@ -71,6 +87,7 @@
     };
     const CONSTRUCTION_CONTINUE_SELECTOR = '#continueToFleet2 > span';
     const CONSTRUCTION_SEND_SELECTOR = '#sendFleet > span';
+    const GHOST_SEND_ALL_SELECTOR = '#sendall';
 
     class ElementNotFoundError extends Error {
         constructor(selector, timeoutMs) {
@@ -209,6 +226,24 @@
     });
     registerMenuCommandSafely('Démarrer Constructions', () => {
         void startFromStoredConfiguration(7);
+    });
+    registerMenuCommandSafely('Configurer Ghost', () => {
+        void openControlPanel(8);
+    });
+    registerMenuCommandSafely('Ouvrir Ghost', () => {
+        void ensureUi().then((ui) => ui.openGhostRunner());
+    });
+    registerMenuCommandSafely('Configurer Expédition V2', () => {
+        void openControlPanel(9);
+    });
+    registerMenuCommandSafely('Démarrer Expédition V2', () => {
+        void startFromStoredConfiguration(9);
+    });
+    registerMenuCommandSafely('Configurer Expédition V2 & Forme de vie', () => {
+        void openControlPanel(10);
+    });
+    registerMenuCommandSafely('Démarrer Expédition V2 & Forme de vie', () => {
+        void startExpeditionV2LifeformAutomation();
     });
     registerMenuCommandSafely('Arrêter la boucle', () => {
         void stopAutomation('Arrêt demandé depuis le menu Tampermonkey.');
@@ -364,6 +399,14 @@
                 <input class="named-link-url" type="url" spellcheck="false" autocomplete="off" placeholder="https://…">
             </div>
         `).join('');
+        const ghostHourOptions = Array.from({ length: 24 }, (_, hour) => {
+            const value = String(hour).padStart(2, '0');
+            return `<option value="${value}">${value}</option>`;
+        }).join('');
+        const ghostMinuteOptions = Array.from({ length: 60 }, (_, minute) => {
+            const value = String(minute).padStart(2, '0');
+            return `<option value="${value}">${value}</option>`;
+        }).join('');
         const shadow = host.attachShadow({ mode: 'closed' });
         shadow.innerHTML = `
             <style>
@@ -467,6 +510,9 @@
                 .control-group.expeditions .quick {
                     background: linear-gradient(135deg, rgba(5, 150, 105, .96), rgba(13, 148, 136, .96));
                 }
+                .control-group.expeditions-v2 .quick {
+                    background: linear-gradient(135deg, rgba(14, 116, 144, .97), rgba(79, 70, 229, .96));
+                }
                 .control-group.combined .quick {
                     min-width: 196px;
                     background: linear-gradient(135deg, rgba(124, 58, 237, .97), rgba(219, 39, 119, .94));
@@ -484,6 +530,18 @@
                 }
                 .control-group.constructions .quick {
                     background: linear-gradient(135deg, rgba(180, 83, 9, .97), rgba(202, 138, 4, .96));
+                }
+                .control-group.ghost .quick {
+                    background: linear-gradient(135deg, rgba(71, 85, 105, .98), rgba(88, 28, 135, .96));
+                }
+                .control-group.expeditions-v2-lifeform .quick {
+                    min-width: 230px;
+                    background: linear-gradient(135deg, rgba(8, 145, 178, .97), rgba(109, 40, 217, .96), rgba(217, 119, 6, .94));
+                }
+                .quick.pending:disabled {
+                    cursor: not-allowed;
+                    filter: saturate(.72);
+                    opacity: .78;
                 }
                 .quick:hover, .settings:hover { filter: brightness(1.1); }
                 .quick:active, .settings:active { transform: translateY(1px) scale(.985); }
@@ -669,29 +727,97 @@
                     right: 0;
                     top: 62px;
                     width: min(390px, calc(100vw - 20px));
-                    padding: 10px 12px;
+                    grid-template-columns: 8px minmax(0, 1fr) 28px;
+                    align-items: start;
+                    gap: 10px;
+                    padding: 11px 10px 11px 12px;
                     border: 1px solid rgba(147, 197, 253, .9);
-                    border-radius: 9px;
+                    border-radius: 14px;
                     background: linear-gradient(135deg, rgba(15, 23, 42, .62), rgba(15, 23, 42, .48));
                     color: #f0f9ff;
                     box-shadow: 0 8px 24px rgba(0, 0, 0, .18);
                     font: 750 12px/1.45 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
                     text-shadow: 0 1px 3px rgba(0, 0, 0, .95);
+                    pointer-events: auto;
+                    backdrop-filter: blur(12px) saturate(135%);
+                    -webkit-backdrop-filter: blur(12px) saturate(135%);
+                    transition: border-color .2s ease, background .2s ease, box-shadow .2s ease;
+                }
+                .debug-progress::before {
+                    content: '';
+                    width: 8px;
+                    height: 8px;
+                    margin-top: 5px;
+                    border-radius: 999px;
+                    background: #93c5fd;
+                    box-shadow: 0 0 0 4px rgba(147, 197, 253, .14);
+                }
+                .debug-progress-content {
+                    min-width: 0;
                     white-space: pre-line;
                     overflow-wrap: anywhere;
-                    pointer-events: none;
+                }
+                .debug-progress-close {
+                    display: grid;
+                    place-items: center;
+                    width: 28px;
+                    height: 28px;
+                    margin: -4px -3px 0 0;
+                    padding: 0;
+                    border: 1px solid rgba(255, 255, 255, .14);
+                    border-radius: 9px;
+                    background: rgba(15, 23, 42, .28);
+                    color: currentColor;
+                    font: 700 18px/1 system-ui, sans-serif;
+                    text-shadow: none;
+                    cursor: pointer;
+                    opacity: .78;
+                    transition: opacity .16s ease, background .16s ease, transform .16s ease;
+                }
+                .debug-progress-close:hover {
+                    background: rgba(255, 255, 255, .14);
+                    opacity: 1;
+                    transform: scale(1.05);
+                }
+                .debug-progress-close:active { transform: scale(.94); }
+                .debug-progress.running {
+                    border-color: rgba(251, 146, 60, .92);
+                    background: linear-gradient(135deg, rgba(124, 45, 18, .66), rgba(67, 31, 14, .56));
+                    color: #fff7ed;
+                    box-shadow: 0 10px 30px rgba(124, 45, 18, .24);
+                }
+                .debug-progress.running::before {
+                    background: #fb923c;
+                    box-shadow: 0 0 0 4px rgba(251, 146, 60, .18), 0 0 14px rgba(251, 146, 60, .7);
+                }
+                .debug-progress.completed {
+                    border-color: rgba(74, 222, 128, .92);
+                    background: linear-gradient(135deg, rgba(20, 83, 45, .68), rgba(10, 52, 31, .58));
+                    color: #ecfdf5;
+                    box-shadow: 0 10px 30px rgba(20, 83, 45, .24);
+                }
+                .debug-progress.completed::before {
+                    background: #4ade80;
+                    box-shadow: 0 0 0 4px rgba(74, 222, 128, .17), 0 0 14px rgba(74, 222, 128, .55);
                 }
                 .debug-progress.error {
                     border-color: #f87171;
-                    background: rgba(127, 29, 29, .64);
+                    background: linear-gradient(135deg, rgba(127, 29, 29, .7), rgba(69, 10, 10, .62));
                     color: #fff;
+                    box-shadow: 0 10px 30px rgba(127, 29, 29, .25);
+                }
+                .debug-progress.error::before {
+                    background: #f87171;
+                    box-shadow: 0 0 0 4px rgba(248, 113, 113, .17), 0 0 14px rgba(248, 113, 113, .55);
                 }
                 .construction-runner {
                     display: none;
                     position: absolute;
                     right: 0;
                     top: 62px;
-                    width: min(390px, calc(100vw - 20px));
+                    width: min(680px, calc(100vw - 20px));
+                    max-height: calc(100vh - 82px - env(safe-area-inset-top));
+                    overflow: auto;
                     padding: 18px;
                     border: 1px solid rgba(251, 191, 36, .58);
                     border-radius: 20px;
@@ -734,14 +860,85 @@
                     background: rgba(245, 158, 11, .18);
                     color: #fde68a;
                 }
-                .construction-runner-grid {
+                .construction-orders {
                     display: grid;
-                    grid-template-columns: repeat(3, minmax(0, 1fr));
                     gap: 9px;
-                    margin: 14px 0;
+                    margin: 14px 0 10px;
                 }
-                .construction-runner-grid label,
-                .construction-link-choice label { margin-bottom: 5px; }
+                .construction-orders-header {
+                    display: flex;
+                    align-items: center;
+                    justify-content: space-between;
+                    gap: 10px;
+                    color: #e2e8f0;
+                    font-size: 11px;
+                    font-weight: 780;
+                }
+                .construction-orders-counter {
+                    color: #fbbf24;
+                    font-variant-numeric: tabular-nums;
+                }
+                .construction-orders-list {
+                    display: grid;
+                    gap: 10px;
+                    max-height: min(51vh, 520px);
+                    overflow: auto;
+                    padding: 1px 4px 1px 1px;
+                    scrollbar-width: thin;
+                }
+                .construction-order-row {
+                    padding: 11px;
+                    border: 1px solid rgba(148, 163, 184, .2);
+                    border-radius: 13px;
+                    background: rgba(15, 23, 42, .52);
+                    box-shadow: inset 0 1px 0 rgba(255,255,255,.035);
+                }
+                .construction-order-header {
+                    display: flex;
+                    align-items: center;
+                    justify-content: space-between;
+                    gap: 10px;
+                    margin-bottom: 9px;
+                }
+                .construction-order-title {
+                    color: #fde68a;
+                    font-size: 11px;
+                    font-weight: 850;
+                    letter-spacing: .05em;
+                    text-transform: uppercase;
+                }
+                .construction-order-summary {
+                    flex: 1;
+                    color: #a7f3d0;
+                    font-size: 10px;
+                    font-weight: 700;
+                    text-align: right;
+                }
+                .construction-order-remove {
+                    display: grid;
+                    place-items: center;
+                    width: 25px;
+                    height: 25px;
+                    padding: 0;
+                    border: 1px solid rgba(248, 113, 113, .3);
+                    border-radius: 8px;
+                    background: rgba(127, 29, 29, .22);
+                    color: #fecaca;
+                    font: 800 15px/1 system-ui, sans-serif;
+                    cursor: pointer;
+                }
+                .construction-order-remove:hover { background: rgba(185, 28, 28, .4); }
+                .construction-order-remove:disabled { visibility: hidden; }
+                .construction-order-grid {
+                    display: grid;
+                    grid-template-columns: repeat(3, minmax(82px, .72fr)) minmax(145px, 1.35fr);
+                    gap: 8px;
+                    align-items: end;
+                }
+                .construction-order-field > label {
+                    display: block;
+                    margin-bottom: 5px;
+                }
                 .amount-input-shell { position: relative; }
                 .amount-input-shell input { padding-right: 31px; }
                 .amount-input-shell > span {
@@ -754,7 +951,27 @@
                     font-weight: 850;
                     pointer-events: none;
                 }
-                .construction-link-choice { margin-bottom: 12px; }
+                .construction-add-order {
+                    width: 100%;
+                    min-height: 38px;
+                    border: 1px dashed rgba(251, 191, 36, .55);
+                    border-radius: 11px;
+                    background: rgba(120, 53, 15, .16);
+                    color: #fde68a;
+                    font: 800 12px/1 system-ui, sans-serif;
+                    cursor: pointer;
+                    transition: background .16s ease, border-color .16s ease, transform .16s ease;
+                }
+                .construction-add-order:hover {
+                    border-color: rgba(251, 191, 36, .9);
+                    background: rgba(120, 53, 15, .3);
+                    transform: translateY(-1px);
+                }
+                .construction-add-order:disabled {
+                    cursor: default;
+                    opacity: .45;
+                    transform: none;
+                }
                 .construction-runner input,
                 .construction-runner select {
                     border-color: rgba(148, 163, 184, .38);
@@ -781,6 +998,75 @@
                     font-size: 12px;
                 }
                 .construction-runner-error.visible { display: block; }
+                .ghost-runner {
+                    display: none;
+                    position: absolute;
+                    right: 0;
+                    top: 62px;
+                    width: min(360px, calc(100vw - 20px));
+                    padding: 18px;
+                    border: 1px solid rgba(167, 139, 250, .55);
+                    border-radius: 20px;
+                    background:
+                        radial-gradient(circle at 88% 2%, rgba(139, 92, 246, .25), transparent 38%),
+                        linear-gradient(150deg, rgba(9, 15, 29, .985), rgba(30, 41, 59, .975));
+                    color: #fff;
+                    box-shadow: 0 26px 80px rgba(2, 6, 23, .58), inset 0 1px 0 rgba(255,255,255,.1);
+                    backdrop-filter: blur(24px) saturate(145%);
+                    -webkit-backdrop-filter: blur(24px) saturate(145%);
+                }
+                .ghost-runner.open { display: block; animation: secret-enter .22s ease-out; }
+                .ghost-kicker {
+                    display: block;
+                    margin-bottom: 3px;
+                    color: #c4b5fd;
+                    font-size: 9px;
+                    font-weight: 850;
+                    letter-spacing: .16em;
+                }
+                .ghost-time-grid {
+                    display: grid;
+                    grid-template-columns: 1fr auto 1fr;
+                    align-items: end;
+                    gap: 10px;
+                    margin: 16px 0 12px;
+                }
+                .ghost-time-separator {
+                    padding-bottom: 10px;
+                    color: #c4b5fd;
+                    font-size: 22px;
+                    font-weight: 900;
+                }
+                .ghost-time-field label { margin-bottom: 6px; }
+                .ghost-time-field select {
+                    width: 100%;
+                    min-height: 46px;
+                    padding: 9px 11px;
+                    border: 1px solid rgba(167, 139, 250, .46);
+                    border-radius: 11px;
+                    background: rgba(15, 23, 42, .8);
+                    color: #f8fafc;
+                    font-size: 16px;
+                    font-weight: 800;
+                    text-align: center;
+                    outline: none;
+                }
+                .ghost-time-field select:focus {
+                    border-color: #a78bfa;
+                    box-shadow: 0 0 0 3px rgba(167, 139, 250, .2);
+                }
+                .ghost-time-field select option { background: #0f172a; color: #f8fafc; }
+                .ghost-time-preview {
+                    margin: 0 0 14px;
+                    padding: 10px 12px;
+                    border: 1px solid rgba(167, 139, 250, .25);
+                    border-radius: 11px;
+                    background: rgba(76, 29, 149, .16);
+                    color: #ede9fe;
+                    font-size: 12px;
+                    font-weight: 760;
+                    text-align: center;
+                }
                 @media (max-width: 600px) {
                     .toolbar { justify-content: flex-end; gap: 6px; }
                     .menu-toggle { padding-inline: 11px; }
@@ -795,15 +1081,21 @@
                     .actions button { min-height: 44px; }
                     .named-link-row { grid-template-columns: 22px minmax(82px, .7fr) minmax(145px, 1.3fr); }
                     .named-link-row input, .construction-runner input, .construction-runner select { font-size: 16px; }
-                    .construction-runner { padding: 14px; }
+                    .construction-runner, .ghost-runner { padding: 14px; }
+                    .construction-order-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+                    .construction-order-field.destination { grid-column: 1 / -1; }
+                    .construction-orders-list { max-height: min(48vh, 480px); }
                 }
                 @media (prefers-reduced-motion: reduce) {
-                    .dropdown-menu.open, .panel.open, .construction-runner.open { animation: none; }
+                    .dropdown-menu.open, .panel.open, .construction-runner.open, .ghost-runner.open { animation: none; }
                     *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; }
                 }
             </style>
             <div class="dock">
-                <div class="debug-progress" role="status" aria-live="polite"></div>
+                <div class="debug-progress">
+                    <div class="debug-progress-content" role="status" aria-live="polite"></div>
+                    <button type="button" class="debug-progress-close" title="Fermer le résumé" aria-label="Fermer le résumé des actions">×</button>
+                </div>
                 <div class="toolbar">
                     <div class="menu-group simple-menu-group">
                         <button type="button" class="menu-toggle simple-menu-toggle" aria-expanded="false">Actions simples</button>
@@ -815,6 +1107,10 @@
                             <div class="control-group expeditions">
                                 <button type="button" class="quick quick-2" title="Lancer Expéditions">Expéditions</button>
                                 <button type="button" class="settings settings-2" title="Configurer Expéditions" aria-label="Configurer Expéditions">⚙</button>
+                            </div>
+                            <div class="control-group expeditions-v2">
+                                <button type="button" class="quick quick-9" title="Lancer Expédition V2">Expédition V2</button>
+                                <button type="button" class="settings settings-9" title="Configurer Expédition V2" aria-label="Configurer Expédition V2">⚙</button>
                             </div>
                             <div class="control-group lifeform">
                                 <button type="button" class="quick quick-4" title="Lancer Forme de vie">Forme de vie</button>
@@ -828,6 +1124,10 @@
                                 <button type="button" class="quick quick-7" title="Lancer Constructions">Constructions</button>
                                 <button type="button" class="settings settings-7" title="Configurer Constructions" aria-label="Configurer Constructions">⚙</button>
                             </div>
+                            <div class="control-group ghost">
+                                <button type="button" class="quick quick-8" title="Ouvrir Ghost">Ghost</button>
+                                <button type="button" class="settings settings-8" title="Configurer Ghost" aria-label="Configurer Ghost">⚙</button>
+                            </div>
                         </div>
                     </div>
                     <div class="menu-group grouped-menu-group">
@@ -840,6 +1140,10 @@
                             <div class="control-group expeditions-lifeform">
                                 <button type="button" class="quick quick-5" title="Lancer Expédition puis Forme de vie">Expédition &amp; Forme de vie</button>
                                 <button type="button" class="settings settings-5" title="Configurer Expédition et Forme de vie" aria-label="Configurer Expédition et Forme de vie">⚙</button>
+                            </div>
+                            <div class="control-group expeditions-v2-lifeform">
+                                <button type="button" class="quick quick-10" title="Lancer Expédition V2 puis Forme de vie">Expédition V2 &amp; Forme de vie</button>
+                                <button type="button" class="settings settings-10" title="Configurer Expédition V2 et Forme de vie" aria-label="Configurer Expédition V2 et Forme de vie">⚙</button>
                             </div>
                         </div>
                     </div>
@@ -907,40 +1211,47 @@
                     <div class="construction-flow" aria-hidden="true">
                         <span>1 · Montants</span><span>2 · Destination</span><span>3 · Exécution</span>
                     </div>
-                    <p class="help">Saisissez les ressources en millions, puis choisissez la destination configurée.</p>
-                    <div class="construction-runner-grid">
-                        <div>
-                            <label for="construction-r1">R1</label>
-                            <div class="amount-input-shell">
-                                <input id="construction-r1" class="construction-r1" type="text" inputmode="decimal" autocomplete="off" placeholder="3.3" value="0">
-                                <span>M</span>
-                            </div>
+                    <p class="help">Chaque ligne correspond à une exécution complète des actions 3 à 6. Les ressources sont exprimées en millions.</p>
+                    <div class="construction-orders">
+                        <div class="construction-orders-header">
+                            <span>Ordres à exécuter</span>
+                            <span class="construction-orders-counter">1 / 13</span>
                         </div>
-                        <div>
-                            <label for="construction-r2">R2</label>
-                            <div class="amount-input-shell">
-                                <input id="construction-r2" class="construction-r2" type="text" inputmode="decimal" autocomplete="off" placeholder="2.0" value="0">
-                                <span>M</span>
-                            </div>
-                        </div>
-                        <div>
-                            <label for="construction-r3">R3</label>
-                            <div class="amount-input-shell">
-                                <input id="construction-r3" class="construction-r3" type="text" inputmode="decimal" autocomplete="off" placeholder="1" value="0">
-                                <span>M</span>
-                            </div>
-                        </div>
+                        <div class="construction-orders-list"></div>
+                        <button type="button" class="construction-add-order">＋ Ajouter une ligne</button>
                     </div>
-                    <div class="construction-link-choice">
-                        <label for="construction-link-select">Destination</label>
-                        <select id="construction-link-select" class="construction-link-select"></select>
-                    </div>
-                    <div class="construction-calculation">Total réel : 0 · Petites voitures : 0</div>
+                    <div class="construction-calculation">1 exécution · Total réel : 0 · Petites voitures : 0</div>
                     <p class="field-help">Exemple : 3.3 M devient 3 300 000. Le total réel est ensuite divisé par 9000 et arrondi au supérieur.</p>
                     <div class="construction-runner-error" role="alert"></div>
                     <div class="actions">
                         <button type="button" class="save construction-runner-cancel">Annuler</button>
                         <button type="button" class="start construction-runner-start">Démarrer</button>
+                    </div>
+                </section>
+                <section class="ghost-runner" role="dialog" aria-label="Configurer Ghost">
+                    <div class="header">
+                        <div>
+                            <span class="ghost-kicker">NOUVEL HORAIRE</span>
+                            <h2>Ghost</h2>
+                        </div>
+                        <button type="button" class="close ghost-runner-close" aria-label="Fermer">×</button>
+                    </div>
+                    <p class="help">Choisissez l’heure et la minute à conserver, puis démarrez Ghost.</p>
+                    <div class="ghost-time-grid">
+                        <div class="ghost-time-field">
+                            <label for="ghost-hour">Heure</label>
+                            <select id="ghost-hour" class="ghost-hour">${ghostHourOptions}</select>
+                        </div>
+                        <span class="ghost-time-separator" aria-hidden="true">:</span>
+                        <div class="ghost-time-field">
+                            <label for="ghost-minute">Minute</label>
+                            <select id="ghost-minute" class="ghost-minute">${ghostMinuteOptions}</select>
+                        </div>
+                    </div>
+                    <div class="ghost-time-preview">Horaire sélectionné : <span class="ghost-time-value">00:00</span></div>
+                    <div class="actions">
+                        <button type="button" class="save ghost-runner-cancel">Annuler</button>
+                        <button type="button" class="start ghost-runner-confirm">Valider et démarrer</button>
                     </div>
                 </section>
             </div>
@@ -954,11 +1265,16 @@
             quick5: shadow.querySelector('.quick-5'),
             quick6: shadow.querySelector('.quick-6'),
             quick7: shadow.querySelector('.quick-7'),
+            quick8: shadow.querySelector('.quick-8'),
+            quick9: shadow.querySelector('.quick-9'),
+            quick10: shadow.querySelector('.quick-10'),
             simpleMenuToggle: shadow.querySelector('.simple-menu-toggle'),
             groupedMenuToggle: shadow.querySelector('.grouped-menu-toggle'),
             simpleMenu: shadow.querySelector('.simple-menu'),
             groupedMenu: shadow.querySelector('.grouped-menu'),
             debugProgress: shadow.querySelector('.debug-progress'),
+            debugProgressContent: shadow.querySelector('.debug-progress-content'),
+            debugProgressClose: shadow.querySelector('.debug-progress-close'),
             settings1: shadow.querySelector('.settings-1'),
             settings2: shadow.querySelector('.settings-2'),
             settings3: shadow.querySelector('.settings-3'),
@@ -966,6 +1282,9 @@
             settings5: shadow.querySelector('.settings-5'),
             settings6: shadow.querySelector('.settings-6'),
             settings7: shadow.querySelector('.settings-7'),
+            settings8: shadow.querySelector('.settings-8'),
+            settings9: shadow.querySelector('.settings-9'),
+            settings10: shadow.querySelector('.settings-10'),
             panel: shadow.querySelector('.panel'),
             panelTitle: shadow.querySelector('.panel-title'),
             help: shadow.querySelector('.help'),
@@ -997,12 +1316,18 @@
             constructionRunnerClose: shadow.querySelector('.construction-runner-close'),
             constructionRunnerCancel: shadow.querySelector('.construction-runner-cancel'),
             constructionRunnerStart: shadow.querySelector('.construction-runner-start'),
-            constructionR1: shadow.querySelector('.construction-r1'),
-            constructionR2: shadow.querySelector('.construction-r2'),
-            constructionR3: shadow.querySelector('.construction-r3'),
-            constructionLinkSelect: shadow.querySelector('.construction-link-select'),
+            constructionOrdersList: shadow.querySelector('.construction-orders-list'),
+            constructionOrdersCounter: shadow.querySelector('.construction-orders-counter'),
+            constructionAddOrder: shadow.querySelector('.construction-add-order'),
             constructionCalculation: shadow.querySelector('.construction-calculation'),
             constructionRunnerError: shadow.querySelector('.construction-runner-error'),
+            ghostRunner: shadow.querySelector('.ghost-runner'),
+            ghostRunnerClose: shadow.querySelector('.ghost-runner-close'),
+            ghostRunnerCancel: shadow.querySelector('.ghost-runner-cancel'),
+            ghostRunnerConfirm: shadow.querySelector('.ghost-runner-confirm'),
+            ghostHour: shadow.querySelector('.ghost-hour'),
+            ghostMinute: shadow.querySelector('.ghost-minute'),
+            ghostTimeValue: shadow.querySelector('.ghost-time-value'),
         };
 
         let editingProfileId = 1;
@@ -1016,6 +1341,9 @@
         refs.settings5.addEventListener('click', () => togglePanel(5));
         refs.settings6.addEventListener('click', () => togglePanel(6));
         refs.settings7.addEventListener('click', () => togglePanel(7));
+        refs.settings8.addEventListener('click', () => togglePanel(8));
+        refs.settings9.addEventListener('click', () => togglePanel(9));
+        refs.settings10.addEventListener('click', () => togglePanel(10));
         refs.combinedResources.addEventListener('click', () => open(combinedTargetProfiles[0]));
         refs.combinedExpeditions.addEventListener('click', () => open(combinedTargetProfiles[1]));
         refs.close.addEventListener('click', () => closePanel());
@@ -1034,11 +1362,27 @@
         refs.quick5.addEventListener('click', () => quickExpeditionsLifeformAction());
         refs.quick6.addEventListener('click', () => quickAction(6));
         refs.quick7.addEventListener('click', () => quickAction(7));
+        refs.quick8.addEventListener('click', quickGhostAction);
+        refs.quick9.addEventListener('click', () => quickAction(9));
+        refs.quick10.addEventListener('click', () => quickExpeditionV2LifeformAction());
         refs.constructionRunnerClose.addEventListener('click', closeConstructionRunner);
         refs.constructionRunnerCancel.addEventListener('click', closeConstructionRunner);
         refs.constructionRunnerStart.addEventListener('click', launchConstructionFromRunner);
-        [refs.constructionR1, refs.constructionR2, refs.constructionR3].forEach((input) => {
-            input.addEventListener('input', updateConstructionCalculation);
+        refs.constructionAddOrder.addEventListener('click', () => {
+            const row = addConstructionOrderRow();
+            row?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+        });
+        refs.ghostRunnerClose.addEventListener('click', closeGhostRunner);
+        refs.ghostRunnerCancel.addEventListener('click', closeGhostRunner);
+        refs.ghostRunnerConfirm.addEventListener('click', confirmGhostTime);
+        refs.ghostHour.addEventListener('change', updateGhostTimePreview);
+        refs.ghostMinute.addEventListener('change', updateGhostTimePreview);
+        refs.debugProgressClose.addEventListener('click', () => {
+            const run = getRunState();
+            if (run.runId) {
+                GM_setValue(DEBUG_DISMISSED_RUN_KEY, run.runId);
+            }
+            refs.debugProgress.style.display = 'none';
         });
         refs.simpleMenuToggle.addEventListener('click', () => toggleDropdown('simple'));
         refs.groupedMenuToggle.addEventListener('click', () => toggleDropdown('grouped'));
@@ -1080,6 +1424,24 @@
             }
         }
 
+        function quickExpeditionV2LifeformAction() {
+            const run = getRunState();
+            if (run.status === 'running' && run.combinedKind === 'expedition-v2-lifeform') {
+                void stopAutomation('Arrêt d’Expédition V2 & Forme de vie demandé avec le bouton flottant.');
+            } else {
+                void startExpeditionV2LifeformAutomation();
+            }
+        }
+
+        function quickGhostAction() {
+            const run = getRunState();
+            if (run.status === 'running' && run.profileId === 8 && !run.combinedMode) {
+                void stopAutomation('Arrêt de Ghost demandé avec le bouton flottant.');
+            } else {
+                openGhostRunner();
+            }
+        }
+
         function toggleDropdown(menuName) {
             const opensSimple = menuName === 'simple' && !refs.simpleMenu.classList.contains('open');
             const opensGrouped = menuName === 'grouped' && !refs.groupedMenu.classList.contains('open');
@@ -1087,6 +1449,7 @@
             if (opensSimple || opensGrouped) {
                 closePanel();
                 closeConstructionRunner();
+                closeGhostRunner();
             }
             if (opensSimple) {
                 refs.simpleMenu.classList.add('open');
@@ -1119,6 +1482,7 @@
 
         function open(profileId = 1) {
             closeConstructionRunner();
+            closeGhostRunner();
             loadProfileIntoPanel(profileId);
             refs.panel.classList.add('open');
             refresh();
@@ -1126,6 +1490,48 @@
 
         function closePanel() {
             refs.panel.classList.remove('open');
+        }
+
+        function openGhostRunner() {
+            const config = getStoredConfig(8);
+            if (config.links.length !== 1) {
+                open(8);
+                showError('Configurez l’URL unique de Ghost avant de choisir l’heure.');
+                return;
+            }
+
+            const storedTime = getStoredGhostTime();
+            closeDropdowns();
+            closePanel();
+            closeConstructionRunner();
+            refs.ghostHour.value = storedTime.hour;
+            refs.ghostMinute.value = storedTime.minute;
+            updateGhostTimePreview();
+            refs.ghostRunner.classList.add('open');
+        }
+
+        function closeGhostRunner() {
+            refs.ghostRunner.classList.remove('open');
+        }
+
+        function updateGhostTimePreview() {
+            refs.ghostTimeValue.textContent = `${refs.ghostHour.value}:${refs.ghostMinute.value}`;
+        }
+
+        function confirmGhostTime() {
+            const time = `${refs.ghostHour.value}:${refs.ghostMinute.value}`;
+            if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(time)) return;
+            GM_setValue(GHOST_TIME_KEY, time);
+            closeGhostRunner();
+            void startGhostAutomation(time);
+        }
+
+        function getStoredGhostTime() {
+            const stored = String(GM_getValue(GHOST_TIME_KEY, '00:00'));
+            const match = /^([01]\d|2[0-3]):([0-5]\d)$/.exec(stored);
+            return match
+                ? { hour: match[1], minute: match[2] }
+                : { hour: '00', minute: '00' };
         }
 
         function openConstructionRunner() {
@@ -1138,20 +1544,12 @@
 
             closeDropdowns();
             closePanel();
-            refs.constructionLinkSelect.replaceChildren();
-            for (const [index, entry] of config.namedLinks.entries()) {
-                const option = document.createElement('option');
-                option.value = String(index);
-                option.textContent = entry.name;
-                refs.constructionLinkSelect.appendChild(option);
-            }
-            refs.constructionR1.value = '0';
-            refs.constructionR2.value = '0';
-            refs.constructionR3.value = '0';
+            closeGhostRunner();
+            refs.constructionOrdersList.replaceChildren();
+            addConstructionOrderRow();
             showConstructionRunnerError('');
             updateConstructionCalculation();
             refs.constructionRunner.classList.add('open');
-            refs.constructionR1.focus();
         }
 
         function closeConstructionRunner() {
@@ -1164,62 +1562,221 @@
             refs.constructionRunnerError.classList.toggle('visible', Boolean(message));
         }
 
-        function updateConstructionCalculation() {
-            const values = [refs.constructionR1, refs.constructionR2, refs.constructionR3]
-                .map((input) => parseConstructionMillions(input.value));
-            if (values.some((value) => value === null)) {
-                refs.constructionCalculation.textContent =
-                    'Saisissez trois montants positifs en millions, par exemple 3.3.';
-                return;
+        function getConstructionOrderRows() {
+            return [...refs.constructionOrdersList.querySelectorAll('.construction-order-row')];
+        }
+
+        function addConstructionOrderRow(initialValues = {}) {
+            const rows = getConstructionOrderRows();
+            if (rows.length >= MAX_CONSTRUCTION_ORDERS) return null;
+
+            const row = document.createElement('article');
+            row.className = 'construction-order-row';
+            row.innerHTML = `
+                <div class="construction-order-header">
+                    <span class="construction-order-title"></span>
+                    <span class="construction-order-summary">Total : 0 · Petites voitures : 0</span>
+                    <button type="button" class="construction-order-remove" title="Supprimer cette ligne" aria-label="Supprimer cette ligne">×</button>
+                </div>
+                <div class="construction-order-grid">
+                    <div class="construction-order-field">
+                        <label>R1</label>
+                        <div class="amount-input-shell">
+                            <input class="construction-order-r1" type="text" inputmode="decimal" autocomplete="off" placeholder="3.3">
+                            <span>M</span>
+                        </div>
+                    </div>
+                    <div class="construction-order-field">
+                        <label>R2</label>
+                        <div class="amount-input-shell">
+                            <input class="construction-order-r2" type="text" inputmode="decimal" autocomplete="off" placeholder="2.0">
+                            <span>M</span>
+                        </div>
+                    </div>
+                    <div class="construction-order-field">
+                        <label>R3</label>
+                        <div class="amount-input-shell">
+                            <input class="construction-order-r3" type="text" inputmode="decimal" autocomplete="off" placeholder="1">
+                            <span>M</span>
+                        </div>
+                    </div>
+                    <div class="construction-order-field destination">
+                        <label>Destination</label>
+                        <select class="construction-order-destination"></select>
+                    </div>
+                </div>
+            `;
+
+            const amountInputs = [
+                row.querySelector('.construction-order-r1'),
+                row.querySelector('.construction-order-r2'),
+                row.querySelector('.construction-order-r3'),
+            ];
+            const initialAmounts = [initialValues.r1, initialValues.r2, initialValues.r3];
+            amountInputs.forEach((input, index) => {
+                input.value = String(initialAmounts[index] ?? '0');
+                input.addEventListener('input', updateConstructionCalculation);
+                input.addEventListener('focus', () => {
+                    if (input.value.trim() === '0') {
+                        input.value = '';
+                        updateConstructionCalculation();
+                    }
+                });
+                input.addEventListener('blur', () => {
+                    if (input.value.trim() === '') {
+                        input.value = '0';
+                        updateConstructionCalculation();
+                    }
+                });
+            });
+
+            const destinationSelect = row.querySelector('.construction-order-destination');
+            const config = getStoredConfig(7);
+            for (const [index, entry] of config.namedLinks.entries()) {
+                const option = document.createElement('option');
+                option.value = String(index);
+                option.textContent = entry.name;
+                destinationSelect.appendChild(option);
             }
-            const total = values.reduce((sum, value) => sum + value, 0);
-            const transporterCount = Math.ceil(total / 9000);
-            refs.constructionCalculation.textContent =
-                `Total réel : ${formatInteger(total)} · Petites voitures : ${formatInteger(transporterCount)}`;
+            const initialLinkIndex = Number(initialValues.selectedLinkIndex);
+            if (Number.isInteger(initialLinkIndex) && config.namedLinks[initialLinkIndex]) {
+                destinationSelect.value = String(initialLinkIndex);
+            }
+            destinationSelect.addEventListener('change', updateConstructionCalculation);
+
+            row.querySelector('.construction-order-remove').addEventListener('click', () => {
+                if (getConstructionOrderRows().length <= 1) return;
+                row.remove();
+                updateConstructionCalculation();
+            });
+
+            refs.constructionOrdersList.appendChild(row);
+            updateConstructionCalculation();
+            return row;
+        }
+
+        function updateConstructionCalculation() {
+            const rows = getConstructionOrderRows();
+            let cumulativeTotal = 0;
+            let cumulativeTransporters = 0;
+            let allRowsAreValid = rows.length > 0;
+
+            rows.forEach((row, index) => {
+                row.querySelector('.construction-order-title').textContent = `Ligne ${index + 1}`;
+                const inputs = [
+                    row.querySelector('.construction-order-r1'),
+                    row.querySelector('.construction-order-r2'),
+                    row.querySelector('.construction-order-r3'),
+                ];
+                inputs.forEach((input, inputIndex) => {
+                    input.setAttribute('aria-label', `R${inputIndex + 1} de la ligne ${index + 1}`);
+                });
+                row.querySelector('.construction-order-destination')
+                    .setAttribute('aria-label', `Destination de la ligne ${index + 1}`);
+
+                const values = inputs.map((input) => parseConstructionMillions(input.value));
+                const summary = row.querySelector('.construction-order-summary');
+                if (values.some((value) => value === null)) {
+                    allRowsAreValid = false;
+                    summary.textContent = 'Montant à compléter';
+                } else {
+                    const total = values.reduce((sum, value) => sum + value, 0);
+                    const transporterCount = Math.ceil(total / 9000);
+                    if (!Number.isSafeInteger(total)) {
+                        allRowsAreValid = false;
+                        summary.textContent = 'Total trop élevé';
+                    } else {
+                        cumulativeTotal += total;
+                        cumulativeTransporters += transporterCount;
+                        summary.textContent =
+                            `Total : ${formatInteger(total)} · Petites voitures : ${formatInteger(transporterCount)}`;
+                    }
+                }
+            });
+
+            const rowCount = rows.length;
+            refs.constructionOrdersCounter.textContent = `${rowCount} / ${MAX_CONSTRUCTION_ORDERS}`;
+            refs.constructionAddOrder.disabled = rowCount >= MAX_CONSTRUCTION_ORDERS;
+            refs.constructionAddOrder.textContent = rowCount >= MAX_CONSTRUCTION_ORDERS
+                ? `Maximum de ${MAX_CONSTRUCTION_ORDERS} lignes atteint`
+                : '＋ Ajouter une ligne';
+            rows.forEach((row) => {
+                row.querySelector('.construction-order-remove').disabled = rowCount <= 1;
+            });
+
+            refs.constructionCalculation.textContent = allRowsAreValid
+                ? `${rowCount} exécution${rowCount > 1 ? 's' : ''} · ` +
+                    `Total réel cumulé : ${formatInteger(cumulativeTotal)} · ` +
+                    `Petites voitures cumulées : ${formatInteger(cumulativeTransporters)}`
+                : 'Corrigez les montants indiqués avant de démarrer.';
         }
 
         function launchConstructionFromRunner() {
-            const amounts = [refs.constructionR1, refs.constructionR2, refs.constructionR3]
-                .map((input) => parseConstructionMillions(input.value));
-            if (amounts.some((value) => value === null)) {
-                showConstructionRunnerError(
-                    'R1, R2 et R3 doivent être des montants positifs en millions (exemple : 3.3).'
-                );
-                return;
-            }
-
-            const selectedLinkIndex = Number(refs.constructionLinkSelect.value);
             const config = getStoredConfig(7);
-            if (!Number.isInteger(selectedLinkIndex) || !config.namedLinks[selectedLinkIndex]) {
-                showConstructionRunnerError('Choisissez une destination valide.');
-                return;
+            const rows = getConstructionOrderRows();
+            const orders = [];
+            for (const [index, row] of rows.entries()) {
+                const amounts = [
+                    row.querySelector('.construction-order-r1'),
+                    row.querySelector('.construction-order-r2'),
+                    row.querySelector('.construction-order-r3'),
+                ].map((input) => parseConstructionMillions(input.value));
+                if (amounts.some((value) => value === null)) {
+                    showConstructionRunnerError(
+                        `Ligne ${index + 1} : R1, R2 et R3 doivent être des montants positifs ou nuls en millions.`
+                    );
+                    return;
+                }
+
+                const selectedLinkIndex = Number(
+                    row.querySelector('.construction-order-destination').value
+                );
+                if (!Number.isInteger(selectedLinkIndex) || !config.namedLinks[selectedLinkIndex]) {
+                    showConstructionRunnerError(`Ligne ${index + 1} : choisissez une destination valide.`);
+                    return;
+                }
+                orders.push({
+                    r1: amounts[0],
+                    r2: amounts[1],
+                    r3: amounts[2],
+                    selectedLinkIndex,
+                });
             }
 
             showConstructionRunnerError('');
             closeConstructionRunner();
-            void startConstructionAutomation({
-                r1: amounts[0],
-                r2: amounts[1],
-                r3: amounts[2],
-                selectedLinkIndex,
-            });
+            void startConstructionAutomation({ orders });
         }
 
         function loadProfileIntoPanel(profileId) {
             editingProfileId = normalizeEditorProfileId(profileId);
 
-            if (editingProfileId === 3 || editingProfileId === 5) {
-                const expeditionsConfig = getStoredConfig(2);
-                const isResourcesExpeditions = editingProfileId === 3;
-                const firstConfig = getStoredConfig(isResourcesExpeditions ? 1 : 2);
-                const secondConfig = getStoredConfig(isResourcesExpeditions ? 2 : 4);
-                combinedTargetProfiles = isResourcesExpeditions ? [1, 2] : [2, 4];
-                refs.panelTitle.textContent = isResourcesExpeditions
-                    ? 'Configuration — Ressources & Expéditions'
-                    : 'Configuration — Expédition & Forme de vie';
-                refs.help.textContent = isResourcesExpeditions
-                    ? 'Le mode combiné exécute Ressources une fois, puis démarre automatiquement Expéditions avec leurs réglages respectifs.'
-                    : 'Le mode combiné exécute Expéditions, puis démarre automatiquement Forme de vie avec leurs réglages respectifs.';
+            if ([3, 5, 10].includes(editingProfileId)) {
+                const combinedDetails = editingProfileId === 3
+                    ? {
+                        targets: [1, 2],
+                        title: 'Configuration — Ressources & Expéditions',
+                        help: 'Le mode combiné exécute Ressources une fois, puis démarre automatiquement Expéditions avec leurs réglages respectifs.',
+                        startLabel: 'Lancer Ressources & Expéditions',
+                    }
+                    : editingProfileId === 5
+                      ? {
+                          targets: [2, 4],
+                          title: 'Configuration — Expédition & Forme de vie',
+                          help: 'Le mode combiné exécute Expéditions, puis démarre automatiquement Forme de vie avec leurs réglages respectifs.',
+                          startLabel: 'Lancer Expédition & Forme de vie',
+                      }
+                      : {
+                          targets: [9, 4],
+                          title: 'Configuration — Expédition V2 & Forme de vie',
+                          help: 'Le mode combiné exécute Expédition V2 jusqu’au message d’arrêt, puis démarre automatiquement Forme de vie.',
+                          startLabel: 'Lancer Expédition V2 & Forme de vie',
+                      };
+                combinedTargetProfiles = combinedDetails.targets;
+                const firstConfig = getStoredConfig(combinedTargetProfiles[0]);
+                const secondConfig = getStoredConfig(combinedTargetProfiles[1]);
+                refs.panelTitle.textContent = combinedDetails.title;
+                refs.help.textContent = combinedDetails.help;
                 refs.startUrlGroup.style.display = 'none';
                 refs.smallVehicleGroup.style.display = 'none';
                 refs.linksFieldGroup.style.display = 'none';
@@ -1231,15 +1788,10 @@
                     `Configurer ${getProfileLabel(combinedTargetProfiles[0])}`;
                 refs.combinedExpeditions.textContent =
                     `Configurer ${getProfileLabel(combinedTargetProfiles[1])}`;
-                refs.start.textContent = isResourcesExpeditions
-                    ? 'Lancer Ressources & Expéditions'
-                    : 'Lancer Expédition & Forme de vie';
+                refs.start.textContent = combinedDetails.startLabel;
                 refs.status.textContent =
                     `${getProfileLabel(combinedTargetProfiles[0])} : ${firstConfig.links.length} lien(s) · ` +
-                    `${getProfileLabel(combinedTargetProfiles[1])} : ${secondConfig.links.length} lien(s)` +
-                    (isResourcesExpeditions
-                        ? `, ${expeditionsConfig.smallVehicleCount} petites voitures.`
-                        : '.');
+                    `${getProfileLabel(combinedTargetProfiles[1])} : ${secondConfig.links.length} lien(s).`;
                 showError('');
                 return;
             }
@@ -1260,8 +1812,12 @@
                       ? 'Jusqu’à 14 URL. Une URL et une direction sont choisies aléatoirement une seule fois au lancement.'
                       : editingProfileId === 6
                         ? 'Une URL unique. Import clique sur le maximum, sur Payer, puis récupère l’objet.'
-                        : editingProfileId === 7
+                      : editingProfileId === 7
                           ? 'Jusqu’à 13 destinations. Chaque URL possède un nom affiché dans la fenêtre de lancement.'
+                          : editingProfileId === 8
+                            ? 'Une URL unique pour Ghost. Elle reste enregistrée dans le stockage privé de Tampermonkey.'
+                          : editingProfileId === 9
+                            ? 'Une URL unique. Expédition V2 choisit une direction et 0 à 6 déplacements, sélectionne EXPE, puis lance les expéditions jusqu’au message d’arrêt.'
                     : 'Un lien par ligne. Les adresses sont conservées dans le stockage privé de Tampermonkey, jamais dans le code du script.';
             refs.startUrlGroup.style.display = editingProfileId === 2 ? 'block' : 'none';
             refs.startUrl.value = editingProfileId === 2 ? config.startUrl : '';
@@ -1271,10 +1827,11 @@
             refs.linksFieldGroup.style.display = editingProfileId === 7 ? 'none' : 'block';
             refs.namedLinksFieldGroup.style.display = editingProfileId === 7 ? 'block' : 'none';
             refs.combinedConfig.style.display = 'none';
-            refs.linksLabel.textContent = editingProfileId === 6 ? 'URL à ouvrir' : 'Liens à traiter';
+            const usesSingleUrl = [6, 8, 9].includes(editingProfileId);
+            refs.linksLabel.textContent = usesSingleUrl ? 'URL à ouvrir' : 'Liens à traiter';
             refs.textarea.value = links.join('\n');
-            refs.textarea.placeholder = editingProfileId === 6 ? 'https://…' : 'Lien 1\nLien 2\n…';
-            refs.textarea.style.minHeight = editingProfileId === 6 ? '58px' : '';
+            refs.textarea.placeholder = usesSingleUrl ? 'https://…' : 'Lien 1\nLien 2\n…';
+            refs.textarea.style.minHeight = usesSingleUrl ? '58px' : '';
             refs.namedLinkNames.forEach((input, index) => {
                 input.value = editingProfileId === 7 ? config.namedLinks[index]?.name || '' : '';
             });
@@ -1284,13 +1841,15 @@
             refs.repeat.checked = config.repeat;
             refs.repeatRow.style.display = editingProfileId === 1 ? 'flex' : 'none';
             refs.save.style.display = '';
-            refs.start.textContent = 'Enregistrer et lancer';
+            refs.start.textContent = editingProfileId === 8
+                ? 'Enregistrer et choisir l’heure'
+                : 'Enregistrer et lancer';
             showError('');
             updateCounter();
         }
 
         function updateCounter() {
-            if (editingProfileId === 3 || editingProfileId === 5) return;
+            if ([3, 5, 10].includes(editingProfileId)) return;
             if (editingProfileId === 7) {
                 const count = refs.namedLinkNames.reduce((total, input, index) => {
                     return total + (input.value.trim() || refs.namedLinkUrls[index].value.trim() ? 1 : 0);
@@ -1312,13 +1871,15 @@
         }
 
         function saveFromPanel(shouldStart) {
-            if (editingProfileId === 3 || editingProfileId === 5) {
+            if ([3, 5, 10].includes(editingProfileId)) {
                 showError('');
                 if (shouldStart) {
                     if (editingProfileId === 3) {
                         void startCombinedAutomation();
-                    } else {
+                    } else if (editingProfileId === 5) {
                         void startExpeditionsLifeformAutomation();
+                    } else {
+                        void startExpeditionV2LifeformAutomation();
                     }
                 }
                 return;
@@ -1382,6 +1943,10 @@
                     void startLifeformAutomation();
                 } else if (editingProfileId === 6) {
                     void startImportAutomation();
+                } else if (editingProfileId === 8) {
+                    openGhostRunner();
+                } else if (editingProfileId === 9) {
+                    void startExpeditionV2Automation();
                 } else {
                     void startAutomation(editingProfileId, parsed.links);
                 }
@@ -1390,12 +1955,14 @@
 
         function refresh() {
             const run = getRunState();
-            const isCombinedPanel = editingProfileId === 3 || editingProfileId === 5;
+            const isCombinedPanel = [3, 5, 10].includes(editingProfileId);
             const config = isCombinedPanel ? null : getStoredConfig(editingProfileId);
             const resourcesExpeditionsRunning =
                 run.status === 'running' && run.combinedKind === 'resources-expeditions';
             const expeditionsLifeformRunning =
                 run.status === 'running' && run.combinedKind === 'expeditions-lifeform';
+            const expeditionV2LifeformRunning =
+                run.status === 'running' && run.combinedKind === 'expedition-v2-lifeform';
             const profile1Running =
                 run.status === 'running' && run.profileId === 1 && !run.combinedMode;
             const profile2Running =
@@ -1406,10 +1973,15 @@
                 run.status === 'running' && run.profileId === 6 && !run.combinedMode;
             const profile7Running =
                 run.status === 'running' && run.profileId === 7 && !run.combinedMode;
+            const profile8Running =
+                run.status === 'running' && run.profileId === 8 && !run.combinedMode;
+            const profile9Running =
+                run.status === 'running' && run.profileId === 9 && !run.combinedMode;
             const simpleActionRunning =
-                profile1Running || profile2Running || profile4Running || profile6Running || profile7Running;
+                profile1Running || profile2Running || profile4Running || profile6Running ||
+                profile7Running || profile8Running || profile9Running;
             const groupedActionRunning =
-                resourcesExpeditionsRunning || expeditionsLifeformRunning;
+                resourcesExpeditionsRunning || expeditionsLifeformRunning || expeditionV2LifeformRunning;
 
             refs.quick1.classList.toggle('running', profile1Running);
             refs.quick2.classList.toggle('running', profile2Running);
@@ -1418,6 +1990,9 @@
             refs.quick5.classList.toggle('running', expeditionsLifeformRunning);
             refs.quick6.classList.toggle('running', profile6Running);
             refs.quick7.classList.toggle('running', profile7Running);
+            refs.quick8.classList.toggle('running', profile8Running);
+            refs.quick9.classList.toggle('running', profile9Running);
+            refs.quick10.classList.toggle('running', expeditionV2LifeformRunning);
             refs.simpleMenuToggle.classList.toggle('running', simpleActionRunning);
             refs.groupedMenuToggle.classList.toggle('running', groupedActionRunning);
             refs.quick1.textContent = profile1Running ? '■ Arrêter' : 'Ressources';
@@ -1429,6 +2004,11 @@
                 : 'Expédition & Forme de vie';
             refs.quick6.textContent = profile6Running ? '■ Arrêter' : 'Import';
             refs.quick7.textContent = profile7Running ? '■ Arrêter' : 'Constructions';
+            refs.quick8.textContent = profile8Running ? '■ Arrêter' : 'Ghost';
+            refs.quick9.textContent = profile9Running ? '■ Arrêter' : 'Expédition V2';
+            refs.quick10.textContent = expeditionV2LifeformRunning
+                ? '■ Arrêter le combiné'
+                : 'Expédition V2 & Forme de vie';
             refs.quick1.title = profile1Running ? 'Arrêter Ressources' : 'Lancer Ressources';
             refs.quick2.title = profile2Running ? 'Arrêter Expéditions' : 'Lancer Expéditions';
             refs.quick3.title = resourcesExpeditionsRunning
@@ -1440,10 +2020,19 @@
                 : 'Lancer Expédition puis Forme de vie';
             refs.quick6.title = profile6Running ? 'Arrêter Import' : 'Lancer Import';
             refs.quick7.title = profile7Running ? 'Arrêter Constructions' : 'Lancer Constructions';
+            refs.quick8.title = profile8Running ? 'Arrêter Ghost' : 'Lancer Ghost';
+            refs.quick9.title = profile9Running ? 'Arrêter Expédition V2' : 'Lancer Expédition V2';
+            refs.quick10.title = expeditionV2LifeformRunning
+                ? 'Arrêter Expédition V2 & Forme de vie'
+                : 'Lancer Expédition V2 puis Forme de vie';
 
             const debugText = formatDebugProgress(run);
-            refs.debugProgress.textContent = debugText;
-            refs.debugProgress.style.display = debugText ? 'block' : 'none';
+            const debugWasDismissed =
+                Boolean(run.runId) && GM_getValue(DEBUG_DISMISSED_RUN_KEY, '') === run.runId;
+            refs.debugProgressContent.textContent = debugText;
+            refs.debugProgress.style.display = debugText && !debugWasDismissed ? 'grid' : 'none';
+            refs.debugProgress.classList.toggle('running', run.status === 'running');
+            refs.debugProgress.classList.toggle('completed', run.status === 'completed');
             refs.debugProgress.classList.toggle(
                 'error',
                 run.status === 'error' || run.status === 'needs-actions'
@@ -1452,7 +2041,11 @@
             if (run.message) {
                 refs.status.textContent = run.message;
             } else if (isCombinedPanel) {
-                const targets = editingProfileId === 3 ? [1, 2] : [2, 4];
+                const targets = editingProfileId === 3
+                    ? [1, 2]
+                    : editingProfileId === 5
+                      ? [2, 4]
+                      : [9, 4];
                 const firstConfig = getStoredConfig(targets[0]);
                 const secondConfig = getStoredConfig(targets[1]);
                 refs.status.textContent =
@@ -1470,6 +2063,7 @@
         return {
             open,
             openConstructionRunner,
+            openGhostRunner,
             refresh,
             showError,
             showConstructionError: showConstructionRunnerError,
@@ -1509,6 +2103,15 @@
         if (normalizedProfileId === 7) {
             const ui = await ensureUi();
             ui.openConstructionRunner();
+            return;
+        }
+        if (normalizedProfileId === 8) {
+            const ui = await ensureUi();
+            ui.openGhostRunner();
+            return;
+        }
+        if (normalizedProfileId === 9) {
+            await startExpeditionV2Automation();
             return;
         }
 
@@ -1571,6 +2174,33 @@
         await startAutomation(2, expeditionsConfig.links, {
             combinedMode: true,
             combinedKind: 'expeditions-lifeform',
+            nextProfileId: 4,
+        });
+    }
+
+    async function startExpeditionV2LifeformAutomation() {
+        const expeditionV2Config = getStoredConfig(9);
+        const lifeformConfig = getStoredConfig(4);
+        const errors = [];
+
+        if (expeditionV2Config.links.length !== 1) {
+            errors.push('Ajoutez l’URL unique dans Expédition V2.');
+        }
+        if (lifeformConfig.links.length === 0) {
+            errors.push('Ajoutez au moins une URL dans Forme de vie.');
+        }
+
+        if (errors.length > 0) {
+            const ui = await ensureUi();
+            ui.open(10);
+            ui.showError(errors.join(' '));
+            ui.refresh();
+            return;
+        }
+
+        await startExpeditionV2Automation({
+            combinedMode: true,
+            combinedKind: 'expedition-v2-lifeform',
             nextProfileId: 4,
         });
     }
@@ -2022,30 +2652,508 @@
         return true;
     }
 
+    async function startGhostAutomation(selectedTime = '') {
+        const config = getStoredConfig(8);
+        if (config.links.length !== 1) {
+            const ui = await ensureUi();
+            ui.open(8);
+            ui.showError('Configurez l’URL unique de Ghost avant de lancer.');
+            ui.refresh();
+            return;
+        }
+
+        const storedTime = getStoredGhostTimeValue();
+        const ghostTime = /^([01]\d|2[0-3]):[0-5]\d$/.test(selectedTime)
+            ? selectedTime
+            : storedTime;
+        const now = Date.now();
+        const runId = createRunId();
+        const run = {
+            runId,
+            profileId: 8,
+            status: 'running',
+            combinedMode: false,
+            combinedKind: '',
+            nextProfileId: null,
+            phase: 'ghost-open-link',
+            currentLinkIndex: 0,
+            ghostTime,
+            ghostPendingDelayMs: 0,
+            ghostPendingDelayLabel: '',
+            startedAt: now,
+            updatedAt: now,
+            message: `Ghost — action 1/2 : ouverture de l’URL configurée (heure ${ghostTime})…`,
+        };
+
+        GM_setValue(RUN_KEY, run);
+        await setThisTabRunId(runId);
+        refreshUi();
+        navigateToUrl(config.links[0], true);
+    }
+
+    async function resumeGhostAutomation(runId) {
+        try {
+            let run = getActiveRun(runId);
+            if (!run || run.profileId !== 8) return;
+
+            const config = getStoredConfig(8);
+            const ghostUrl = config.links[0];
+            if (!ghostUrl) {
+                throw new Error('L’URL Ghost n’est plus configurée.');
+            }
+
+            while (true) {
+                run = getActiveRun(runId);
+                if (!run) return;
+
+                if (Number(run.ghostPendingDelayMs) > 0) {
+                    const canContinue = await consumeGhostDelay(runId);
+                    if (!canContinue) return;
+                    continue;
+                }
+
+                if (run.phase === 'ghost-open-link') {
+                    if (!isConfiguredPage(ghostUrl, window.location.href)) {
+                        navigateToUrl(ghostUrl, false);
+                        return;
+                    }
+
+                    const renderResult = await waitUntilPageUsable(PAGE_TIMEOUT_MS);
+                    if (renderResult.timedOut) {
+                        throw new Error('La page Ghost ne s’est pas chargée à temps.');
+                    }
+                    if (!getActiveRun(runId)) return;
+
+                    updateRun(runId, {
+                        phase: 'ghost-send-all',
+                        ghostPendingDelayMs: getRandomDelayMs(
+                            GHOST_DELAY_MIN_MS,
+                            GHOST_DELAY_MAX_MS
+                        ),
+                        ghostPendingDelayLabel: 'le chargement de l’URL',
+                        message: 'Ghost — action 1/2 terminée : page chargée.',
+                    });
+                    refreshUi();
+                    continue;
+                }
+
+                if (run.phase === 'ghost-send-all') {
+                    updateRun(runId, {
+                        message: 'Ghost — action 2/2 : sélectionner tous les vaisseaux…',
+                    });
+                    refreshUi();
+                    const sendAllButton = await waitForElement(GHOST_SEND_ALL_SELECTOR, {
+                        timeoutMs: ELEMENT_TIMEOUT_MS,
+                        clickable: true,
+                    });
+                    if (!getActiveRun(runId)) return;
+
+                    updateRun(runId, {
+                        phase: 'ghost-after-send-all',
+                        ghostPendingDelayMs: getRandomDelayMs(
+                            GHOST_DELAY_MIN_MS,
+                            GHOST_DELAY_MAX_MS
+                        ),
+                        ghostPendingDelayLabel: 'la sélection de tous les vaisseaux',
+                        message: 'Ghost — action 2/2 effectuée : tous les vaisseaux ont été sélectionnés.',
+                    });
+                    refreshUi();
+                    sendAllButton.click();
+                    continue;
+                }
+
+                if (run.phase === 'ghost-after-send-all') {
+                    const activeRun = getActiveRun(runId);
+                    if (!activeRun) return;
+                    GM_setValue(RUN_KEY, {
+                        ...activeRun,
+                        status: 'completed',
+                        phase: 'ghost-completed',
+                        updatedAt: Date.now(),
+                        message:
+                            `Ghost terminé à ce stade : URL chargée et tous les vaisseaux ` +
+                            `sélectionnés. Heure conservée : ${activeRun.ghostTime}.`,
+                    });
+                    await clearThisTabRunId(runId);
+                    refreshUi();
+                    return;
+                }
+
+                throw new Error(`Phase Ghost inconnue : ${run.phase}`);
+            }
+        } catch (error) {
+            await failRun(runId, error instanceof Error ? error.message : String(error), error);
+        }
+    }
+
+    async function consumeGhostDelay(runId) {
+        const run = getActiveRun(runId);
+        if (!run) return false;
+        const delayMs = Math.max(0, Math.floor(Number(run.ghostPendingDelayMs) || 0));
+        if (delayMs === 0) return true;
+
+        const label = run.ghostPendingDelayLabel || 'l’action précédente';
+        updateRun(runId, {
+            message: `Ghost — attente aléatoire ${(delayMs / 1000).toFixed(2)} s après ${label}…`,
+        });
+        refreshUi();
+        await delay(delayMs);
+        if (!getActiveRun(runId)) return false;
+
+        updateRun(runId, {
+            ghostPendingDelayMs: 0,
+            ghostPendingDelayLabel: '',
+        });
+        refreshUi();
+        return true;
+    }
+
+    function getStoredGhostTimeValue() {
+        const stored = String(GM_getValue(GHOST_TIME_KEY, '00:00'));
+        return /^([01]\d|2[0-3]):[0-5]\d$/.test(stored) ? stored : '00:00';
+    }
+
+    async function startExpeditionV2Automation(options = {}) {
+        const config = getStoredConfig(9);
+        if (config.links.length !== 1) {
+            const ui = await ensureUi();
+            ui.open(9);
+            ui.showError('Configurez l’URL unique d’Expédition V2 avant de lancer.');
+            ui.refresh();
+            return;
+        }
+
+        const directionKeys = Object.keys(LIFEFORM_DIRECTIONS);
+        const direction = directionKeys[getSecureRandomIndex(directionKeys.length)];
+        const directionTarget = getSecureRandomIndex(7);
+        const now = Date.now();
+        const runId = createRunId();
+        const run = {
+            runId,
+            profileId: 9,
+            status: 'running',
+            combinedMode: Boolean(options.combinedMode),
+            combinedKind: typeof options.combinedKind === 'string' ? options.combinedKind : '',
+            nextProfileId: Number(options.nextProfileId) === 4 ? 4 : null,
+            phase: 'expedition-v2-open-link',
+            currentLinkIndex: 0,
+            expeditionV2Direction: direction,
+            expeditionV2DirectionTarget: directionTarget,
+            expeditionV2DirectionClicks: 0,
+            expeditionV2LaunchCount: 0,
+            expeditionV2PendingDelayMs: 0,
+            expeditionV2PendingDelayLabel: '',
+            startedAt: now,
+            updatedAt: now,
+            message:
+                `Expédition V2 — ouverture de l’URL. Direction ` +
+                `${direction === 'next' ? 'suivante' : 'précédente'}, ${directionTarget} clic(s) prévu(s).`,
+        };
+
+        GM_setValue(RUN_KEY, run);
+        await setThisTabRunId(runId);
+        refreshUi();
+        navigateToUrl(config.links[0], true);
+    }
+
+    async function resumeExpeditionV2Automation(runId) {
+        try {
+            let run = getActiveRun(runId);
+            if (!run || run.profileId !== 9) return;
+
+            const config = getStoredConfig(9);
+            const configuredUrl = config.links[0];
+            if (!configuredUrl) {
+                throw new Error('L’URL d’Expédition V2 est absente ou invalide.');
+            }
+
+            while (true) {
+                run = getActiveRun(runId);
+                if (!run) return;
+
+                if (Number(run.expeditionV2PendingDelayMs) > 0) {
+                    const canContinue = await consumeExpeditionV2Delay(runId);
+                    if (!canContinue) return;
+                    continue;
+                }
+
+                if (run.phase === 'expedition-v2-open-link') {
+                    if (!isConfiguredPage(configuredUrl, window.location.href)) {
+                        navigateToUrl(configuredUrl, false);
+                        return;
+                    }
+
+                    const renderResult = await waitUntilPageUsable(PAGE_TIMEOUT_MS);
+                    if (renderResult.timedOut) {
+                        throw new Error('La page Expédition V2 ne s’est pas chargée à temps.');
+                    }
+                    if (!getActiveRun(runId)) return;
+
+                    const directionTarget = Math.max(
+                        0,
+                        Math.min(6, Math.floor(Number(run.expeditionV2DirectionTarget) || 0))
+                    );
+                    updateRun(runId, {
+                        phase: directionTarget === 0
+                            ? 'expedition-v2-select-expe'
+                            : 'expedition-v2-direction',
+                        expeditionV2PendingDelayMs: getRandomDelayMs(
+                            EXPEDITION_V2_DELAY_MIN_MS,
+                            EXPEDITION_V2_DELAY_MAX_MS
+                        ),
+                        expeditionV2PendingDelayLabel: 'le chargement de l’URL',
+                        message:
+                            `Expédition V2 — étape 1/4 terminée. ` +
+                            `${directionTarget} déplacement(s) ` +
+                            `${run.expeditionV2Direction === 'next' ? 'suivant(s)' : 'précédent(s)'} prévu(s).`,
+                    });
+                    refreshUi();
+                    continue;
+                }
+
+                if (run.phase === 'expedition-v2-direction') {
+                    const direction = run.expeditionV2Direction === 'next' ? 'next' : 'prev';
+                    const directionTarget = Math.max(
+                        0,
+                        Math.min(6, Math.floor(Number(run.expeditionV2DirectionTarget) || 0))
+                    );
+                    const completedClicks = Math.max(
+                        0,
+                        Math.floor(Number(run.expeditionV2DirectionClicks) || 0)
+                    );
+                    if (completedClicks >= directionTarget) {
+                        updateRun(runId, {
+                            phase: 'expedition-v2-select-expe',
+                            message: 'Expédition V2 — étape 2/4 terminée, préparation de la sélection EXPE…',
+                        });
+                        refreshUi();
+                        continue;
+                    }
+
+                    updateRun(runId, {
+                        message:
+                            `Expédition V2 — étape 2/4 : déplacement ` +
+                            `${completedClicks + 1}/${directionTarget} vers la ` +
+                            `${direction === 'next' ? 'galaxie suivante' : 'galaxie précédente'}…`,
+                    });
+                    refreshUi();
+                    const directionButton = await waitForElement(LIFEFORM_DIRECTIONS[direction], {
+                        timeoutMs: ELEMENT_TIMEOUT_MS,
+                        clickable: true,
+                    });
+                    if (!getActiveRun(runId)) return;
+
+                    const nextClickCount = completedClicks + 1;
+                    updateRun(runId, {
+                        phase: nextClickCount >= directionTarget
+                            ? 'expedition-v2-select-expe'
+                            : 'expedition-v2-direction',
+                        expeditionV2DirectionClicks: nextClickCount,
+                        expeditionV2PendingDelayMs: getRandomDelayMs(
+                            EXPEDITION_V2_DELAY_MIN_MS,
+                            EXPEDITION_V2_DELAY_MAX_MS
+                        ),
+                        expeditionV2PendingDelayLabel:
+                            `le déplacement ${nextClickCount}/${directionTarget}`,
+                        message:
+                            `Expédition V2 — déplacement ${nextClickCount}/${directionTarget} effectué ` +
+                            `vers la ${direction === 'next' ? 'galaxie suivante' : 'galaxie précédente'}.`,
+                    });
+                    refreshUi();
+                    directionButton.click();
+                    continue;
+                }
+
+                if (run.phase === 'expedition-v2-select-expe') {
+                    updateRun(runId, {
+                        message: 'Expédition V2 — étape 3/4 : sélectionner EXPE…',
+                    });
+                    refreshUi();
+                    const expeButton = await waitForElement(EXPEDITION_V2_EXPE_SELECTOR, {
+                        timeoutMs: ELEMENT_TIMEOUT_MS,
+                        clickable: true,
+                    });
+                    if (!getActiveRun(runId)) return;
+
+                    updateRun(runId, {
+                        phase: 'expedition-v2-expeditions',
+                        expeditionV2PendingDelayMs: getRandomDelayMs(
+                            EXPEDITION_V2_DELAY_MIN_MS,
+                            EXPEDITION_V2_DELAY_MAX_MS
+                        ),
+                        expeditionV2PendingDelayLabel: 'la sélection de EXPE',
+                        message: 'Expédition V2 — étape 3/4 terminée : EXPE sélectionné.',
+                    });
+                    refreshUi();
+                    expeButton.click();
+                    continue;
+                }
+
+                if (run.phase === 'expedition-v2-expeditions') {
+                    if (hasExpeditionV2StopText()) {
+                        await completeExpeditionV2(runId);
+                        return;
+                    }
+
+                    const launchCount = Math.max(
+                        0,
+                        Math.floor(Number(run.expeditionV2LaunchCount) || 0)
+                    );
+                    if (launchCount >= EXPEDITION_V2_MAX_LAUNCHES) {
+                        throw new Error(
+                            `Le texte « Trop d’expéditions simultanées » n’est pas apparu après ` +
+                            `${EXPEDITION_V2_MAX_LAUNCHES} tentatives.`
+                        );
+                    }
+
+                    updateRun(runId, {
+                        message:
+                            `Expédition V2 — étape 4/4 : lancement de l’expédition ` +
+                            `${launchCount + 1}…`,
+                    });
+                    refreshUi();
+                    const expeditionButton = await waitForElement(EXPEDITION_V2_BUTTON_SELECTOR, {
+                        timeoutMs: ELEMENT_TIMEOUT_MS,
+                        clickable: true,
+                    });
+                    if (!getActiveRun(runId)) return;
+
+                    const nextLaunchCount = launchCount + 1;
+                    updateRun(runId, {
+                        expeditionV2LaunchCount: nextLaunchCount,
+                        expeditionV2PendingDelayMs: getRandomDelayMs(
+                            EXPEDITION_V2_DELAY_MIN_MS,
+                            EXPEDITION_V2_DELAY_MAX_MS
+                        ),
+                        expeditionV2PendingDelayLabel:
+                            `le lancement de l’expédition ${nextLaunchCount}`,
+                        message:
+                            `Expédition V2 — ${nextLaunchCount} expédition(s) lancée(s), ` +
+                            'recherche du message d’arrêt…',
+                    });
+                    refreshUi();
+                    expeditionButton.click();
+                    continue;
+                }
+
+                throw new Error(`Phase Expédition V2 inconnue : ${run.phase}`);
+            }
+        } catch (error) {
+            await failRun(runId, error instanceof Error ? error.message : String(error), error);
+        }
+    }
+
+    async function consumeExpeditionV2Delay(runId) {
+        const run = getActiveRun(runId);
+        if (!run) return false;
+        const delayMs = Math.max(0, Math.floor(Number(run.expeditionV2PendingDelayMs) || 0));
+        if (delayMs === 0) return true;
+
+        const label = run.expeditionV2PendingDelayLabel || 'l’action précédente';
+        updateRun(runId, {
+            message:
+                `Expédition V2 — attente aléatoire ${(delayMs / 1000).toFixed(2)} s après ${label}…`,
+        });
+        refreshUi();
+        await delay(delayMs);
+        if (!getActiveRun(runId)) return false;
+
+        updateRun(runId, {
+            expeditionV2PendingDelayMs: 0,
+            expeditionV2PendingDelayLabel: '',
+        });
+        refreshUi();
+        return true;
+    }
+
+    function hasExpeditionV2StopText() {
+        const pageText = String(document.body?.textContent || document.documentElement?.textContent || '')
+            .normalize('NFC')
+            .replace(/[’']/g, '`')
+            .replace(/\s+/g, ' ')
+            .toLocaleLowerCase('fr-FR');
+        return pageText.includes(EXPEDITION_V2_STOP_TEXT);
+    }
+
+    async function completeExpeditionV2(runId) {
+        const run = getActiveRun(runId);
+        if (!run) return;
+
+        if (
+            run.combinedKind === 'expedition-v2-lifeform' &&
+            run.nextProfileId === 4
+        ) {
+            await startLifeformAutomation({
+                combinedMode: true,
+                combinedKind: 'expedition-v2-lifeform',
+            });
+            return;
+        }
+
+        GM_setValue(RUN_KEY, {
+            ...run,
+            status: 'completed',
+            phase: 'expedition-v2-completed',
+            updatedAt: Date.now(),
+            message:
+                `Expédition V2 terminée après ${Math.max(0, Number(run.expeditionV2LaunchCount) || 0)} ` +
+                'lancement(s) : le message d’arrêt a été détecté.',
+        });
+        await clearThisTabRunId(runId);
+        refreshUi();
+    }
+
     async function startConstructionAutomation(parameters) {
         const config = getStoredConfig(7);
-        const selectedLinkIndex = Number(parameters?.selectedLinkIndex);
-        const selectedLink = config.namedLinks[selectedLinkIndex];
-        const amounts = [parameters?.r1, parameters?.r2, parameters?.r3]
-            .map((value) => parseConstructionAmount(value));
+        const sourceOrders = Array.isArray(parameters?.orders)
+            ? parameters.orders
+            : [{
+                r1: parameters?.r1,
+                r2: parameters?.r2,
+                r3: parameters?.r3,
+                selectedLinkIndex: parameters?.selectedLinkIndex,
+            }];
+        const orders = [];
 
-        if (!selectedLink || amounts.some((value) => value === null)) {
+        if (sourceOrders.length === 0 || sourceOrders.length > MAX_CONSTRUCTION_ORDERS) {
             const ui = await ensureUi();
             ui.openConstructionRunner();
+            ui.showConstructionError(
+                `Constructions accepte entre 1 et ${MAX_CONSTRUCTION_ORDERS} lignes.`
+            );
             ui.refresh();
             return;
         }
 
-        const total = amounts.reduce((sum, value) => sum + value, 0);
-        if (!Number.isSafeInteger(total)) {
-            const ui = await ensureUi();
-            ui.openConstructionRunner();
-            ui.showConstructionError('Le total R1 + R2 + R3 est trop élevé.');
-            ui.refresh();
-            return;
+        for (const [index, sourceOrder] of sourceOrders.entries()) {
+            const selectedLinkIndex = Number(sourceOrder?.selectedLinkIndex);
+            const selectedLink = config.namedLinks[selectedLinkIndex];
+            const amounts = [sourceOrder?.r1, sourceOrder?.r2, sourceOrder?.r3]
+                .map((value) => parseConstructionAmount(value));
+            const total = amounts.some((value) => value === null)
+                ? null
+                : amounts.reduce((sum, value) => sum + value, 0);
+            if (!selectedLink || total === null || !Number.isSafeInteger(total)) {
+                const ui = await ensureUi();
+                ui.openConstructionRunner();
+                ui.showConstructionError(
+                    `La ligne ${index + 1} contient une destination ou des montants invalides.`
+                );
+                ui.refresh();
+                return;
+            }
+            orders.push({
+                selectedLinkIndex,
+                r1: amounts[0],
+                r2: amounts[1],
+                r3: amounts[2],
+                total,
+                transporterCount: Math.ceil(total / 9000),
+            });
         }
 
-        const transporterCount = Math.ceil(total / 9000);
+        const firstOrder = orders[0];
+        const firstLink = config.namedLinks[firstOrder.selectedLinkIndex];
         const now = Date.now();
         const runId = createRunId();
         const run = {
@@ -2056,12 +3164,14 @@
             combinedKind: '',
             nextProfileId: null,
             phase: 'construction-before-open-link',
-            currentLinkIndex: selectedLinkIndex,
-            constructionR1: amounts[0],
-            constructionR2: amounts[1],
-            constructionR3: amounts[2],
-            constructionTotal: total,
-            constructionTransporterCount: transporterCount,
+            constructionOrders: orders,
+            constructionOrderIndex: 0,
+            currentLinkIndex: firstOrder.selectedLinkIndex,
+            constructionR1: firstOrder.r1,
+            constructionR2: firstOrder.r2,
+            constructionR3: firstOrder.r3,
+            constructionTotal: firstOrder.total,
+            constructionTransporterCount: firstOrder.transporterCount,
             constructionPendingDelayMs: getRandomDelayMs(
                 CONSTRUCTION_DELAY_MIN_MS,
                 CONSTRUCTION_DELAY_MAX_MS
@@ -2070,8 +3180,9 @@
             startedAt: now,
             updatedAt: now,
             message:
-                `Constructions — actions 1 et 2/6 validées : ${selectedLink.name}, ` +
-                `${formatInteger(total)} ressources, ${formatInteger(transporterCount)} petites voitures…`,
+                `Constructions — ligne 1/${orders.length}, actions 1 et 2/6 validées : ${firstLink.name}, ` +
+                `${formatInteger(firstOrder.total)} ressources, ` +
+                `${formatInteger(firstOrder.transporterCount)} petites voitures…`,
         };
 
         GM_setValue(RUN_KEY, run);
@@ -2086,14 +3197,17 @@
             if (!run || run.profileId !== 7) return;
 
             const config = getStoredConfig(7);
-            const selectedLink = config.namedLinks[run.currentLinkIndex];
-            if (!selectedLink) {
-                throw new Error('La destination Constructions choisie n’existe plus.');
-            }
 
             while (true) {
                 run = getActiveRun(runId);
                 if (!run) return;
+                const orders = getConstructionRunOrders(run);
+                const orderIndex = getConstructionRunOrderIndex(run, orders);
+                const currentOrder = orders[orderIndex];
+                const selectedLink = config.namedLinks[currentOrder?.selectedLinkIndex];
+                if (!currentOrder || !selectedLink) {
+                    throw new Error('La destination Constructions de la ligne en cours n’existe plus.');
+                }
 
                 if (Number(run.constructionPendingDelayMs) > 0) {
                     const canContinue = await consumeConstructionDelay(runId);
@@ -2105,7 +3219,8 @@
                     updateRun(runId, {
                         phase: 'construction-open-link',
                         message:
-                            `Constructions — action 3/6 : ouverture de ${selectedLink.name}…`,
+                            `Constructions — ligne ${orderIndex + 1}/${orders.length}, ` +
+                            `action 3/6 : ouverture de ${selectedLink.name}…`,
                     });
                     refreshUi();
                     navigateToUrl(selectedLink.url, true);
@@ -2132,7 +3247,8 @@
                         ),
                         constructionPendingDelayLabel: 'le chargement de la destination',
                         message:
-                            `Constructions — action 3/6 terminée : ${selectedLink.name} est chargée.`,
+                            `Constructions — ligne ${orderIndex + 1}/${orders.length}, ` +
+                            `action 3/6 terminée : ${selectedLink.name} est chargée.`,
                     });
                     refreshUi();
                     continue;
@@ -2141,8 +3257,8 @@
                 if (run.phase === 'construction-fill-transporters') {
                     updateRun(runId, {
                         message:
-                            `Constructions — action 4/6 : saisir ` +
-                            `${formatInteger(run.constructionTransporterCount)} petites voitures…`,
+                            `Constructions — ligne ${orderIndex + 1}/${orders.length}, action 4/6 : saisir ` +
+                            `${formatInteger(currentOrder.transporterCount)} petites voitures…`,
                     });
                     refreshUi();
                     const input = await waitForElement(CONSTRUCTION_TRANSPORTER_SELECTOR, {
@@ -2151,7 +3267,7 @@
                     });
                     if (!getActiveRun(runId)) return;
 
-                    setFormControlValue(input, String(run.constructionTransporterCount));
+                    setFormControlValue(input, String(currentOrder.transporterCount));
                     updateRun(runId, {
                         phase: 'construction-continue',
                         constructionPendingDelayMs: getRandomDelayMs(
@@ -2160,8 +3276,8 @@
                         ),
                         constructionPendingDelayLabel: 'la saisie du nombre de petites voitures',
                         message:
-                            `Constructions — action 4/6 : ` +
-                            `${formatInteger(run.constructionTransporterCount)} petites voitures saisies, ` +
+                            `Constructions — ligne ${orderIndex + 1}/${orders.length}, action 4/6 : ` +
+                            `${formatInteger(currentOrder.transporterCount)} petites voitures saisies, ` +
                             'préparation du clic sur Continuer…',
                     });
                     refreshUi();
@@ -2170,7 +3286,9 @@
 
                 if (run.phase === 'construction-continue') {
                     updateRun(runId, {
-                        message: 'Constructions — action 4/6 : cliquer sur Continuer…',
+                        message:
+                            `Constructions — ligne ${orderIndex + 1}/${orders.length}, ` +
+                            'action 4/6 : cliquer sur Continuer…',
                     });
                     refreshUi();
                     const continueButton = await waitForElement(CONSTRUCTION_CONTINUE_SELECTOR, {
@@ -2183,7 +3301,8 @@
                     updateRun(runId, {
                         phase: 'construction-wait-resources-page',
                         message:
-                            'Constructions — action 4/6 terminée : attente de la page des ressources…',
+                            `Constructions — ligne ${orderIndex + 1}/${orders.length}, ` +
+                            'action 4/6 terminée : attente de la page des ressources…',
                     });
                     refreshUi();
                     continueButton.click();
@@ -2210,7 +3329,8 @@
                         ),
                         constructionPendingDelayLabel: 'le chargement de la page des ressources',
                         message:
-                            'Constructions — page des ressources chargée, préparation de l’action 5/6…',
+                            `Constructions — ligne ${orderIndex + 1}/${orders.length}, ` +
+                            'page des ressources chargée, préparation de l’action 5/6…',
                     });
                     refreshUi();
                     continue;
@@ -2218,9 +3338,9 @@
 
                 if (run.phase === 'construction-fill-resources') {
                     const resourceEntries = [
-                        ['R1', CONSTRUCTION_RESOURCE_SELECTORS.r1, run.constructionR1],
-                        ['R2', CONSTRUCTION_RESOURCE_SELECTORS.r2, run.constructionR2],
-                        ['R3', CONSTRUCTION_RESOURCE_SELECTORS.r3, run.constructionR3],
+                        ['R1', CONSTRUCTION_RESOURCE_SELECTORS.r1, currentOrder.r1],
+                        ['R2', CONSTRUCTION_RESOURCE_SELECTORS.r2, currentOrder.r2],
+                        ['R3', CONSTRUCTION_RESOURCE_SELECTORS.r3, currentOrder.r3],
                     ];
                     if (resourceEntries.some(([, selector]) => !selector)) {
                         await pauseConstructionForMissingActions(
@@ -2231,7 +3351,9 @@
                     }
 
                     updateRun(runId, {
-                        message: 'Constructions — action 5/6 : saisir R1, R2 et R3…',
+                        message:
+                            `Constructions — ligne ${orderIndex + 1}/${orders.length}, ` +
+                            'action 5/6 : saisir R1, R2 et R3…',
                     });
                     refreshUi();
                     for (const [, selector, value] of resourceEntries) {
@@ -2250,7 +3372,9 @@
                             CONSTRUCTION_DELAY_MAX_MS
                         ),
                         constructionPendingDelayLabel: 'la saisie de R1, R2 et R3',
-                        message: 'Constructions — action 5/6 terminée : R1, R2 et R3 saisis.',
+                        message:
+                            `Constructions — ligne ${orderIndex + 1}/${orders.length}, ` +
+                            'action 5/6 terminée : R1, R2 et R3 saisis.',
                     });
                     refreshUi();
                     continue;
@@ -2266,7 +3390,9 @@
                     }
 
                     updateRun(runId, {
-                        message: 'Constructions — action 6/6 : cliquer sur Envoyer…',
+                        message:
+                            `Constructions — ligne ${orderIndex + 1}/${orders.length}, ` +
+                            'action 6/6 : cliquer sur Envoyer…',
                     });
                     refreshUi();
                     const sendButton = await waitForElement(CONSTRUCTION_SEND_SELECTOR, {
@@ -2276,12 +3402,54 @@
                     const activeRun = getActiveRun(runId);
                     if (!activeRun) return;
 
+                    const nextOrderIndex = orderIndex + 1;
+                    if (nextOrderIndex < orders.length) {
+                        const nextOrder = orders[nextOrderIndex];
+                        const nextLink = config.namedLinks[nextOrder.selectedLinkIndex];
+                        if (!nextLink) {
+                            throw new Error(
+                                `La destination Constructions de la ligne ${nextOrderIndex + 1} n’existe plus.`
+                            );
+                        }
+
+                        const pageExitPromise = waitForPageExit(3000);
+                        GM_setValue(RUN_KEY, {
+                            ...activeRun,
+                            phase: 'construction-before-open-link',
+                            constructionOrderIndex: nextOrderIndex,
+                            currentLinkIndex: nextOrder.selectedLinkIndex,
+                            constructionR1: nextOrder.r1,
+                            constructionR2: nextOrder.r2,
+                            constructionR3: nextOrder.r3,
+                            constructionTotal: nextOrder.total,
+                            constructionTransporterCount: nextOrder.transporterCount,
+                            constructionPendingDelayMs: getRandomDelayMs(
+                                CONSTRUCTION_DELAY_MIN_MS,
+                                CONSTRUCTION_DELAY_MAX_MS
+                            ),
+                            constructionPendingDelayLabel:
+                                `l’envoi de la ligne ${orderIndex + 1}/${orders.length}`,
+                            updatedAt: Date.now(),
+                            message:
+                                `Constructions — ligne ${orderIndex + 1}/${orders.length} terminée. ` +
+                                `La ligne ${nextOrderIndex + 1}/${orders.length} reprendra à l’action 3 ` +
+                                `sur ${nextLink.name}.`,
+                        });
+                        refreshUi();
+                        sendButton.click();
+                        const pageExited = await pageExitPromise;
+                        if (pageExited) return;
+                        continue;
+                    }
+
                     GM_setValue(RUN_KEY, {
                         ...activeRun,
                         status: 'completed',
                         phase: 'construction-completed',
                         updatedAt: Date.now(),
-                        message: `Constructions terminée pour ${selectedLink.name}.`,
+                        message:
+                            `Constructions terminée : ${orders.length} ligne` +
+                            `${orders.length > 1 ? 's' : ''} exécutée${orders.length > 1 ? 's' : ''}.`,
                     });
                     void clearThisTabRunId(runId);
                     refreshUi();
@@ -2359,6 +3527,14 @@
         }
         if (run.profileId === 7) {
             await resumeConstructionAutomation(run.runId);
+            return;
+        }
+        if (run.profileId === 8) {
+            await resumeGhostAutomation(run.runId);
+            return;
+        }
+        if (run.profileId === 9) {
+            await resumeExpeditionV2Automation(run.runId);
             return;
         }
         if (run.profileId === 2 && !config.startUrl) {
@@ -2581,7 +3757,7 @@
         }
 
         if (step.type === 'delay') {
-            await delay(Math.max(0, Number(step.ms) || 0));
+            await delay(scaleActionDelayMs(step.ms));
             advanceStep(runId, stepIndex);
             return false;
         }
@@ -2638,7 +3814,7 @@
             }
 
             element.scrollIntoView({ block: 'center', inline: 'center', behavior: 'auto' });
-            await delay(50);
+            await delay(scaleActionDelayMs(50));
 
             // Enregistrer l'action suivante avant le clic permet de reprendre
             // correctement après une navigation ou un rechargement de page.
@@ -2646,7 +3822,7 @@
             const waitsForPage = step.waitAfter === 'page';
             const pageExitPromise = waitsForPage ? waitForPageExit(3000) : null;
             const clickCount = Math.max(1, Math.floor(Number(step.clickCount) || 1));
-            const clickIntervalMs = Math.max(0, Number(step.clickIntervalMs) || 0);
+            const clickIntervalMs = scaleActionDelayMs(step.clickIntervalMs);
 
             for (let clickNumber = 1; clickNumber <= clickCount; clickNumber += 1) {
                 if (!getActiveRun(runId)) {
@@ -2915,13 +4091,13 @@
 
     function normalizeProfileId(profileId) {
         const value = Number(profileId);
-        if (value === 4 || value === 6 || value === 7) return value;
+        if (value === 4 || value === 6 || value === 7 || value === 8 || value === 9) return value;
         return value === 2 ? 2 : 1;
     }
 
     function normalizeEditorProfileId(profileId) {
         const value = Number(profileId);
-        if (value === 3 || value === 5) return value;
+        if (value === 3 || value === 5 || value === 10) return value;
         return normalizeProfileId(value);
     }
 
@@ -2930,6 +4106,8 @@
         if (normalizedProfileId === 4) return 'Forme de vie';
         if (normalizedProfileId === 6) return 'Import';
         if (normalizedProfileId === 7) return 'Constructions';
+        if (normalizedProfileId === 8) return 'Ghost';
+        if (normalizedProfileId === 9) return 'Expédition V2';
         return normalizedProfileId === 2 ? 'Expéditions' : 'Ressources';
     }
 
@@ -2940,7 +4118,13 @@
 
     function getActionSteps(profileId) {
         const normalizedProfileId = normalizeProfileId(profileId);
-        if (normalizedProfileId === 4 || normalizedProfileId === 6 || normalizedProfileId === 7) return [];
+        if (
+            normalizedProfileId === 4 ||
+            normalizedProfileId === 6 ||
+            normalizedProfileId === 7 ||
+            normalizedProfileId === 8 ||
+            normalizedProfileId === 9
+        ) return [];
         return normalizedProfileId === 2 ? ACTION_STEPS_2 : ACTION_STEPS_1;
     }
 
@@ -2956,6 +4140,12 @@
         }
         if (profileId === 7) {
             return formatConstructionDebugProgress(run);
+        }
+        if (profileId === 8) {
+            return formatGhostDebugProgress(run);
+        }
+        if (profileId === 9) {
+            return formatExpeditionV2DebugProgress(run);
         }
         const config = getStoredConfig(profileId);
         const actionSteps = getActionSteps(profileId);
@@ -3022,10 +4212,55 @@
 
         const runLabel = run.combinedKind === 'expeditions-lifeform'
             ? 'Expédition & Forme de vie — étape Forme de vie'
-            : 'Forme de vie';
+            : run.combinedKind === 'expedition-v2-lifeform'
+              ? 'Expédition V2 & Forme de vie — étape Forme de vie'
+              : 'Forme de vie';
         const message = typeof run.message === 'string' ? run.message : '';
         return (
             `${runLabel} — Boucle ${loopNumber} — direction ${directionLabel}\n${actionLabel}` +
+            (message ? `\n${message}` : '')
+        );
+    }
+
+    function formatExpeditionV2DebugProgress(run) {
+        const direction = run.expeditionV2Direction === 'next' ? 'suivante' : 'précédente';
+        const directionTarget = Math.max(
+            0,
+            Math.min(6, Math.floor(Number(run.expeditionV2DirectionTarget) || 0))
+        );
+        const directionClicks = Math.max(
+            0,
+            Math.floor(Number(run.expeditionV2DirectionClicks) || 0)
+        );
+        const launchCount = Math.max(0, Math.floor(Number(run.expeditionV2LaunchCount) || 0));
+        let actionLabel;
+
+        if (run.status !== 'running') {
+            actionLabel = `État : ${run.status}`;
+        } else if (Number(run.expeditionV2PendingDelayMs) > 0) {
+            actionLabel =
+                `Pause après ${run.expeditionV2PendingDelayLabel || 'l’action précédente'} — ` +
+                `${(Number(run.expeditionV2PendingDelayMs) / 1000).toFixed(2)} s`;
+        } else {
+            const labels = {
+                'expedition-v2-open-link': 'Étape 1/4 — charger l’URL',
+                'expedition-v2-direction':
+                    `Étape 2/4 — direction ${direction}, ${directionClicks}/${directionTarget} clic(s)`,
+                'expedition-v2-select-expe': 'Étape 3/4 — sélectionner EXPE',
+                'expedition-v2-expeditions':
+                    `Étape 4/4 — ${launchCount} lancement(s), attente du message d’arrêt`,
+                'expedition-v2-completed': 'Expédition V2 terminée',
+            };
+            actionLabel = labels[run.phase] || `Phase inconnue : ${run.phase}`;
+        }
+
+        const runLabel = run.combinedKind === 'expedition-v2-lifeform'
+            ? 'Expédition V2 & Forme de vie — étape Expédition V2'
+            : 'Expédition V2';
+        const message = typeof run.message === 'string' ? run.message : '';
+        return (
+            `${runLabel}\nDirection ${direction} · Déplacements ${directionClicks}/${directionTarget} · ` +
+            `Expéditions ${launchCount}\n${actionLabel}` +
             (message ? `\n${message}` : '')
         );
     }
@@ -3053,9 +4288,37 @@
         return `Import\n${actionLabel}` + (message ? `\n${message}` : '');
     }
 
+    function formatGhostDebugProgress(run) {
+        let actionLabel;
+        if (run.status !== 'running') {
+            actionLabel = `État : ${run.status}`;
+        } else if (Number(run.ghostPendingDelayMs) > 0) {
+            actionLabel =
+                `Pause après ${run.ghostPendingDelayLabel || 'l’action précédente'} — ` +
+                `${(Number(run.ghostPendingDelayMs) / 1000).toFixed(2)} s`;
+        } else {
+            const labels = {
+                'ghost-open-link': 'Action 1/2 — charger l’URL',
+                'ghost-send-all': 'Action 2/2 — sélectionner tous les vaisseaux',
+                'ghost-after-send-all': 'Finalisation de la sélection',
+                'ghost-completed': 'Ghost terminé',
+            };
+            actionLabel = labels[run.phase] || `Phase inconnue : ${run.phase}`;
+        }
+
+        const time = /^([01]\d|2[0-3]):[0-5]\d$/.test(String(run.ghostTime || ''))
+            ? run.ghostTime
+            : '00:00';
+        const message = typeof run.message === 'string' ? run.message : '';
+        return `Ghost — heure ${time}\n${actionLabel}` + (message ? `\n${message}` : '');
+    }
+
     function formatConstructionDebugProgress(run) {
         const config = getStoredConfig(7);
-        const destination = config.namedLinks[run.currentLinkIndex]?.name || 'destination inconnue';
+        const orders = getConstructionRunOrders(run);
+        const orderIndex = getConstructionRunOrderIndex(run, orders);
+        const currentOrder = orders[orderIndex];
+        const destination = config.namedLinks[currentOrder?.selectedLinkIndex]?.name || 'destination inconnue';
         let actionLabel;
 
         if (run.status !== 'running') {
@@ -3066,7 +4329,9 @@
                 `${(Number(run.constructionPendingDelayMs) / 1000).toFixed(2)} s`;
         } else {
             const labels = {
-                'construction-before-open-link': 'Actions 1–2/6 — paramètres et destination validés',
+                'construction-before-open-link': orderIndex === 0
+                    ? 'Actions 1–2/6 — paramètres et destination validés'
+                    : 'Boucle suivante — reprise à l’action 3/6',
                 'construction-open-link': `Action 3/6 — charger ${destination}`,
                 'construction-fill-transporters': 'Action 4/6 — saisir les petites voitures',
                 'construction-continue': 'Action 4/6 — cliquer sur Continuer',
@@ -3081,10 +4346,10 @@
 
         const message = typeof run.message === 'string' ? run.message : '';
         return (
-            `Constructions — ${destination}\n${actionLabel}\n` +
-            `R1 ${formatMillions(run.constructionR1)} M · ` +
-            `R2 ${formatMillions(run.constructionR2)} M · ` +
-            `R3 ${formatMillions(run.constructionR3)} M` +
+            `Constructions — Boucle ${orderIndex + 1}/${orders.length} — ${destination}\n${actionLabel}\n` +
+            `R1 ${formatMillions(currentOrder?.r1)} M · ` +
+            `R2 ${formatMillions(currentOrder?.r2)} M · ` +
+            `R3 ${formatMillions(currentOrder?.r3)} M` +
             (message ? `\n${message}` : '')
         );
     }
@@ -3263,6 +4528,25 @@
         const parsed = Number(value);
         if (!Number.isSafeInteger(parsed) || parsed < 0) return null;
         return parsed;
+    }
+
+    function getConstructionRunOrders(run) {
+        if (Array.isArray(run?.constructionOrders) && run.constructionOrders.length > 0) {
+            return run.constructionOrders.slice(0, MAX_CONSTRUCTION_ORDERS);
+        }
+        return [{
+            selectedLinkIndex: Number(run?.currentLinkIndex),
+            r1: Number(run?.constructionR1) || 0,
+            r2: Number(run?.constructionR2) || 0,
+            r3: Number(run?.constructionR3) || 0,
+            total: Number(run?.constructionTotal) || 0,
+            transporterCount: Number(run?.constructionTransporterCount) || 0,
+        }];
+    }
+
+    function getConstructionRunOrderIndex(run, orders = getConstructionRunOrders(run)) {
+        const index = Math.max(0, Math.floor(Number(run?.constructionOrderIndex) || 0));
+        return Math.min(index, Math.max(0, orders.length - 1));
     }
 
     function formatMillions(value) {
@@ -3681,9 +4965,13 @@
     }
 
     function getRandomDelayMs(minimumMs, maximumMs) {
-        const minimum = Math.max(0, Number(minimumMs) || 0);
-        const maximum = Math.max(minimum, Number(maximumMs) || minimum);
+        const minimum = scaleActionDelayMs(minimumMs);
+        const maximum = Math.max(minimum, scaleActionDelayMs(maximumMs));
         return Math.round(minimum + getSecureRandomFraction() * (maximum - minimum));
+    }
+
+    function scaleActionDelayMs(delayMs) {
+        return Math.max(0, Math.round((Number(delayMs) || 0) * ACTION_DELAY_FACTOR));
     }
 
     function nextAnimationFrame() {
