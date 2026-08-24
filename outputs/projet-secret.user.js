@@ -1,10 +1,10 @@
 // ==UserScript==
 // @name         Projet secret — boucle multi-liens
 // @namespace    local.projet-secret
-// @version      6.4.0
+// @version      6.5.0
 // @updateURL    https://raw.githubusercontent.com/raphaelrobert1104-sys/mysecretproject/main/outputs/projet-secret.user.js
 // @downloadURL  https://raw.githubusercontent.com/raphaelrobert1104-sys/mysecretproject/main/outputs/projet-secret.user.js
-// @description  Automatise Ressources, Expéditions, Forme de vie, Import et Constructions avec configurations privées.
+// @description  Automatise Ressources, Expéditions, Forme de vie, Import, Constructions et Ghost avec configurations privées.
 // @author       Vous
 // @match        http://*/*
 // @match        https://*/*
@@ -31,6 +31,7 @@
     const RUN_KEY = 'secretMultiLinkRun';
     const TAB_RUN_ID_KEY = 'secretMultiLinkRunId';
     const DEBUG_DISMISSED_RUN_KEY = 'secretMultiLinkDebugDismissedRunId';
+    const GHOST_TIME_KEY = 'secretMultiLinkGhostTime';
     const MAX_LINKS_BY_PROFILE = {
         1: 15,
         2: 10,
@@ -367,6 +368,14 @@
                 <input class="named-link-url" type="url" spellcheck="false" autocomplete="off" placeholder="https://…">
             </div>
         `).join('');
+        const ghostHourOptions = Array.from({ length: 24 }, (_, hour) => {
+            const value = String(hour).padStart(2, '0');
+            return `<option value="${value}">${value}</option>`;
+        }).join('');
+        const ghostMinuteOptions = Array.from({ length: 60 }, (_, minute) => {
+            const value = String(minute).padStart(2, '0');
+            return `<option value="${value}">${value}</option>`;
+        }).join('');
         const shadow = host.attachShadow({ mode: 'closed' });
         shadow.innerHTML = `
             <style>
@@ -487,6 +496,9 @@
                 }
                 .control-group.constructions .quick {
                     background: linear-gradient(135deg, rgba(180, 83, 9, .97), rgba(202, 138, 4, .96));
+                }
+                .control-group.ghost .quick {
+                    background: linear-gradient(135deg, rgba(71, 85, 105, .98), rgba(88, 28, 135, .96));
                 }
                 .quick:hover, .settings:hover { filter: brightness(1.1); }
                 .quick:active, .settings:active { transform: translateY(1px) scale(.985); }
@@ -943,6 +955,75 @@
                     font-size: 12px;
                 }
                 .construction-runner-error.visible { display: block; }
+                .ghost-runner {
+                    display: none;
+                    position: absolute;
+                    right: 0;
+                    top: 62px;
+                    width: min(360px, calc(100vw - 20px));
+                    padding: 18px;
+                    border: 1px solid rgba(167, 139, 250, .55);
+                    border-radius: 20px;
+                    background:
+                        radial-gradient(circle at 88% 2%, rgba(139, 92, 246, .25), transparent 38%),
+                        linear-gradient(150deg, rgba(9, 15, 29, .985), rgba(30, 41, 59, .975));
+                    color: #fff;
+                    box-shadow: 0 26px 80px rgba(2, 6, 23, .58), inset 0 1px 0 rgba(255,255,255,.1);
+                    backdrop-filter: blur(24px) saturate(145%);
+                    -webkit-backdrop-filter: blur(24px) saturate(145%);
+                }
+                .ghost-runner.open { display: block; animation: secret-enter .22s ease-out; }
+                .ghost-kicker {
+                    display: block;
+                    margin-bottom: 3px;
+                    color: #c4b5fd;
+                    font-size: 9px;
+                    font-weight: 850;
+                    letter-spacing: .16em;
+                }
+                .ghost-time-grid {
+                    display: grid;
+                    grid-template-columns: 1fr auto 1fr;
+                    align-items: end;
+                    gap: 10px;
+                    margin: 16px 0 12px;
+                }
+                .ghost-time-separator {
+                    padding-bottom: 10px;
+                    color: #c4b5fd;
+                    font-size: 22px;
+                    font-weight: 900;
+                }
+                .ghost-time-field label { margin-bottom: 6px; }
+                .ghost-time-field select {
+                    width: 100%;
+                    min-height: 46px;
+                    padding: 9px 11px;
+                    border: 1px solid rgba(167, 139, 250, .46);
+                    border-radius: 11px;
+                    background: rgba(15, 23, 42, .8);
+                    color: #f8fafc;
+                    font-size: 16px;
+                    font-weight: 800;
+                    text-align: center;
+                    outline: none;
+                }
+                .ghost-time-field select:focus {
+                    border-color: #a78bfa;
+                    box-shadow: 0 0 0 3px rgba(167, 139, 250, .2);
+                }
+                .ghost-time-field select option { background: #0f172a; color: #f8fafc; }
+                .ghost-time-preview {
+                    margin: 0 0 14px;
+                    padding: 10px 12px;
+                    border: 1px solid rgba(167, 139, 250, .25);
+                    border-radius: 11px;
+                    background: rgba(76, 29, 149, .16);
+                    color: #ede9fe;
+                    font-size: 12px;
+                    font-weight: 760;
+                    text-align: center;
+                }
                 @media (max-width: 600px) {
                     .toolbar { justify-content: flex-end; gap: 6px; }
                     .menu-toggle { padding-inline: 11px; }
@@ -957,13 +1038,13 @@
                     .actions button { min-height: 44px; }
                     .named-link-row { grid-template-columns: 22px minmax(82px, .7fr) minmax(145px, 1.3fr); }
                     .named-link-row input, .construction-runner input, .construction-runner select { font-size: 16px; }
-                    .construction-runner { padding: 14px; }
+                    .construction-runner, .ghost-runner { padding: 14px; }
                     .construction-order-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
                     .construction-order-field.destination { grid-column: 1 / -1; }
                     .construction-orders-list { max-height: min(48vh, 480px); }
                 }
                 @media (prefers-reduced-motion: reduce) {
-                    .dropdown-menu.open, .panel.open, .construction-runner.open { animation: none; }
+                    .dropdown-menu.open, .panel.open, .construction-runner.open, .ghost-runner.open { animation: none; }
                     *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; }
                 }
             </style>
@@ -995,6 +1076,9 @@
                             <div class="control-group constructions">
                                 <button type="button" class="quick quick-7" title="Lancer Constructions">Constructions</button>
                                 <button type="button" class="settings settings-7" title="Configurer Constructions" aria-label="Configurer Constructions">⚙</button>
+                            </div>
+                            <div class="control-group ghost">
+                                <button type="button" class="quick quick-8" title="Ouvrir Ghost">Ghost</button>
                             </div>
                         </div>
                     </div>
@@ -1092,6 +1176,32 @@
                         <button type="button" class="start construction-runner-start">Démarrer</button>
                     </div>
                 </section>
+                <section class="ghost-runner" role="dialog" aria-label="Configurer Ghost">
+                    <div class="header">
+                        <div>
+                            <span class="ghost-kicker">NOUVEL HORAIRE</span>
+                            <h2>Ghost</h2>
+                        </div>
+                        <button type="button" class="close ghost-runner-close" aria-label="Fermer">×</button>
+                    </div>
+                    <p class="help">Choisissez l’heure et la minute qui seront utilisées par Ghost.</p>
+                    <div class="ghost-time-grid">
+                        <div class="ghost-time-field">
+                            <label for="ghost-hour">Heure</label>
+                            <select id="ghost-hour" class="ghost-hour">${ghostHourOptions}</select>
+                        </div>
+                        <span class="ghost-time-separator" aria-hidden="true">:</span>
+                        <div class="ghost-time-field">
+                            <label for="ghost-minute">Minute</label>
+                            <select id="ghost-minute" class="ghost-minute">${ghostMinuteOptions}</select>
+                        </div>
+                    </div>
+                    <div class="ghost-time-preview">Horaire sélectionné : <span class="ghost-time-value">00:00</span></div>
+                    <div class="actions">
+                        <button type="button" class="save ghost-runner-cancel">Annuler</button>
+                        <button type="button" class="start ghost-runner-confirm">Valider l’heure</button>
+                    </div>
+                </section>
             </div>
         `;
 
@@ -1103,6 +1213,7 @@
             quick5: shadow.querySelector('.quick-5'),
             quick6: shadow.querySelector('.quick-6'),
             quick7: shadow.querySelector('.quick-7'),
+            quick8: shadow.querySelector('.quick-8'),
             simpleMenuToggle: shadow.querySelector('.simple-menu-toggle'),
             groupedMenuToggle: shadow.querySelector('.grouped-menu-toggle'),
             simpleMenu: shadow.querySelector('.simple-menu'),
@@ -1153,6 +1264,13 @@
             constructionAddOrder: shadow.querySelector('.construction-add-order'),
             constructionCalculation: shadow.querySelector('.construction-calculation'),
             constructionRunnerError: shadow.querySelector('.construction-runner-error'),
+            ghostRunner: shadow.querySelector('.ghost-runner'),
+            ghostRunnerClose: shadow.querySelector('.ghost-runner-close'),
+            ghostRunnerCancel: shadow.querySelector('.ghost-runner-cancel'),
+            ghostRunnerConfirm: shadow.querySelector('.ghost-runner-confirm'),
+            ghostHour: shadow.querySelector('.ghost-hour'),
+            ghostMinute: shadow.querySelector('.ghost-minute'),
+            ghostTimeValue: shadow.querySelector('.ghost-time-value'),
         };
 
         let editingProfileId = 1;
@@ -1184,6 +1302,7 @@
         refs.quick5.addEventListener('click', () => quickExpeditionsLifeformAction());
         refs.quick6.addEventListener('click', () => quickAction(6));
         refs.quick7.addEventListener('click', () => quickAction(7));
+        refs.quick8.addEventListener('click', openGhostRunner);
         refs.constructionRunnerClose.addEventListener('click', closeConstructionRunner);
         refs.constructionRunnerCancel.addEventListener('click', closeConstructionRunner);
         refs.constructionRunnerStart.addEventListener('click', launchConstructionFromRunner);
@@ -1191,6 +1310,11 @@
             const row = addConstructionOrderRow();
             row?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
         });
+        refs.ghostRunnerClose.addEventListener('click', closeGhostRunner);
+        refs.ghostRunnerCancel.addEventListener('click', closeGhostRunner);
+        refs.ghostRunnerConfirm.addEventListener('click', confirmGhostTime);
+        refs.ghostHour.addEventListener('change', updateGhostTimePreview);
+        refs.ghostMinute.addEventListener('change', updateGhostTimePreview);
         refs.debugProgressClose.addEventListener('click', () => {
             const run = getRunState();
             if (run.runId) {
@@ -1245,6 +1369,7 @@
             if (opensSimple || opensGrouped) {
                 closePanel();
                 closeConstructionRunner();
+                closeGhostRunner();
             }
             if (opensSimple) {
                 refs.simpleMenu.classList.add('open');
@@ -1277,6 +1402,7 @@
 
         function open(profileId = 1) {
             closeConstructionRunner();
+            closeGhostRunner();
             loadProfileIntoPanel(profileId);
             refs.panel.classList.add('open');
             refresh();
@@ -1284,6 +1410,40 @@
 
         function closePanel() {
             refs.panel.classList.remove('open');
+        }
+
+        function openGhostRunner() {
+            const storedTime = getStoredGhostTime();
+            closeDropdowns();
+            closePanel();
+            closeConstructionRunner();
+            refs.ghostHour.value = storedTime.hour;
+            refs.ghostMinute.value = storedTime.minute;
+            updateGhostTimePreview();
+            refs.ghostRunner.classList.add('open');
+        }
+
+        function closeGhostRunner() {
+            refs.ghostRunner.classList.remove('open');
+        }
+
+        function updateGhostTimePreview() {
+            refs.ghostTimeValue.textContent = `${refs.ghostHour.value}:${refs.ghostMinute.value}`;
+        }
+
+        function confirmGhostTime() {
+            const time = `${refs.ghostHour.value}:${refs.ghostMinute.value}`;
+            if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(time)) return;
+            GM_setValue(GHOST_TIME_KEY, time);
+            closeGhostRunner();
+        }
+
+        function getStoredGhostTime() {
+            const stored = String(GM_getValue(GHOST_TIME_KEY, '00:00'));
+            const match = /^([01]\d|2[0-3]):([0-5]\d)$/.exec(stored);
+            return match
+                ? { hour: match[1], minute: match[2] }
+                : { hour: '00', minute: '00' };
         }
 
         function openConstructionRunner() {
@@ -1296,6 +1456,7 @@
 
             closeDropdowns();
             closePanel();
+            closeGhostRunner();
             refs.constructionOrdersList.replaceChildren();
             addConstructionOrderRow();
             showConstructionRunnerError('');
