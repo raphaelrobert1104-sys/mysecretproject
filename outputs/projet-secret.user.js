@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Projet secret — boucle multi-liens
 // @namespace    local.projet-secret
-// @version      6.3.3
+// @version      6.4.0
 // @updateURL    https://raw.githubusercontent.com/raphaelrobert1104-sys/mysecretproject/main/outputs/projet-secret.user.js
 // @downloadURL  https://raw.githubusercontent.com/raphaelrobert1104-sys/mysecretproject/main/outputs/projet-secret.user.js
 // @description  Automatise Ressources, Expéditions, Forme de vie, Import et Constructions avec configurations privées.
@@ -42,6 +42,7 @@
     const ELEMENT_TIMEOUT_MS = 7000;
     const DOM_QUIET_MS = 1200;
     const ACTION_DELAY_FACTOR = 0.7;
+    const MAX_CONSTRUCTION_ORDERS = 13;
     const POST_ACTION_DELAY_MIN_MS = 700;
     const POST_ACTION_DELAY_MAX_MS = 1700;
     const LIFEFORM_DELAY_MIN_MS = POST_ACTION_DELAY_MIN_MS;
@@ -759,7 +760,9 @@
                     position: absolute;
                     right: 0;
                     top: 62px;
-                    width: min(390px, calc(100vw - 20px));
+                    width: min(680px, calc(100vw - 20px));
+                    max-height: calc(100vh - 82px - env(safe-area-inset-top));
+                    overflow: auto;
                     padding: 18px;
                     border: 1px solid rgba(251, 191, 36, .58);
                     border-radius: 20px;
@@ -802,14 +805,85 @@
                     background: rgba(245, 158, 11, .18);
                     color: #fde68a;
                 }
-                .construction-runner-grid {
+                .construction-orders {
                     display: grid;
-                    grid-template-columns: repeat(3, minmax(0, 1fr));
                     gap: 9px;
-                    margin: 14px 0;
+                    margin: 14px 0 10px;
                 }
-                .construction-runner-grid label,
-                .construction-link-choice label { margin-bottom: 5px; }
+                .construction-orders-header {
+                    display: flex;
+                    align-items: center;
+                    justify-content: space-between;
+                    gap: 10px;
+                    color: #e2e8f0;
+                    font-size: 11px;
+                    font-weight: 780;
+                }
+                .construction-orders-counter {
+                    color: #fbbf24;
+                    font-variant-numeric: tabular-nums;
+                }
+                .construction-orders-list {
+                    display: grid;
+                    gap: 10px;
+                    max-height: min(51vh, 520px);
+                    overflow: auto;
+                    padding: 1px 4px 1px 1px;
+                    scrollbar-width: thin;
+                }
+                .construction-order-row {
+                    padding: 11px;
+                    border: 1px solid rgba(148, 163, 184, .2);
+                    border-radius: 13px;
+                    background: rgba(15, 23, 42, .52);
+                    box-shadow: inset 0 1px 0 rgba(255,255,255,.035);
+                }
+                .construction-order-header {
+                    display: flex;
+                    align-items: center;
+                    justify-content: space-between;
+                    gap: 10px;
+                    margin-bottom: 9px;
+                }
+                .construction-order-title {
+                    color: #fde68a;
+                    font-size: 11px;
+                    font-weight: 850;
+                    letter-spacing: .05em;
+                    text-transform: uppercase;
+                }
+                .construction-order-summary {
+                    flex: 1;
+                    color: #a7f3d0;
+                    font-size: 10px;
+                    font-weight: 700;
+                    text-align: right;
+                }
+                .construction-order-remove {
+                    display: grid;
+                    place-items: center;
+                    width: 25px;
+                    height: 25px;
+                    padding: 0;
+                    border: 1px solid rgba(248, 113, 113, .3);
+                    border-radius: 8px;
+                    background: rgba(127, 29, 29, .22);
+                    color: #fecaca;
+                    font: 800 15px/1 system-ui, sans-serif;
+                    cursor: pointer;
+                }
+                .construction-order-remove:hover { background: rgba(185, 28, 28, .4); }
+                .construction-order-remove:disabled { visibility: hidden; }
+                .construction-order-grid {
+                    display: grid;
+                    grid-template-columns: repeat(3, minmax(82px, .72fr)) minmax(145px, 1.35fr);
+                    gap: 8px;
+                    align-items: end;
+                }
+                .construction-order-field > label {
+                    display: block;
+                    margin-bottom: 5px;
+                }
                 .amount-input-shell { position: relative; }
                 .amount-input-shell input { padding-right: 31px; }
                 .amount-input-shell > span {
@@ -822,7 +896,27 @@
                     font-weight: 850;
                     pointer-events: none;
                 }
-                .construction-link-choice { margin-bottom: 12px; }
+                .construction-add-order {
+                    width: 100%;
+                    min-height: 38px;
+                    border: 1px dashed rgba(251, 191, 36, .55);
+                    border-radius: 11px;
+                    background: rgba(120, 53, 15, .16);
+                    color: #fde68a;
+                    font: 800 12px/1 system-ui, sans-serif;
+                    cursor: pointer;
+                    transition: background .16s ease, border-color .16s ease, transform .16s ease;
+                }
+                .construction-add-order:hover {
+                    border-color: rgba(251, 191, 36, .9);
+                    background: rgba(120, 53, 15, .3);
+                    transform: translateY(-1px);
+                }
+                .construction-add-order:disabled {
+                    cursor: default;
+                    opacity: .45;
+                    transform: none;
+                }
                 .construction-runner input,
                 .construction-runner select {
                     border-color: rgba(148, 163, 184, .38);
@@ -864,6 +958,9 @@
                     .named-link-row { grid-template-columns: 22px minmax(82px, .7fr) minmax(145px, 1.3fr); }
                     .named-link-row input, .construction-runner input, .construction-runner select { font-size: 16px; }
                     .construction-runner { padding: 14px; }
+                    .construction-order-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+                    .construction-order-field.destination { grid-column: 1 / -1; }
+                    .construction-orders-list { max-height: min(48vh, 480px); }
                 }
                 @media (prefers-reduced-motion: reduce) {
                     .dropdown-menu.open, .panel.open, .construction-runner.open { animation: none; }
@@ -978,35 +1075,16 @@
                     <div class="construction-flow" aria-hidden="true">
                         <span>1 · Montants</span><span>2 · Destination</span><span>3 · Exécution</span>
                     </div>
-                    <p class="help">Saisissez les ressources en millions, puis choisissez la destination configurée.</p>
-                    <div class="construction-runner-grid">
-                        <div>
-                            <label for="construction-r1">R1</label>
-                            <div class="amount-input-shell">
-                                <input id="construction-r1" class="construction-r1" type="text" inputmode="decimal" autocomplete="off" placeholder="3.3" value="0">
-                                <span>M</span>
-                            </div>
+                    <p class="help">Chaque ligne correspond à une exécution complète des actions 3 à 6. Les ressources sont exprimées en millions.</p>
+                    <div class="construction-orders">
+                        <div class="construction-orders-header">
+                            <span>Ordres à exécuter</span>
+                            <span class="construction-orders-counter">1 / 13</span>
                         </div>
-                        <div>
-                            <label for="construction-r2">R2</label>
-                            <div class="amount-input-shell">
-                                <input id="construction-r2" class="construction-r2" type="text" inputmode="decimal" autocomplete="off" placeholder="2.0" value="0">
-                                <span>M</span>
-                            </div>
-                        </div>
-                        <div>
-                            <label for="construction-r3">R3</label>
-                            <div class="amount-input-shell">
-                                <input id="construction-r3" class="construction-r3" type="text" inputmode="decimal" autocomplete="off" placeholder="1" value="0">
-                                <span>M</span>
-                            </div>
-                        </div>
+                        <div class="construction-orders-list"></div>
+                        <button type="button" class="construction-add-order">＋ Ajouter une ligne</button>
                     </div>
-                    <div class="construction-link-choice">
-                        <label for="construction-link-select">Destination</label>
-                        <select id="construction-link-select" class="construction-link-select"></select>
-                    </div>
-                    <div class="construction-calculation">Total réel : 0 · Petites voitures : 0</div>
+                    <div class="construction-calculation">1 exécution · Total réel : 0 · Petites voitures : 0</div>
                     <p class="field-help">Exemple : 3.3 M devient 3 300 000. Le total réel est ensuite divisé par 9000 et arrondi au supérieur.</p>
                     <div class="construction-runner-error" role="alert"></div>
                     <div class="actions">
@@ -1070,10 +1148,9 @@
             constructionRunnerClose: shadow.querySelector('.construction-runner-close'),
             constructionRunnerCancel: shadow.querySelector('.construction-runner-cancel'),
             constructionRunnerStart: shadow.querySelector('.construction-runner-start'),
-            constructionR1: shadow.querySelector('.construction-r1'),
-            constructionR2: shadow.querySelector('.construction-r2'),
-            constructionR3: shadow.querySelector('.construction-r3'),
-            constructionLinkSelect: shadow.querySelector('.construction-link-select'),
+            constructionOrdersList: shadow.querySelector('.construction-orders-list'),
+            constructionOrdersCounter: shadow.querySelector('.construction-orders-counter'),
+            constructionAddOrder: shadow.querySelector('.construction-add-order'),
             constructionCalculation: shadow.querySelector('.construction-calculation'),
             constructionRunnerError: shadow.querySelector('.construction-runner-error'),
         };
@@ -1110,27 +1187,16 @@
         refs.constructionRunnerClose.addEventListener('click', closeConstructionRunner);
         refs.constructionRunnerCancel.addEventListener('click', closeConstructionRunner);
         refs.constructionRunnerStart.addEventListener('click', launchConstructionFromRunner);
+        refs.constructionAddOrder.addEventListener('click', () => {
+            const row = addConstructionOrderRow();
+            row?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+        });
         refs.debugProgressClose.addEventListener('click', () => {
             const run = getRunState();
             if (run.runId) {
                 GM_setValue(DEBUG_DISMISSED_RUN_KEY, run.runId);
             }
             refs.debugProgress.style.display = 'none';
-        });
-        [refs.constructionR1, refs.constructionR2, refs.constructionR3].forEach((input) => {
-            input.addEventListener('input', updateConstructionCalculation);
-            input.addEventListener('focus', () => {
-                if (input.value.trim() === '0') {
-                    input.value = '';
-                    updateConstructionCalculation();
-                }
-            });
-            input.addEventListener('blur', () => {
-                if (input.value.trim() === '') {
-                    input.value = '0';
-                    updateConstructionCalculation();
-                }
-            });
         });
         refs.simpleMenuToggle.addEventListener('click', () => toggleDropdown('simple'));
         refs.groupedMenuToggle.addEventListener('click', () => toggleDropdown('grouped'));
@@ -1230,16 +1296,8 @@
 
             closeDropdowns();
             closePanel();
-            refs.constructionLinkSelect.replaceChildren();
-            for (const [index, entry] of config.namedLinks.entries()) {
-                const option = document.createElement('option');
-                option.value = String(index);
-                option.textContent = entry.name;
-                refs.constructionLinkSelect.appendChild(option);
-            }
-            refs.constructionR1.value = '0';
-            refs.constructionR2.value = '0';
-            refs.constructionR3.value = '0';
+            refs.constructionOrdersList.replaceChildren();
+            addConstructionOrderRow();
             showConstructionRunnerError('');
             updateConstructionCalculation();
             refs.constructionRunner.classList.add('open');
@@ -1255,45 +1313,190 @@
             refs.constructionRunnerError.classList.toggle('visible', Boolean(message));
         }
 
-        function updateConstructionCalculation() {
-            const values = [refs.constructionR1, refs.constructionR2, refs.constructionR3]
-                .map((input) => parseConstructionMillions(input.value));
-            if (values.some((value) => value === null)) {
-                refs.constructionCalculation.textContent =
-                    'Saisissez trois montants positifs en millions, par exemple 3.3.';
-                return;
+        function getConstructionOrderRows() {
+            return [...refs.constructionOrdersList.querySelectorAll('.construction-order-row')];
+        }
+
+        function addConstructionOrderRow(initialValues = {}) {
+            const rows = getConstructionOrderRows();
+            if (rows.length >= MAX_CONSTRUCTION_ORDERS) return null;
+
+            const row = document.createElement('article');
+            row.className = 'construction-order-row';
+            row.innerHTML = `
+                <div class="construction-order-header">
+                    <span class="construction-order-title"></span>
+                    <span class="construction-order-summary">Total : 0 · Petites voitures : 0</span>
+                    <button type="button" class="construction-order-remove" title="Supprimer cette ligne" aria-label="Supprimer cette ligne">×</button>
+                </div>
+                <div class="construction-order-grid">
+                    <div class="construction-order-field">
+                        <label>R1</label>
+                        <div class="amount-input-shell">
+                            <input class="construction-order-r1" type="text" inputmode="decimal" autocomplete="off" placeholder="3.3">
+                            <span>M</span>
+                        </div>
+                    </div>
+                    <div class="construction-order-field">
+                        <label>R2</label>
+                        <div class="amount-input-shell">
+                            <input class="construction-order-r2" type="text" inputmode="decimal" autocomplete="off" placeholder="2.0">
+                            <span>M</span>
+                        </div>
+                    </div>
+                    <div class="construction-order-field">
+                        <label>R3</label>
+                        <div class="amount-input-shell">
+                            <input class="construction-order-r3" type="text" inputmode="decimal" autocomplete="off" placeholder="1">
+                            <span>M</span>
+                        </div>
+                    </div>
+                    <div class="construction-order-field destination">
+                        <label>Destination</label>
+                        <select class="construction-order-destination"></select>
+                    </div>
+                </div>
+            `;
+
+            const amountInputs = [
+                row.querySelector('.construction-order-r1'),
+                row.querySelector('.construction-order-r2'),
+                row.querySelector('.construction-order-r3'),
+            ];
+            const initialAmounts = [initialValues.r1, initialValues.r2, initialValues.r3];
+            amountInputs.forEach((input, index) => {
+                input.value = String(initialAmounts[index] ?? '0');
+                input.addEventListener('input', updateConstructionCalculation);
+                input.addEventListener('focus', () => {
+                    if (input.value.trim() === '0') {
+                        input.value = '';
+                        updateConstructionCalculation();
+                    }
+                });
+                input.addEventListener('blur', () => {
+                    if (input.value.trim() === '') {
+                        input.value = '0';
+                        updateConstructionCalculation();
+                    }
+                });
+            });
+
+            const destinationSelect = row.querySelector('.construction-order-destination');
+            const config = getStoredConfig(7);
+            for (const [index, entry] of config.namedLinks.entries()) {
+                const option = document.createElement('option');
+                option.value = String(index);
+                option.textContent = entry.name;
+                destinationSelect.appendChild(option);
             }
-            const total = values.reduce((sum, value) => sum + value, 0);
-            const transporterCount = Math.ceil(total / 9000);
-            refs.constructionCalculation.textContent =
-                `Total réel : ${formatInteger(total)} · Petites voitures : ${formatInteger(transporterCount)}`;
+            const initialLinkIndex = Number(initialValues.selectedLinkIndex);
+            if (Number.isInteger(initialLinkIndex) && config.namedLinks[initialLinkIndex]) {
+                destinationSelect.value = String(initialLinkIndex);
+            }
+            destinationSelect.addEventListener('change', updateConstructionCalculation);
+
+            row.querySelector('.construction-order-remove').addEventListener('click', () => {
+                if (getConstructionOrderRows().length <= 1) return;
+                row.remove();
+                updateConstructionCalculation();
+            });
+
+            refs.constructionOrdersList.appendChild(row);
+            updateConstructionCalculation();
+            return row;
+        }
+
+        function updateConstructionCalculation() {
+            const rows = getConstructionOrderRows();
+            let cumulativeTotal = 0;
+            let cumulativeTransporters = 0;
+            let allRowsAreValid = rows.length > 0;
+
+            rows.forEach((row, index) => {
+                row.querySelector('.construction-order-title').textContent = `Ligne ${index + 1}`;
+                const inputs = [
+                    row.querySelector('.construction-order-r1'),
+                    row.querySelector('.construction-order-r2'),
+                    row.querySelector('.construction-order-r3'),
+                ];
+                inputs.forEach((input, inputIndex) => {
+                    input.setAttribute('aria-label', `R${inputIndex + 1} de la ligne ${index + 1}`);
+                });
+                row.querySelector('.construction-order-destination')
+                    .setAttribute('aria-label', `Destination de la ligne ${index + 1}`);
+
+                const values = inputs.map((input) => parseConstructionMillions(input.value));
+                const summary = row.querySelector('.construction-order-summary');
+                if (values.some((value) => value === null)) {
+                    allRowsAreValid = false;
+                    summary.textContent = 'Montant à compléter';
+                } else {
+                    const total = values.reduce((sum, value) => sum + value, 0);
+                    const transporterCount = Math.ceil(total / 9000);
+                    if (!Number.isSafeInteger(total)) {
+                        allRowsAreValid = false;
+                        summary.textContent = 'Total trop élevé';
+                    } else {
+                        cumulativeTotal += total;
+                        cumulativeTransporters += transporterCount;
+                        summary.textContent =
+                            `Total : ${formatInteger(total)} · Petites voitures : ${formatInteger(transporterCount)}`;
+                    }
+                }
+            });
+
+            const rowCount = rows.length;
+            refs.constructionOrdersCounter.textContent = `${rowCount} / ${MAX_CONSTRUCTION_ORDERS}`;
+            refs.constructionAddOrder.disabled = rowCount >= MAX_CONSTRUCTION_ORDERS;
+            refs.constructionAddOrder.textContent = rowCount >= MAX_CONSTRUCTION_ORDERS
+                ? `Maximum de ${MAX_CONSTRUCTION_ORDERS} lignes atteint`
+                : '＋ Ajouter une ligne';
+            rows.forEach((row) => {
+                row.querySelector('.construction-order-remove').disabled = rowCount <= 1;
+            });
+
+            refs.constructionCalculation.textContent = allRowsAreValid
+                ? `${rowCount} exécution${rowCount > 1 ? 's' : ''} · ` +
+                    `Total réel cumulé : ${formatInteger(cumulativeTotal)} · ` +
+                    `Petites voitures cumulées : ${formatInteger(cumulativeTransporters)}`
+                : 'Corrigez les montants indiqués avant de démarrer.';
         }
 
         function launchConstructionFromRunner() {
-            const amounts = [refs.constructionR1, refs.constructionR2, refs.constructionR3]
-                .map((input) => parseConstructionMillions(input.value));
-            if (amounts.some((value) => value === null)) {
-                showConstructionRunnerError(
-                    'R1, R2 et R3 doivent être des montants positifs en millions (exemple : 3.3).'
-                );
-                return;
-            }
-
-            const selectedLinkIndex = Number(refs.constructionLinkSelect.value);
             const config = getStoredConfig(7);
-            if (!Number.isInteger(selectedLinkIndex) || !config.namedLinks[selectedLinkIndex]) {
-                showConstructionRunnerError('Choisissez une destination valide.');
-                return;
+            const rows = getConstructionOrderRows();
+            const orders = [];
+            for (const [index, row] of rows.entries()) {
+                const amounts = [
+                    row.querySelector('.construction-order-r1'),
+                    row.querySelector('.construction-order-r2'),
+                    row.querySelector('.construction-order-r3'),
+                ].map((input) => parseConstructionMillions(input.value));
+                if (amounts.some((value) => value === null)) {
+                    showConstructionRunnerError(
+                        `Ligne ${index + 1} : R1, R2 et R3 doivent être des montants positifs ou nuls en millions.`
+                    );
+                    return;
+                }
+
+                const selectedLinkIndex = Number(
+                    row.querySelector('.construction-order-destination').value
+                );
+                if (!Number.isInteger(selectedLinkIndex) || !config.namedLinks[selectedLinkIndex]) {
+                    showConstructionRunnerError(`Ligne ${index + 1} : choisissez une destination valide.`);
+                    return;
+                }
+                orders.push({
+                    r1: amounts[0],
+                    r2: amounts[1],
+                    r3: amounts[2],
+                    selectedLinkIndex,
+                });
             }
 
             showConstructionRunnerError('');
             closeConstructionRunner();
-            void startConstructionAutomation({
-                r1: amounts[0],
-                r2: amounts[1],
-                r3: amounts[2],
-                selectedLinkIndex,
-            });
+            void startConstructionAutomation({ orders });
         }
 
         function loadProfileIntoPanel(profileId) {
@@ -2119,28 +2322,55 @@
 
     async function startConstructionAutomation(parameters) {
         const config = getStoredConfig(7);
-        const selectedLinkIndex = Number(parameters?.selectedLinkIndex);
-        const selectedLink = config.namedLinks[selectedLinkIndex];
-        const amounts = [parameters?.r1, parameters?.r2, parameters?.r3]
-            .map((value) => parseConstructionAmount(value));
+        const sourceOrders = Array.isArray(parameters?.orders)
+            ? parameters.orders
+            : [{
+                r1: parameters?.r1,
+                r2: parameters?.r2,
+                r3: parameters?.r3,
+                selectedLinkIndex: parameters?.selectedLinkIndex,
+            }];
+        const orders = [];
 
-        if (!selectedLink || amounts.some((value) => value === null)) {
+        if (sourceOrders.length === 0 || sourceOrders.length > MAX_CONSTRUCTION_ORDERS) {
             const ui = await ensureUi();
             ui.openConstructionRunner();
+            ui.showConstructionError(
+                `Constructions accepte entre 1 et ${MAX_CONSTRUCTION_ORDERS} lignes.`
+            );
             ui.refresh();
             return;
         }
 
-        const total = amounts.reduce((sum, value) => sum + value, 0);
-        if (!Number.isSafeInteger(total)) {
-            const ui = await ensureUi();
-            ui.openConstructionRunner();
-            ui.showConstructionError('Le total R1 + R2 + R3 est trop élevé.');
-            ui.refresh();
-            return;
+        for (const [index, sourceOrder] of sourceOrders.entries()) {
+            const selectedLinkIndex = Number(sourceOrder?.selectedLinkIndex);
+            const selectedLink = config.namedLinks[selectedLinkIndex];
+            const amounts = [sourceOrder?.r1, sourceOrder?.r2, sourceOrder?.r3]
+                .map((value) => parseConstructionAmount(value));
+            const total = amounts.some((value) => value === null)
+                ? null
+                : amounts.reduce((sum, value) => sum + value, 0);
+            if (!selectedLink || total === null || !Number.isSafeInteger(total)) {
+                const ui = await ensureUi();
+                ui.openConstructionRunner();
+                ui.showConstructionError(
+                    `La ligne ${index + 1} contient une destination ou des montants invalides.`
+                );
+                ui.refresh();
+                return;
+            }
+            orders.push({
+                selectedLinkIndex,
+                r1: amounts[0],
+                r2: amounts[1],
+                r3: amounts[2],
+                total,
+                transporterCount: Math.ceil(total / 9000),
+            });
         }
 
-        const transporterCount = Math.ceil(total / 9000);
+        const firstOrder = orders[0];
+        const firstLink = config.namedLinks[firstOrder.selectedLinkIndex];
         const now = Date.now();
         const runId = createRunId();
         const run = {
@@ -2151,12 +2381,14 @@
             combinedKind: '',
             nextProfileId: null,
             phase: 'construction-before-open-link',
-            currentLinkIndex: selectedLinkIndex,
-            constructionR1: amounts[0],
-            constructionR2: amounts[1],
-            constructionR3: amounts[2],
-            constructionTotal: total,
-            constructionTransporterCount: transporterCount,
+            constructionOrders: orders,
+            constructionOrderIndex: 0,
+            currentLinkIndex: firstOrder.selectedLinkIndex,
+            constructionR1: firstOrder.r1,
+            constructionR2: firstOrder.r2,
+            constructionR3: firstOrder.r3,
+            constructionTotal: firstOrder.total,
+            constructionTransporterCount: firstOrder.transporterCount,
             constructionPendingDelayMs: getRandomDelayMs(
                 CONSTRUCTION_DELAY_MIN_MS,
                 CONSTRUCTION_DELAY_MAX_MS
@@ -2165,8 +2397,9 @@
             startedAt: now,
             updatedAt: now,
             message:
-                `Constructions — actions 1 et 2/6 validées : ${selectedLink.name}, ` +
-                `${formatInteger(total)} ressources, ${formatInteger(transporterCount)} petites voitures…`,
+                `Constructions — ligne 1/${orders.length}, actions 1 et 2/6 validées : ${firstLink.name}, ` +
+                `${formatInteger(firstOrder.total)} ressources, ` +
+                `${formatInteger(firstOrder.transporterCount)} petites voitures…`,
         };
 
         GM_setValue(RUN_KEY, run);
@@ -2181,14 +2414,17 @@
             if (!run || run.profileId !== 7) return;
 
             const config = getStoredConfig(7);
-            const selectedLink = config.namedLinks[run.currentLinkIndex];
-            if (!selectedLink) {
-                throw new Error('La destination Constructions choisie n’existe plus.');
-            }
 
             while (true) {
                 run = getActiveRun(runId);
                 if (!run) return;
+                const orders = getConstructionRunOrders(run);
+                const orderIndex = getConstructionRunOrderIndex(run, orders);
+                const currentOrder = orders[orderIndex];
+                const selectedLink = config.namedLinks[currentOrder?.selectedLinkIndex];
+                if (!currentOrder || !selectedLink) {
+                    throw new Error('La destination Constructions de la ligne en cours n’existe plus.');
+                }
 
                 if (Number(run.constructionPendingDelayMs) > 0) {
                     const canContinue = await consumeConstructionDelay(runId);
@@ -2200,7 +2436,8 @@
                     updateRun(runId, {
                         phase: 'construction-open-link',
                         message:
-                            `Constructions — action 3/6 : ouverture de ${selectedLink.name}…`,
+                            `Constructions — ligne ${orderIndex + 1}/${orders.length}, ` +
+                            `action 3/6 : ouverture de ${selectedLink.name}…`,
                     });
                     refreshUi();
                     navigateToUrl(selectedLink.url, true);
@@ -2227,7 +2464,8 @@
                         ),
                         constructionPendingDelayLabel: 'le chargement de la destination',
                         message:
-                            `Constructions — action 3/6 terminée : ${selectedLink.name} est chargée.`,
+                            `Constructions — ligne ${orderIndex + 1}/${orders.length}, ` +
+                            `action 3/6 terminée : ${selectedLink.name} est chargée.`,
                     });
                     refreshUi();
                     continue;
@@ -2236,8 +2474,8 @@
                 if (run.phase === 'construction-fill-transporters') {
                     updateRun(runId, {
                         message:
-                            `Constructions — action 4/6 : saisir ` +
-                            `${formatInteger(run.constructionTransporterCount)} petites voitures…`,
+                            `Constructions — ligne ${orderIndex + 1}/${orders.length}, action 4/6 : saisir ` +
+                            `${formatInteger(currentOrder.transporterCount)} petites voitures…`,
                     });
                     refreshUi();
                     const input = await waitForElement(CONSTRUCTION_TRANSPORTER_SELECTOR, {
@@ -2246,7 +2484,7 @@
                     });
                     if (!getActiveRun(runId)) return;
 
-                    setFormControlValue(input, String(run.constructionTransporterCount));
+                    setFormControlValue(input, String(currentOrder.transporterCount));
                     updateRun(runId, {
                         phase: 'construction-continue',
                         constructionPendingDelayMs: getRandomDelayMs(
@@ -2255,8 +2493,8 @@
                         ),
                         constructionPendingDelayLabel: 'la saisie du nombre de petites voitures',
                         message:
-                            `Constructions — action 4/6 : ` +
-                            `${formatInteger(run.constructionTransporterCount)} petites voitures saisies, ` +
+                            `Constructions — ligne ${orderIndex + 1}/${orders.length}, action 4/6 : ` +
+                            `${formatInteger(currentOrder.transporterCount)} petites voitures saisies, ` +
                             'préparation du clic sur Continuer…',
                     });
                     refreshUi();
@@ -2265,7 +2503,9 @@
 
                 if (run.phase === 'construction-continue') {
                     updateRun(runId, {
-                        message: 'Constructions — action 4/6 : cliquer sur Continuer…',
+                        message:
+                            `Constructions — ligne ${orderIndex + 1}/${orders.length}, ` +
+                            'action 4/6 : cliquer sur Continuer…',
                     });
                     refreshUi();
                     const continueButton = await waitForElement(CONSTRUCTION_CONTINUE_SELECTOR, {
@@ -2278,7 +2518,8 @@
                     updateRun(runId, {
                         phase: 'construction-wait-resources-page',
                         message:
-                            'Constructions — action 4/6 terminée : attente de la page des ressources…',
+                            `Constructions — ligne ${orderIndex + 1}/${orders.length}, ` +
+                            'action 4/6 terminée : attente de la page des ressources…',
                     });
                     refreshUi();
                     continueButton.click();
@@ -2305,7 +2546,8 @@
                         ),
                         constructionPendingDelayLabel: 'le chargement de la page des ressources',
                         message:
-                            'Constructions — page des ressources chargée, préparation de l’action 5/6…',
+                            `Constructions — ligne ${orderIndex + 1}/${orders.length}, ` +
+                            'page des ressources chargée, préparation de l’action 5/6…',
                     });
                     refreshUi();
                     continue;
@@ -2313,9 +2555,9 @@
 
                 if (run.phase === 'construction-fill-resources') {
                     const resourceEntries = [
-                        ['R1', CONSTRUCTION_RESOURCE_SELECTORS.r1, run.constructionR1],
-                        ['R2', CONSTRUCTION_RESOURCE_SELECTORS.r2, run.constructionR2],
-                        ['R3', CONSTRUCTION_RESOURCE_SELECTORS.r3, run.constructionR3],
+                        ['R1', CONSTRUCTION_RESOURCE_SELECTORS.r1, currentOrder.r1],
+                        ['R2', CONSTRUCTION_RESOURCE_SELECTORS.r2, currentOrder.r2],
+                        ['R3', CONSTRUCTION_RESOURCE_SELECTORS.r3, currentOrder.r3],
                     ];
                     if (resourceEntries.some(([, selector]) => !selector)) {
                         await pauseConstructionForMissingActions(
@@ -2326,7 +2568,9 @@
                     }
 
                     updateRun(runId, {
-                        message: 'Constructions — action 5/6 : saisir R1, R2 et R3…',
+                        message:
+                            `Constructions — ligne ${orderIndex + 1}/${orders.length}, ` +
+                            'action 5/6 : saisir R1, R2 et R3…',
                     });
                     refreshUi();
                     for (const [, selector, value] of resourceEntries) {
@@ -2345,7 +2589,9 @@
                             CONSTRUCTION_DELAY_MAX_MS
                         ),
                         constructionPendingDelayLabel: 'la saisie de R1, R2 et R3',
-                        message: 'Constructions — action 5/6 terminée : R1, R2 et R3 saisis.',
+                        message:
+                            `Constructions — ligne ${orderIndex + 1}/${orders.length}, ` +
+                            'action 5/6 terminée : R1, R2 et R3 saisis.',
                     });
                     refreshUi();
                     continue;
@@ -2361,7 +2607,9 @@
                     }
 
                     updateRun(runId, {
-                        message: 'Constructions — action 6/6 : cliquer sur Envoyer…',
+                        message:
+                            `Constructions — ligne ${orderIndex + 1}/${orders.length}, ` +
+                            'action 6/6 : cliquer sur Envoyer…',
                     });
                     refreshUi();
                     const sendButton = await waitForElement(CONSTRUCTION_SEND_SELECTOR, {
@@ -2371,12 +2619,54 @@
                     const activeRun = getActiveRun(runId);
                     if (!activeRun) return;
 
+                    const nextOrderIndex = orderIndex + 1;
+                    if (nextOrderIndex < orders.length) {
+                        const nextOrder = orders[nextOrderIndex];
+                        const nextLink = config.namedLinks[nextOrder.selectedLinkIndex];
+                        if (!nextLink) {
+                            throw new Error(
+                                `La destination Constructions de la ligne ${nextOrderIndex + 1} n’existe plus.`
+                            );
+                        }
+
+                        const pageExitPromise = waitForPageExit(3000);
+                        GM_setValue(RUN_KEY, {
+                            ...activeRun,
+                            phase: 'construction-before-open-link',
+                            constructionOrderIndex: nextOrderIndex,
+                            currentLinkIndex: nextOrder.selectedLinkIndex,
+                            constructionR1: nextOrder.r1,
+                            constructionR2: nextOrder.r2,
+                            constructionR3: nextOrder.r3,
+                            constructionTotal: nextOrder.total,
+                            constructionTransporterCount: nextOrder.transporterCount,
+                            constructionPendingDelayMs: getRandomDelayMs(
+                                CONSTRUCTION_DELAY_MIN_MS,
+                                CONSTRUCTION_DELAY_MAX_MS
+                            ),
+                            constructionPendingDelayLabel:
+                                `l’envoi de la ligne ${orderIndex + 1}/${orders.length}`,
+                            updatedAt: Date.now(),
+                            message:
+                                `Constructions — ligne ${orderIndex + 1}/${orders.length} terminée. ` +
+                                `La ligne ${nextOrderIndex + 1}/${orders.length} reprendra à l’action 3 ` +
+                                `sur ${nextLink.name}.`,
+                        });
+                        refreshUi();
+                        sendButton.click();
+                        const pageExited = await pageExitPromise;
+                        if (pageExited) return;
+                        continue;
+                    }
+
                     GM_setValue(RUN_KEY, {
                         ...activeRun,
                         status: 'completed',
                         phase: 'construction-completed',
                         updatedAt: Date.now(),
-                        message: `Constructions terminée pour ${selectedLink.name}.`,
+                        message:
+                            `Constructions terminée : ${orders.length} ligne` +
+                            `${orders.length > 1 ? 's' : ''} exécutée${orders.length > 1 ? 's' : ''}.`,
                     });
                     void clearThisTabRunId(runId);
                     refreshUi();
@@ -3150,7 +3440,10 @@
 
     function formatConstructionDebugProgress(run) {
         const config = getStoredConfig(7);
-        const destination = config.namedLinks[run.currentLinkIndex]?.name || 'destination inconnue';
+        const orders = getConstructionRunOrders(run);
+        const orderIndex = getConstructionRunOrderIndex(run, orders);
+        const currentOrder = orders[orderIndex];
+        const destination = config.namedLinks[currentOrder?.selectedLinkIndex]?.name || 'destination inconnue';
         let actionLabel;
 
         if (run.status !== 'running') {
@@ -3161,7 +3454,9 @@
                 `${(Number(run.constructionPendingDelayMs) / 1000).toFixed(2)} s`;
         } else {
             const labels = {
-                'construction-before-open-link': 'Actions 1–2/6 — paramètres et destination validés',
+                'construction-before-open-link': orderIndex === 0
+                    ? 'Actions 1–2/6 — paramètres et destination validés'
+                    : 'Boucle suivante — reprise à l’action 3/6',
                 'construction-open-link': `Action 3/6 — charger ${destination}`,
                 'construction-fill-transporters': 'Action 4/6 — saisir les petites voitures',
                 'construction-continue': 'Action 4/6 — cliquer sur Continuer',
@@ -3176,10 +3471,10 @@
 
         const message = typeof run.message === 'string' ? run.message : '';
         return (
-            `Constructions — ${destination}\n${actionLabel}\n` +
-            `R1 ${formatMillions(run.constructionR1)} M · ` +
-            `R2 ${formatMillions(run.constructionR2)} M · ` +
-            `R3 ${formatMillions(run.constructionR3)} M` +
+            `Constructions — Boucle ${orderIndex + 1}/${orders.length} — ${destination}\n${actionLabel}\n` +
+            `R1 ${formatMillions(currentOrder?.r1)} M · ` +
+            `R2 ${formatMillions(currentOrder?.r2)} M · ` +
+            `R3 ${formatMillions(currentOrder?.r3)} M` +
             (message ? `\n${message}` : '')
         );
     }
@@ -3358,6 +3653,25 @@
         const parsed = Number(value);
         if (!Number.isSafeInteger(parsed) || parsed < 0) return null;
         return parsed;
+    }
+
+    function getConstructionRunOrders(run) {
+        if (Array.isArray(run?.constructionOrders) && run.constructionOrders.length > 0) {
+            return run.constructionOrders.slice(0, MAX_CONSTRUCTION_ORDERS);
+        }
+        return [{
+            selectedLinkIndex: Number(run?.currentLinkIndex),
+            r1: Number(run?.constructionR1) || 0,
+            r2: Number(run?.constructionR2) || 0,
+            r3: Number(run?.constructionR3) || 0,
+            total: Number(run?.constructionTotal) || 0,
+            transporterCount: Number(run?.constructionTransporterCount) || 0,
+        }];
+    }
+
+    function getConstructionRunOrderIndex(run, orders = getConstructionRunOrders(run)) {
+        const index = Math.max(0, Math.floor(Number(run?.constructionOrderIndex) || 0));
+        return Math.min(index, Math.max(0, orders.length - 1));
     }
 
     function formatMillions(value) {
