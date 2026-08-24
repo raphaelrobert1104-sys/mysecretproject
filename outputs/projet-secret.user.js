@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Projet secret — boucle multi-liens
 // @namespace    local.projet-secret
-// @version      6.3.2
+// @version      6.3.3
 // @updateURL    https://raw.githubusercontent.com/raphaelrobert1104-sys/mysecretproject/main/outputs/projet-secret.user.js
 // @downloadURL  https://raw.githubusercontent.com/raphaelrobert1104-sys/mysecretproject/main/outputs/projet-secret.user.js
 // @description  Automatise Ressources, Expéditions, Forme de vie, Import et Constructions avec configurations privées.
@@ -1119,6 +1119,18 @@
         });
         [refs.constructionR1, refs.constructionR2, refs.constructionR3].forEach((input) => {
             input.addEventListener('input', updateConstructionCalculation);
+            input.addEventListener('focus', () => {
+                if (input.value.trim() === '0') {
+                    input.value = '';
+                    updateConstructionCalculation();
+                }
+            });
+            input.addEventListener('blur', () => {
+                if (input.value.trim() === '') {
+                    input.value = '0';
+                    updateConstructionCalculation();
+                }
+            });
         });
         refs.simpleMenuToggle.addEventListener('click', () => toggleDropdown('simple'));
         refs.groupedMenuToggle.addEventListener('click', () => toggleDropdown('grouped'));
@@ -1231,7 +1243,6 @@
             showConstructionRunnerError('');
             updateConstructionCalculation();
             refs.constructionRunner.classList.add('open');
-            refs.constructionR1.focus();
         }
 
         function closeConstructionRunner() {
