@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Projet secret — boucle multi-liens
 // @namespace    local.projet-secret
-// @version      6.3.1
+// @version      6.3.2
 // @updateURL    https://raw.githubusercontent.com/raphaelrobert1104-sys/mysecretproject/main/outputs/projet-secret.user.js
 // @downloadURL  https://raw.githubusercontent.com/raphaelrobert1104-sys/mysecretproject/main/outputs/projet-secret.user.js
 // @description  Automatise Ressources, Expéditions, Forme de vie, Import et Constructions avec configurations privées.
@@ -41,6 +41,7 @@
     const PAGE_TIMEOUT_MS = 45000;
     const ELEMENT_TIMEOUT_MS = 7000;
     const DOM_QUIET_MS = 1200;
+    const ACTION_DELAY_FACTOR = 0.7;
     const POST_ACTION_DELAY_MIN_MS = 700;
     const POST_ACTION_DELAY_MAX_MS = 1700;
     const LIFEFORM_DELAY_MIN_MS = POST_ACTION_DELAY_MIN_MS;
@@ -2664,7 +2665,7 @@
         }
 
         if (step.type === 'delay') {
-            await delay(Math.max(0, Number(step.ms) || 0));
+            await delay(scaleActionDelayMs(step.ms));
             advanceStep(runId, stepIndex);
             return false;
         }
@@ -2721,7 +2722,7 @@
             }
 
             element.scrollIntoView({ block: 'center', inline: 'center', behavior: 'auto' });
-            await delay(50);
+            await delay(scaleActionDelayMs(50));
 
             // Enregistrer l'action suivante avant le clic permet de reprendre
             // correctement après une navigation ou un rechargement de page.
@@ -2729,7 +2730,7 @@
             const waitsForPage = step.waitAfter === 'page';
             const pageExitPromise = waitsForPage ? waitForPageExit(3000) : null;
             const clickCount = Math.max(1, Math.floor(Number(step.clickCount) || 1));
-            const clickIntervalMs = Math.max(0, Number(step.clickIntervalMs) || 0);
+            const clickIntervalMs = scaleActionDelayMs(step.clickIntervalMs);
 
             for (let clickNumber = 1; clickNumber <= clickCount; clickNumber += 1) {
                 if (!getActiveRun(runId)) {
@@ -3764,9 +3765,13 @@
     }
 
     function getRandomDelayMs(minimumMs, maximumMs) {
-        const minimum = Math.max(0, Number(minimumMs) || 0);
-        const maximum = Math.max(minimum, Number(maximumMs) || minimum);
+        const minimum = scaleActionDelayMs(minimumMs);
+        const maximum = Math.max(minimum, scaleActionDelayMs(maximumMs));
         return Math.round(minimum + getSecureRandomFraction() * (maximum - minimum));
+    }
+
+    function scaleActionDelayMs(delayMs) {
+        return Math.max(0, Math.round((Number(delayMs) || 0) * ACTION_DELAY_FACTOR));
     }
 
     function nextAnimationFrame() {
