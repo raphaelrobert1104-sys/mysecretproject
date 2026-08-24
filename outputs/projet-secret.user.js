@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Projet secret — boucle multi-liens
 // @namespace    local.projet-secret
-// @version      6.5.0
+// @version      6.5.1
 // @updateURL    https://raw.githubusercontent.com/raphaelrobert1104-sys/mysecretproject/main/outputs/projet-secret.user.js
 // @downloadURL  https://raw.githubusercontent.com/raphaelrobert1104-sys/mysecretproject/main/outputs/projet-secret.user.js
 // @description  Automatise Ressources, Expéditions, Forme de vie, Import, Constructions et Ghost avec configurations privées.
@@ -479,6 +479,9 @@
                 .control-group.expeditions .quick {
                     background: linear-gradient(135deg, rgba(5, 150, 105, .96), rgba(13, 148, 136, .96));
                 }
+                .control-group.expeditions-v2 .quick {
+                    background: linear-gradient(135deg, rgba(14, 116, 144, .97), rgba(79, 70, 229, .96));
+                }
                 .control-group.combined .quick {
                     min-width: 196px;
                     background: linear-gradient(135deg, rgba(124, 58, 237, .97), rgba(219, 39, 119, .94));
@@ -499,6 +502,15 @@
                 }
                 .control-group.ghost .quick {
                     background: linear-gradient(135deg, rgba(71, 85, 105, .98), rgba(88, 28, 135, .96));
+                }
+                .control-group.expeditions-v2-lifeform .quick {
+                    min-width: 230px;
+                    background: linear-gradient(135deg, rgba(8, 145, 178, .97), rgba(109, 40, 217, .96), rgba(217, 119, 6, .94));
+                }
+                .quick.pending:disabled {
+                    cursor: not-allowed;
+                    filter: saturate(.72);
+                    opacity: .78;
                 }
                 .quick:hover, .settings:hover { filter: brightness(1.1); }
                 .quick:active, .settings:active { transform: translateY(1px) scale(.985); }
@@ -1065,6 +1077,9 @@
                                 <button type="button" class="quick quick-2" title="Lancer Expéditions">Expéditions</button>
                                 <button type="button" class="settings settings-2" title="Configurer Expéditions" aria-label="Configurer Expéditions">⚙</button>
                             </div>
+                            <div class="control-group expeditions-v2">
+                                <button type="button" class="quick quick-9 pending" title="Actions Expédition V2 à définir" disabled>Expédition V2</button>
+                            </div>
                             <div class="control-group lifeform">
                                 <button type="button" class="quick quick-4" title="Lancer Forme de vie">Forme de vie</button>
                                 <button type="button" class="settings settings-4" title="Configurer Forme de vie" aria-label="Configurer Forme de vie">⚙</button>
@@ -1092,6 +1107,9 @@
                             <div class="control-group expeditions-lifeform">
                                 <button type="button" class="quick quick-5" title="Lancer Expédition puis Forme de vie">Expédition &amp; Forme de vie</button>
                                 <button type="button" class="settings settings-5" title="Configurer Expédition et Forme de vie" aria-label="Configurer Expédition et Forme de vie">⚙</button>
+                            </div>
+                            <div class="control-group expeditions-v2-lifeform">
+                                <button type="button" class="quick quick-10 pending" title="Actions Expédition V2 et Forme de vie à définir" disabled>Expédition V2 &amp; Forme de vie</button>
                             </div>
                         </div>
                     </div>
