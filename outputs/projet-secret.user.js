@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Projet secret — boucle multi-liens
 // @namespace    local.projet-secret
-// @version      6.6.1
+// @version      6.7.0
 // @updateURL    https://raw.githubusercontent.com/raphaelrobert1104-sys/mysecretproject/main/outputs/projet-secret.user.js
 // @downloadURL  https://raw.githubusercontent.com/raphaelrobert1104-sys/mysecretproject/main/outputs/projet-secret.user.js
 // @description  Automatise Ressources, Expéditions V1/V2, Forme de vie, Import, Constructions et Ghost avec configurations privées.
@@ -56,6 +56,8 @@
     const IMPORT_DELAY_MAX_MS = POST_ACTION_DELAY_MAX_MS;
     const CONSTRUCTION_DELAY_MIN_MS = POST_ACTION_DELAY_MIN_MS;
     const CONSTRUCTION_DELAY_MAX_MS = POST_ACTION_DELAY_MAX_MS;
+    const GHOST_DELAY_MIN_MS = POST_ACTION_DELAY_MIN_MS;
+    const GHOST_DELAY_MAX_MS = POST_ACTION_DELAY_MAX_MS;
     const EXPEDITION_V2_DELAY_MIN_MS = POST_ACTION_DELAY_MIN_MS;
     const EXPEDITION_V2_DELAY_MAX_MS = POST_ACTION_DELAY_MAX_MS;
     const EXPEDITION_SLOTS_SELECTOR = '#slots > div:nth-child(2) > span';
@@ -85,6 +87,7 @@
     };
     const CONSTRUCTION_CONTINUE_SELECTOR = '#continueToFleet2 > span';
     const CONSTRUCTION_SEND_SELECTOR = '#sendFleet > span';
+    const GHOST_SEND_ALL_SELECTOR = '#sendall';
 
     class ElementNotFoundError extends Error {
         constructor(selector, timeoutMs) {
@@ -1233,7 +1236,7 @@
                         </div>
                         <button type="button" class="close ghost-runner-close" aria-label="Fermer">×</button>
                     </div>
-                    <p class="help">Choisissez l’heure et la minute qui seront utilisées par Ghost.</p>
+                    <p class="help">Choisissez l’heure et la minute à conserver, puis démarrez Ghost.</p>
                     <div class="ghost-time-grid">
                         <div class="ghost-time-field">
                             <label for="ghost-hour">Heure</label>
@@ -1248,7 +1251,7 @@
                     <div class="ghost-time-preview">Horaire sélectionné : <span class="ghost-time-value">00:00</span></div>
                     <div class="actions">
                         <button type="button" class="save ghost-runner-cancel">Annuler</button>
-                        <button type="button" class="start ghost-runner-confirm">Valider l’heure</button>
+                        <button type="button" class="start ghost-runner-confirm">Valider et démarrer</button>
                     </div>
                 </section>
             </div>
@@ -1359,7 +1362,7 @@
         refs.quick5.addEventListener('click', () => quickExpeditionsLifeformAction());
         refs.quick6.addEventListener('click', () => quickAction(6));
         refs.quick7.addEventListener('click', () => quickAction(7));
-        refs.quick8.addEventListener('click', openGhostRunner);
+        refs.quick8.addEventListener('click', quickGhostAction);
         refs.quick9.addEventListener('click', () => quickAction(9));
         refs.quick10.addEventListener('click', () => quickExpeditionV2LifeformAction());
         refs.constructionRunnerClose.addEventListener('click', closeConstructionRunner);
@@ -1427,6 +1430,15 @@
                 void stopAutomation('Arrêt d’Expédition V2 & Forme de vie demandé avec le bouton flottant.');
             } else {
                 void startExpeditionV2LifeformAutomation();
+            }
+        }
+
+        function quickGhostAction() {
+            const run = getRunState();
+            if (run.status === 'running' && run.profileId === 8 && !run.combinedMode) {
+                void stopAutomation('Arrêt de Ghost demandé avec le bouton flottant.');
+            } else {
+                openGhostRunner();
             }
         }
 
@@ -1511,6 +1523,7 @@
             if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(time)) return;
             GM_setValue(GHOST_TIME_KEY, time);
             closeGhostRunner();
+            void startGhostAutomation(time);
         }
 
         function getStoredGhostTime() {
@@ -1960,11 +1973,13 @@
                 run.status === 'running' && run.profileId === 6 && !run.combinedMode;
             const profile7Running =
                 run.status === 'running' && run.profileId === 7 && !run.combinedMode;
+            const profile8Running =
+                run.status === 'running' && run.profileId === 8 && !run.combinedMode;
             const profile9Running =
                 run.status === 'running' && run.profileId === 9 && !run.combinedMode;
             const simpleActionRunning =
                 profile1Running || profile2Running || profile4Running || profile6Running ||
-                profile7Running || profile9Running;
+                profile7Running || profile8Running || profile9Running;
             const groupedActionRunning =
                 resourcesExpeditionsRunning || expeditionsLifeformRunning || expeditionV2LifeformRunning;
 
@@ -1975,6 +1990,7 @@
             refs.quick5.classList.toggle('running', expeditionsLifeformRunning);
             refs.quick6.classList.toggle('running', profile6Running);
             refs.quick7.classList.toggle('running', profile7Running);
+            refs.quick8.classList.toggle('running', profile8Running);
             refs.quick9.classList.toggle('running', profile9Running);
             refs.quick10.classList.toggle('running', expeditionV2LifeformRunning);
             refs.simpleMenuToggle.classList.toggle('running', simpleActionRunning);
@@ -1988,6 +2004,7 @@
                 : 'Expédition & Forme de vie';
             refs.quick6.textContent = profile6Running ? '■ Arrêter' : 'Import';
             refs.quick7.textContent = profile7Running ? '■ Arrêter' : 'Constructions';
+            refs.quick8.textContent = profile8Running ? '■ Arrêter' : 'Ghost';
             refs.quick9.textContent = profile9Running ? '■ Arrêter' : 'Expédition V2';
             refs.quick10.textContent = expeditionV2LifeformRunning
                 ? '■ Arrêter le combiné'
@@ -2003,6 +2020,7 @@
                 : 'Lancer Expédition puis Forme de vie';
             refs.quick6.title = profile6Running ? 'Arrêter Import' : 'Lancer Import';
             refs.quick7.title = profile7Running ? 'Arrêter Constructions' : 'Lancer Constructions';
+            refs.quick8.title = profile8Running ? 'Arrêter Ghost' : 'Lancer Ghost';
             refs.quick9.title = profile9Running ? 'Arrêter Expédition V2' : 'Lancer Expédition V2';
             refs.quick10.title = expeditionV2LifeformRunning
                 ? 'Arrêter Expédition V2 & Forme de vie'
@@ -2085,6 +2103,11 @@
         if (normalizedProfileId === 7) {
             const ui = await ensureUi();
             ui.openConstructionRunner();
+            return;
+        }
+        if (normalizedProfileId === 8) {
+            const ui = await ensureUi();
+            ui.openGhostRunner();
             return;
         }
         if (normalizedProfileId === 9) {
@@ -2627,6 +2650,167 @@
         });
         refreshUi();
         return true;
+    }
+
+    async function startGhostAutomation(selectedTime = '') {
+        const config = getStoredConfig(8);
+        if (config.links.length !== 1) {
+            const ui = await ensureUi();
+            ui.open(8);
+            ui.showError('Configurez l’URL unique de Ghost avant de lancer.');
+            ui.refresh();
+            return;
+        }
+
+        const storedTime = getStoredGhostTimeValue();
+        const ghostTime = /^([01]\d|2[0-3]):[0-5]\d$/.test(selectedTime)
+            ? selectedTime
+            : storedTime;
+        const now = Date.now();
+        const runId = createRunId();
+        const run = {
+            runId,
+            profileId: 8,
+            status: 'running',
+            combinedMode: false,
+            combinedKind: '',
+            nextProfileId: null,
+            phase: 'ghost-open-link',
+            currentLinkIndex: 0,
+            ghostTime,
+            ghostPendingDelayMs: 0,
+            ghostPendingDelayLabel: '',
+            startedAt: now,
+            updatedAt: now,
+            message: `Ghost — action 1/2 : ouverture de l’URL configurée (heure ${ghostTime})…`,
+        };
+
+        GM_setValue(RUN_KEY, run);
+        await setThisTabRunId(runId);
+        refreshUi();
+        navigateToUrl(config.links[0], true);
+    }
+
+    async function resumeGhostAutomation(runId) {
+        try {
+            let run = getActiveRun(runId);
+            if (!run || run.profileId !== 8) return;
+
+            const config = getStoredConfig(8);
+            const ghostUrl = config.links[0];
+            if (!ghostUrl) {
+                throw new Error('L’URL Ghost n’est plus configurée.');
+            }
+
+            while (true) {
+                run = getActiveRun(runId);
+                if (!run) return;
+
+                if (Number(run.ghostPendingDelayMs) > 0) {
+                    const canContinue = await consumeGhostDelay(runId);
+                    if (!canContinue) return;
+                    continue;
+                }
+
+                if (run.phase === 'ghost-open-link') {
+                    if (!isConfiguredPage(ghostUrl, window.location.href)) {
+                        navigateToUrl(ghostUrl, false);
+                        return;
+                    }
+
+                    const renderResult = await waitUntilPageUsable(PAGE_TIMEOUT_MS);
+                    if (renderResult.timedOut) {
+                        throw new Error('La page Ghost ne s’est pas chargée à temps.');
+                    }
+                    if (!getActiveRun(runId)) return;
+
+                    updateRun(runId, {
+                        phase: 'ghost-send-all',
+                        ghostPendingDelayMs: getRandomDelayMs(
+                            GHOST_DELAY_MIN_MS,
+                            GHOST_DELAY_MAX_MS
+                        ),
+                        ghostPendingDelayLabel: 'le chargement de l’URL',
+                        message: 'Ghost — action 1/2 terminée : page chargée.',
+                    });
+                    refreshUi();
+                    continue;
+                }
+
+                if (run.phase === 'ghost-send-all') {
+                    updateRun(runId, {
+                        message: 'Ghost — action 2/2 : sélectionner tous les vaisseaux…',
+                    });
+                    refreshUi();
+                    const sendAllButton = await waitForElement(GHOST_SEND_ALL_SELECTOR, {
+                        timeoutMs: ELEMENT_TIMEOUT_MS,
+                        clickable: true,
+                    });
+                    if (!getActiveRun(runId)) return;
+
+                    updateRun(runId, {
+                        phase: 'ghost-after-send-all',
+                        ghostPendingDelayMs: getRandomDelayMs(
+                            GHOST_DELAY_MIN_MS,
+                            GHOST_DELAY_MAX_MS
+                        ),
+                        ghostPendingDelayLabel: 'la sélection de tous les vaisseaux',
+                        message: 'Ghost — action 2/2 effectuée : tous les vaisseaux ont été sélectionnés.',
+                    });
+                    refreshUi();
+                    sendAllButton.click();
+                    continue;
+                }
+
+                if (run.phase === 'ghost-after-send-all') {
+                    const activeRun = getActiveRun(runId);
+                    if (!activeRun) return;
+                    GM_setValue(RUN_KEY, {
+                        ...activeRun,
+                        status: 'completed',
+                        phase: 'ghost-completed',
+                        updatedAt: Date.now(),
+                        message:
+                            `Ghost terminé à ce stade : URL chargée et tous les vaisseaux ` +
+                            `sélectionnés. Heure conservée : ${activeRun.ghostTime}.`,
+                    });
+                    await clearThisTabRunId(runId);
+                    refreshUi();
+                    return;
+                }
+
+                throw new Error(`Phase Ghost inconnue : ${run.phase}`);
+            }
+        } catch (error) {
+            await failRun(runId, error instanceof Error ? error.message : String(error), error);
+        }
+    }
+
+    async function consumeGhostDelay(runId) {
+        const run = getActiveRun(runId);
+        if (!run) return false;
+        const delayMs = Math.max(0, Math.floor(Number(run.ghostPendingDelayMs) || 0));
+        if (delayMs === 0) return true;
+
+        const label = run.ghostPendingDelayLabel || 'l’action précédente';
+        updateRun(runId, {
+            message: `Ghost — attente aléatoire ${(delayMs / 1000).toFixed(2)} s après ${label}…`,
+        });
+        refreshUi();
+        await delay(delayMs);
+        if (!getActiveRun(runId)) return false;
+
+        updateRun(runId, {
+            ghostPendingDelayMs: 0,
+            ghostPendingDelayLabel: '',
+        });
+        refreshUi();
+        return true;
+    }
+
+    function getStoredGhostTimeValue() {
+        const stored = String(GM_getValue(GHOST_TIME_KEY, '00:00'));
+        return /^([01]\d|2[0-3]):[0-5]\d$/.test(stored) ? stored : '00:00';
     }
 
     async function startExpeditionV2Automation(options = {}) {
@@ -3345,6 +3529,10 @@
             await resumeConstructionAutomation(run.runId);
             return;
         }
+        if (run.profileId === 8) {
+            await resumeGhostAutomation(run.runId);
+            return;
+        }
         if (run.profileId === 9) {
             await resumeExpeditionV2Automation(run.runId);
             return;
@@ -3953,6 +4141,9 @@
         if (profileId === 7) {
             return formatConstructionDebugProgress(run);
         }
+        if (profileId === 8) {
+            return formatGhostDebugProgress(run);
+        }
         if (profileId === 9) {
             return formatExpeditionV2DebugProgress(run);
         }
@@ -4095,6 +4286,31 @@
 
         const message = typeof run.message === 'string' ? run.message : '';
         return `Import\n${actionLabel}` + (message ? `\n${message}` : '');
+    }
+
+    function formatGhostDebugProgress(run) {
+        let actionLabel;
+        if (run.status !== 'running') {
+            actionLabel = `État : ${run.status}`;
+        } else if (Number(run.ghostPendingDelayMs) > 0) {
+            actionLabel =
+                `Pause après ${run.ghostPendingDelayLabel || 'l’action précédente'} — ` +
+                `${(Number(run.ghostPendingDelayMs) / 1000).toFixed(2)} s`;
+        } else {
+            const labels = {
+                'ghost-open-link': 'Action 1/2 — charger l’URL',
+                'ghost-send-all': 'Action 2/2 — sélectionner tous les vaisseaux',
+                'ghost-after-send-all': 'Finalisation de la sélection',
+                'ghost-completed': 'Ghost terminé',
+            };
+            actionLabel = labels[run.phase] || `Phase inconnue : ${run.phase}`;
+        }
+
+        const time = /^([01]\d|2[0-3]):[0-5]\d$/.test(String(run.ghostTime || ''))
+            ? run.ghostTime
+            : '00:00';
+        const message = typeof run.message === 'string' ? run.message : '';
+        return `Ghost — heure ${time}\n${actionLabel}` + (message ? `\n${message}` : '');
     }
 
     function formatConstructionDebugProgress(run) {
