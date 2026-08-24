@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Projet secret — boucle multi-liens
 // @namespace    local.projet-secret
-// @version      6.7.0
+// @version      6.7.1
 // @updateURL    https://raw.githubusercontent.com/raphaelrobert1104-sys/mysecretproject/main/outputs/projet-secret.user.js
 // @downloadURL  https://raw.githubusercontent.com/raphaelrobert1104-sys/mysecretproject/main/outputs/projet-secret.user.js
 // @description  Automatise Ressources, Expéditions V1/V2, Forme de vie, Import, Constructions et Ghost avec configurations privées.
@@ -68,6 +68,8 @@
         next: '#galaxyHeader > form > span.galaxy_icons.next.ipiHintable',
         prev: '#galaxyHeader > form > span.galaxy_icons.prev.ipiHintable',
     };
+    const EXPEDITION_V2_TEMPLATE_SELECTOR =
+        '#galaxyExpeditionFleetTemplateContainer > span > a';
     const EXPEDITION_V2_EXPE_SELECTOR = '#dropdown579 > li:nth-child(2) > a';
     const EXPEDITION_V2_BUTTON_SELECTOR = '#expeditionbutton';
     const EXPEDITION_V2_STOP_TEXT = 'trop d`expéditions simultanées';
@@ -2895,7 +2897,7 @@
                     );
                     updateRun(runId, {
                         phase: directionTarget === 0
-                            ? 'expedition-v2-select-expe'
+                            ? 'expedition-v2-open-template'
                             : 'expedition-v2-direction',
                         expeditionV2PendingDelayMs: getRandomDelayMs(
                             EXPEDITION_V2_DELAY_MIN_MS,
@@ -2923,8 +2925,8 @@
                     );
                     if (completedClicks >= directionTarget) {
                         updateRun(runId, {
-                            phase: 'expedition-v2-select-expe',
-                            message: 'Expédition V2 — étape 2/4 terminée, préparation de la sélection EXPE…',
+                            phase: 'expedition-v2-open-template',
+                            message: 'Expédition V2 — étape 2/4 terminée, préparation du modèle de flotte…',
                         });
                         refreshUi();
                         continue;
@@ -2946,7 +2948,7 @@
                     const nextClickCount = completedClicks + 1;
                     updateRun(runId, {
                         phase: nextClickCount >= directionTarget
-                            ? 'expedition-v2-select-expe'
+                            ? 'expedition-v2-open-template'
                             : 'expedition-v2-direction',
                         expeditionV2DirectionClicks: nextClickCount,
                         expeditionV2PendingDelayMs: getRandomDelayMs(
@@ -2964,9 +2966,37 @@
                     continue;
                 }
 
+                if (run.phase === 'expedition-v2-open-template') {
+                    updateRun(runId, {
+                        message: 'Expédition V2 — étape 3/4 : ouvrir le sélecteur de modèle de flotte…',
+                    });
+                    refreshUi();
+                    const templateButton = await waitForElement(
+                        EXPEDITION_V2_TEMPLATE_SELECTOR,
+                        {
+                            timeoutMs: ELEMENT_TIMEOUT_MS,
+                            clickable: true,
+                        }
+                    );
+                    if (!getActiveRun(runId)) return;
+
+                    updateRun(runId, {
+                        phase: 'expedition-v2-select-expe',
+                        expeditionV2PendingDelayMs: getRandomDelayMs(
+                            EXPEDITION_V2_DELAY_MIN_MS,
+                            EXPEDITION_V2_DELAY_MAX_MS
+                        ),
+                        expeditionV2PendingDelayLabel: 'l’ouverture du sélecteur de modèle',
+                        message: 'Expédition V2 — étape 3/4 : sélecteur de modèle ouvert.',
+                    });
+                    refreshUi();
+                    templateButton.click();
+                    continue;
+                }
+
                 if (run.phase === 'expedition-v2-select-expe') {
                     updateRun(runId, {
-                        message: 'Expédition V2 — étape 3/4 : sélectionner EXPE…',
+                        message: 'Expédition V2 — étape 3/4 : sélectionner le modèle EXPE…',
                     });
                     refreshUi();
                     const expeButton = await waitForElement(EXPEDITION_V2_EXPE_SELECTOR, {
@@ -4246,7 +4276,8 @@
                 'expedition-v2-open-link': 'Étape 1/4 — charger l’URL',
                 'expedition-v2-direction':
                     `Étape 2/4 — direction ${direction}, ${directionClicks}/${directionTarget} clic(s)`,
-                'expedition-v2-select-expe': 'Étape 3/4 — sélectionner EXPE',
+                'expedition-v2-open-template': 'Étape 3/4 — ouvrir le sélecteur de modèle',
+                'expedition-v2-select-expe': 'Étape 3/4 — sélectionner le modèle EXPE',
                 'expedition-v2-expeditions':
                     `Étape 4/4 — ${launchCount} lancement(s), attente du message d’arrêt`,
                 'expedition-v2-completed': 'Expédition V2 terminée',
