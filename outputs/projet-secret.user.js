@@ -1,10 +1,10 @@
 // ==UserScript==
 // @name         Projet secret — boucle multi-liens
 // @namespace    local.projet-secret
-// @version      6.11.1
+// @version      6.12.0
 // @updateURL    https://raw.githubusercontent.com/raphaelrobert1104-sys/mysecretproject/main/outputs/projet-secret.user.js
 // @downloadURL  https://raw.githubusercontent.com/raphaelrobert1104-sys/mysecretproject/main/outputs/projet-secret.user.js
-// @description  Automatise Ressources, Expéditions V1/V2, Forme de vie, Import, Constructions et Ghost avec configurations privées.
+// @description  Automatise Ressources, Expéditions V1/V2, Forme de vie, Import, Constructions, Ghost et Rappatriement avec configurations privées.
 // @author       Vous
 // @match        http://*/*
 // @match        https://*/*
@@ -21,7 +21,7 @@
 (function () {
     'use strict';
 
-    const SCRIPT_VERSION = '6.11.1';
+    const SCRIPT_VERSION = '6.12.0';
     const CONFIG_KEYS = {
         1: 'secretMultiLinkConfig',
         2: 'secretMultiLinkConfig2',
@@ -30,6 +30,7 @@
         7: 'secretConstructionConfig',
         8: 'secretGhostConfig',
         9: 'secretExpeditionV2Config',
+        11: 'secretRepatriationConfig',
     };
     const RUN_KEY = 'secretMultiLinkRun';
     const TAB_RUN_ID_KEY = 'secretMultiLinkRunId';
@@ -44,6 +45,7 @@
         7: 13,
         8: 1,
         9: 1,
+        11: 1,
     };
     const PAGE_TIMEOUT_MS = 45000;
     const ELEMENT_TIMEOUT_MS = 7000;
@@ -62,6 +64,8 @@
     const GHOST_DELAY_MAX_MS = POST_ACTION_DELAY_MAX_MS;
     const EXPEDITION_V2_DELAY_MIN_MS = POST_ACTION_DELAY_MIN_MS;
     const EXPEDITION_V2_DELAY_MAX_MS = POST_ACTION_DELAY_MAX_MS;
+    const REPATRIATION_DELAY_MIN_MS = POST_ACTION_DELAY_MIN_MS;
+    const REPATRIATION_DELAY_MAX_MS = POST_ACTION_DELAY_MAX_MS;
     const EXPEDITION_V2_LAUNCH_DELAY_MIN_MS = 800;
     const EXPEDITION_V2_LAUNCH_DELAY_MAX_MS = 1400;
     const EXPEDITION_SLOTS_SELECTOR = '#slots > div:nth-child(2) > span';
@@ -107,6 +111,22 @@
     const GHOST_SYSTEM_DEFAULT_MIN = 1;
     const GHOST_SYSTEM_DEFAULT_MAX = 499;
     const GHOST_SYSTEM_SEARCH_MAX_ITERATIONS = 40;
+    const REPATRIATION_SEND_ALL_SELECTOR = '#sendall';
+    const REPATRIATION_CONTINUE_SELECTOR = '#continueToFleet2 > span';
+    const REPATRIATION_MOON_SELECTOR = '#mbutton';
+    const REPATRIATION_STATION_SELECTOR = '#missionButton4';
+    const REPATRIATION_LOAD_ALL_SELECTOR =
+        '#allresources > img[data-ipi-highlight-step="ipiFleetCargoLoadAll"]';
+    const REPATRIATION_DEUTERIUM_SELECTOR = '#deuterium';
+    const REPATRIATION_SEND_SELECTOR = '#sendFleet';
+    const REPATRIATION_FLEET_FIELDS = [
+        { name: 'deathstar', deduction: 1, label: 'deathstar' },
+        { name: 'reaper', deduction: 1, label: 'reaper' },
+        { name: 'explorer', deduction: 1, label: 'explorer' },
+        { name: 'transporterSmall', deduction: 11000, label: 'transporterSmall' },
+        { name: 'recycler', deduction: 1, label: 'recycler' },
+        { name: 'espionageProbe', deduction: 1, label: 'espionageProbe' },
+    ];
 
     class ElementNotFoundError extends Error {
         constructor(selector, timeoutMs) {
@@ -257,6 +277,12 @@
     });
     registerMenuCommandSafely('Démarrer Expédition V2', () => {
         void startFromStoredConfiguration(9);
+    });
+    registerMenuCommandSafely('Configurer Rappatriement', () => {
+        void openControlPanel(11);
+    });
+    registerMenuCommandSafely('Démarrer Rappatriement', () => {
+        void startFromStoredConfiguration(11);
     });
     registerMenuCommandSafely('Configurer Expédition V2 & Forme de vie', () => {
         void openControlPanel(10);
@@ -1146,6 +1172,10 @@
                                 <button type="button" class="quick quick-8" title="Ouvrir Ghost">Ghost</button>
                                 <button type="button" class="settings settings-8" title="Configurer Ghost" aria-label="Configurer Ghost">⚙</button>
                             </div>
+                            <div class="control-group repatriation">
+                                <button type="button" class="quick quick-11" title="Lancer Rappatriement">Rappatriement</button>
+                                <button type="button" class="settings settings-11" title="Configurer Rappatriement" aria-label="Configurer Rappatriement">⚙</button>
+                            </div>
                         </div>
                     </div>
                     <div class="menu-group grouped-menu-group">
@@ -1281,6 +1311,7 @@
             quick8: shadow.querySelector('.quick-8'),
             quick9: shadow.querySelector('.quick-9'),
             quick10: shadow.querySelector('.quick-10'),
+            quick11: shadow.querySelector('.quick-11'),
             simpleMenuToggle: shadow.querySelector('.simple-menu-toggle'),
             groupedMenuToggle: shadow.querySelector('.grouped-menu-toggle'),
             simpleMenu: shadow.querySelector('.simple-menu'),
@@ -1298,6 +1329,7 @@
             settings8: shadow.querySelector('.settings-8'),
             settings9: shadow.querySelector('.settings-9'),
             settings10: shadow.querySelector('.settings-10'),
+            settings11: shadow.querySelector('.settings-11'),
             panel: shadow.querySelector('.panel'),
             panelTitle: shadow.querySelector('.panel-title'),
             help: shadow.querySelector('.help'),
@@ -1356,6 +1388,7 @@
         refs.settings8.addEventListener('click', () => togglePanel(8));
         refs.settings9.addEventListener('click', () => togglePanel(9));
         refs.settings10.addEventListener('click', () => togglePanel(10));
+        refs.settings11.addEventListener('click', () => togglePanel(11));
         refs.combinedResources.addEventListener('click', () => open(combinedTargetProfiles[0]));
         refs.combinedExpeditions.addEventListener('click', () => open(combinedTargetProfiles[1]));
         refs.close.addEventListener('click', () => closePanel());
@@ -1377,6 +1410,7 @@
         refs.quick8.addEventListener('click', quickGhostAction);
         refs.quick9.addEventListener('click', () => quickAction(9));
         refs.quick10.addEventListener('click', () => quickExpeditionV2LifeformAction());
+        refs.quick11.addEventListener('click', () => quickAction(11));
         refs.constructionRunnerClose.addEventListener('click', closeConstructionRunner);
         refs.constructionRunnerCancel.addEventListener('click', closeConstructionRunner);
         refs.constructionRunnerStart.addEventListener('click', launchConstructionFromRunner);
@@ -1824,6 +1858,8 @@
                             ? 'Une URL unique pour Ghost. Elle reste enregistrée dans le stockage privé de Tampermonkey.'
                           : editingProfileId === 9
                             ? 'Une URL unique. Expédition V2 choisit une direction et 0 à 6 déplacements, sélectionne EXPE, puis lance les expéditions jusqu’au message d’arrêt.'
+                          : editingProfileId === 11
+                            ? 'Une URL unique. Rappatriement sélectionne la flotte, conserve les unités demandées, stationne sur la lune et transfère les ressources.'
                     : 'Un lien par ligne. Les adresses sont conservées dans le stockage privé de Tampermonkey, jamais dans le code du script.';
             refs.startUrlGroup.style.display = editingProfileId === 2 ? 'block' : 'none';
             refs.startUrl.value = editingProfileId === 2 ? config.startUrl : '';
@@ -1833,7 +1869,7 @@
             refs.linksFieldGroup.style.display = editingProfileId === 7 ? 'none' : 'block';
             refs.namedLinksFieldGroup.style.display = editingProfileId === 7 ? 'block' : 'none';
             refs.combinedConfig.style.display = 'none';
-            const usesSingleUrl = [6, 8, 9].includes(editingProfileId);
+            const usesSingleUrl = [6, 8, 9, 11].includes(editingProfileId);
             refs.linksLabel.textContent = usesSingleUrl ? 'URL à ouvrir' : 'Liens à traiter';
             refs.textarea.value = links.join('\n');
             refs.textarea.placeholder = usesSingleUrl ? 'https://…' : 'Lien 1\nLien 2\n…';
@@ -1953,6 +1989,8 @@
                     openGhostRunner();
                 } else if (editingProfileId === 9) {
                     void startExpeditionV2Automation();
+                } else if (editingProfileId === 11) {
+                    void startRepatriationAutomation();
                 } else {
                     void startAutomation(editingProfileId, parsed.links);
                 }
@@ -1983,9 +2021,11 @@
                 run.status === 'running' && run.profileId === 8 && !run.combinedMode;
             const profile9Running =
                 run.status === 'running' && run.profileId === 9 && !run.combinedMode;
+            const profile11Running =
+                run.status === 'running' && run.profileId === 11 && !run.combinedMode;
             const simpleActionRunning =
                 profile1Running || profile2Running || profile4Running || profile6Running ||
-                profile7Running || profile8Running || profile9Running;
+                profile7Running || profile8Running || profile9Running || profile11Running;
             const groupedActionRunning =
                 resourcesExpeditionsRunning || expeditionsLifeformRunning || expeditionV2LifeformRunning;
 
@@ -1999,6 +2039,7 @@
             refs.quick8.classList.toggle('running', profile8Running);
             refs.quick9.classList.toggle('running', profile9Running);
             refs.quick10.classList.toggle('running', expeditionV2LifeformRunning);
+            refs.quick11.classList.toggle('running', profile11Running);
             refs.simpleMenuToggle.classList.toggle('running', simpleActionRunning);
             refs.groupedMenuToggle.classList.toggle('running', groupedActionRunning);
             refs.quick1.textContent = profile1Running ? '■ Arrêter' : 'Ressources';
@@ -2015,6 +2056,7 @@
             refs.quick10.textContent = expeditionV2LifeformRunning
                 ? '■ Arrêter le combiné'
                 : 'Expédition V2 & Forme de vie';
+            refs.quick11.textContent = profile11Running ? '■ Arrêter' : 'Rappatriement';
             refs.quick1.title = profile1Running ? 'Arrêter Ressources' : 'Lancer Ressources';
             refs.quick2.title = profile2Running ? 'Arrêter Expéditions' : 'Lancer Expéditions';
             refs.quick3.title = resourcesExpeditionsRunning
@@ -2031,6 +2073,9 @@
             refs.quick10.title = expeditionV2LifeformRunning
                 ? 'Arrêter Expédition V2 & Forme de vie'
                 : 'Lancer Expédition V2 puis Forme de vie';
+            refs.quick11.title = profile11Running
+                ? 'Arrêter Rappatriement'
+                : 'Lancer Rappatriement';
 
             const debugText = formatDebugProgress(run);
             const debugWasDismissed =
@@ -2118,6 +2163,10 @@
         }
         if (normalizedProfileId === 9) {
             await startExpeditionV2Automation();
+            return;
+        }
+        if (normalizedProfileId === 11) {
+            await startRepatriationAutomation();
             return;
         }
 
@@ -2653,6 +2702,394 @@
         updateRun(runId, {
             importPendingDelayMs: 0,
             importPendingDelayLabel: '',
+        });
+        refreshUi();
+        return true;
+    }
+
+    async function startRepatriationAutomation() {
+        const config = getStoredConfig(11);
+        if (config.links.length !== 1) {
+            const ui = await ensureUi();
+            ui.open(11);
+            ui.showError('Configurez l’URL unique de Rappatriement avant de lancer.');
+            ui.refresh();
+            return;
+        }
+
+        const now = Date.now();
+        const runId = createRunId();
+        const run = {
+            runId,
+            profileId: 11,
+            status: 'running',
+            combinedMode: false,
+            combinedKind: '',
+            nextProfileId: null,
+            phase: 'repatriation-open-link',
+            currentLinkIndex: 0,
+            repatriationFleetFieldIndex: 0,
+            repatriationPendingDelayMs: 0,
+            repatriationPendingDelayLabel: '',
+            startedAt: now,
+            updatedAt: now,
+            message: 'Rappatriement — action 1/3 : ouverture de l’URL configurée…',
+        };
+
+        GM_setValue(RUN_KEY, run);
+        await setThisTabRunId(runId);
+        refreshUi();
+        navigateToUrl(config.links[0], true);
+    }
+
+    async function resumeRepatriationAutomation(runId) {
+        try {
+            let run = getActiveRun(runId);
+            if (!run || run.profileId !== 11) return;
+
+            const config = getStoredConfig(11);
+            const configuredUrl = config.links[0];
+            if (!configuredUrl) {
+                throw new Error('L’URL Rappatriement n’est plus configurée.');
+            }
+
+            while (true) {
+                run = getActiveRun(runId);
+                if (!run) return;
+
+                if (Number(run.repatriationPendingDelayMs) > 0) {
+                    const canContinue = await consumeRepatriationDelay(runId);
+                    if (!canContinue) return;
+                    continue;
+                }
+
+                if (run.phase === 'repatriation-open-link') {
+                    if (!isConfiguredPage(configuredUrl, window.location.href)) {
+                        navigateToUrl(configuredUrl, false);
+                        return;
+                    }
+
+                    const renderResult = await waitUntilPageUsable(PAGE_TIMEOUT_MS);
+                    if (renderResult.timedOut) {
+                        throw new Error('La page Rappatriement ne s’est pas chargée à temps.');
+                    }
+                    if (!getActiveRun(runId)) return;
+
+                    updateRun(runId, {
+                        phase: 'repatriation-send-all',
+                        repatriationPendingDelayMs: getRandomDelayMs(
+                            REPATRIATION_DELAY_MIN_MS,
+                            REPATRIATION_DELAY_MAX_MS
+                        ),
+                        repatriationPendingDelayLabel: 'le chargement de l’URL',
+                        message: 'Rappatriement — action 1/3 terminée : page chargée.',
+                    });
+                    refreshUi();
+                    continue;
+                }
+
+                if (run.phase === 'repatriation-send-all') {
+                    updateRun(runId, {
+                        message: 'Rappatriement — action 2/3 : sélectionner tous les vaisseaux…',
+                    });
+                    refreshUi();
+                    const sendAllButton = await waitForElement(REPATRIATION_SEND_ALL_SELECTOR, {
+                        timeoutMs: ELEMENT_TIMEOUT_MS,
+                        clickable: true,
+                    });
+                    if (!getActiveRun(runId)) return;
+
+                    updateRun(runId, {
+                        phase: 'repatriation-adjust-fleet',
+                        repatriationFleetFieldIndex: 0,
+                        repatriationPendingDelayMs: getRandomDelayMs(
+                            REPATRIATION_DELAY_MIN_MS,
+                            REPATRIATION_DELAY_MAX_MS
+                        ),
+                        repatriationPendingDelayLabel: 'la sélection de tous les vaisseaux',
+                        message:
+                            'Rappatriement — tous les vaisseaux sélectionnés, préparation des réserves…',
+                    });
+                    refreshUi();
+                    sendAllButton.click();
+                    continue;
+                }
+
+                if (run.phase === 'repatriation-adjust-fleet') {
+                    const fieldIndex = Math.max(
+                        0,
+                        Math.min(
+                            REPATRIATION_FLEET_FIELDS.length,
+                            Math.floor(Number(run.repatriationFleetFieldIndex) || 0)
+                        )
+                    );
+                    if (fieldIndex >= REPATRIATION_FLEET_FIELDS.length) {
+                        updateRun(runId, {
+                            phase: 'repatriation-continue',
+                            message:
+                                'Rappatriement — réserves de vaisseaux appliquées, préparation de Continuer…',
+                        });
+                        refreshUi();
+                        continue;
+                    }
+
+                    const field = REPATRIATION_FLEET_FIELDS[fieldIndex];
+                    const selector = `input[name="${field.name}"]`;
+                    updateRun(runId, {
+                        message:
+                            `Rappatriement — action 2/3, flotte ${fieldIndex + 1}/` +
+                            `${REPATRIATION_FLEET_FIELDS.length} : ${field.label}, valeur actuelle − ` +
+                            `${formatInteger(field.deduction)}…`,
+                    });
+                    refreshUi();
+                    const input = await waitForElement(selector, {
+                        timeoutMs: ELEMENT_TIMEOUT_MS,
+                        clickable: false,
+                    });
+                    if (!getActiveRun(runId)) return;
+
+                    input.click();
+                    const currentValue = readNonNegativeIntegerInput(input, field.label);
+                    const targetValue = Math.max(0, currentValue - field.deduction);
+                    setFormControlValue(input, String(targetValue));
+                    const nextFieldIndex = fieldIndex + 1;
+                    updateRun(runId, {
+                        phase: nextFieldIndex >= REPATRIATION_FLEET_FIELDS.length
+                            ? 'repatriation-continue'
+                            : 'repatriation-adjust-fleet',
+                        repatriationFleetFieldIndex: nextFieldIndex,
+                        repatriationPendingDelayMs: getRandomDelayMs(
+                            REPATRIATION_DELAY_MIN_MS,
+                            REPATRIATION_DELAY_MAX_MS
+                        ),
+                        repatriationPendingDelayLabel: `la modification de ${field.label}`,
+                        message:
+                            `Rappatriement — ${field.label} : ${formatInteger(currentValue)} − ` +
+                            `${formatInteger(field.deduction)} = ${formatInteger(targetValue)}.`,
+                    });
+                    refreshUi();
+                    continue;
+                }
+
+                if (run.phase === 'repatriation-continue') {
+                    updateRun(runId, {
+                        message: 'Rappatriement — action 2/3 : cliquer sur Continuer…',
+                    });
+                    refreshUi();
+                    const continueButton = await waitForElement(REPATRIATION_CONTINUE_SELECTOR, {
+                        timeoutMs: ELEMENT_TIMEOUT_MS,
+                        clickable: true,
+                    });
+                    if (!getActiveRun(runId)) return;
+
+                    const pageExitPromise = waitForPageExit(3000);
+                    updateRun(runId, {
+                        phase: 'repatriation-wait-page-2',
+                        repatriationPendingDelayMs: 0,
+                        repatriationPendingDelayLabel: '',
+                        message:
+                            'Rappatriement — action 2/3 terminée : attente de la page suivante…',
+                    });
+                    refreshUi();
+                    continueButton.click();
+                    const pageExited = await pageExitPromise;
+                    if (pageExited) return;
+                    continue;
+                }
+
+                if (run.phase === 'repatriation-wait-page-2') {
+                    const renderResult = await waitUntilPageUsable(PAGE_TIMEOUT_MS);
+                    if (renderResult.timedOut) {
+                        throw new Error('La seconde page Rappatriement ne s’est pas chargée à temps.');
+                    }
+                    if (!getActiveRun(runId)) return;
+
+                    updateRun(runId, {
+                        phase: 'repatriation-select-moon',
+                        repatriationPendingDelayMs: getRandomDelayMs(
+                            REPATRIATION_DELAY_MIN_MS,
+                            REPATRIATION_DELAY_MAX_MS
+                        ),
+                        repatriationPendingDelayLabel: 'le chargement de la seconde page',
+                        message:
+                            'Rappatriement — action 3/3 : page chargée, préparation de la lune…',
+                    });
+                    refreshUi();
+                    continue;
+                }
+
+                if (run.phase === 'repatriation-select-moon') {
+                    updateRun(runId, {
+                        message: 'Rappatriement — action 3/3 (1/5) : sélectionner la Lune…',
+                    });
+                    refreshUi();
+                    const moonButton = await waitForElement(REPATRIATION_MOON_SELECTOR, {
+                        timeoutMs: ELEMENT_TIMEOUT_MS,
+                        clickable: true,
+                    });
+                    if (!getActiveRun(runId)) return;
+
+                    updateRun(runId, {
+                        phase: 'repatriation-select-station',
+                        repatriationPendingDelayMs: getRandomDelayMs(
+                            REPATRIATION_DELAY_MIN_MS,
+                            REPATRIATION_DELAY_MAX_MS
+                        ),
+                        repatriationPendingDelayLabel: 'la sélection de la Lune',
+                        message: 'Rappatriement — destination Lune sélectionnée.',
+                    });
+                    refreshUi();
+                    moonButton.click();
+                    continue;
+                }
+
+                if (run.phase === 'repatriation-select-station') {
+                    updateRun(runId, {
+                        message: 'Rappatriement — action 3/3 (2/5) : sélectionner Stationner…',
+                    });
+                    refreshUi();
+                    const stationButton = await waitForElement(REPATRIATION_STATION_SELECTOR, {
+                        timeoutMs: ELEMENT_TIMEOUT_MS,
+                        clickable: true,
+                    });
+                    if (!getActiveRun(runId)) return;
+
+                    updateRun(runId, {
+                        phase: 'repatriation-load-resources',
+                        repatriationPendingDelayMs: getRandomDelayMs(
+                            REPATRIATION_DELAY_MIN_MS,
+                            REPATRIATION_DELAY_MAX_MS
+                        ),
+                        repatriationPendingDelayLabel: 'la sélection de Stationner',
+                        message: 'Rappatriement — mission Stationner sélectionnée.',
+                    });
+                    refreshUi();
+                    stationButton.click();
+                    continue;
+                }
+
+                if (run.phase === 'repatriation-load-resources') {
+                    updateRun(runId, {
+                        message:
+                            'Rappatriement — action 3/3 (3/5) : charger toutes les ressources…',
+                    });
+                    refreshUi();
+                    const loadResourcesButton = await waitForElement(
+                        REPATRIATION_LOAD_ALL_SELECTOR,
+                        {
+                            timeoutMs: ELEMENT_TIMEOUT_MS,
+                            clickable: true,
+                        }
+                    );
+                    if (!getActiveRun(runId)) return;
+
+                    updateRun(runId, {
+                        phase: 'repatriation-adjust-deuterium',
+                        repatriationPendingDelayMs: getRandomDelayMs(
+                            REPATRIATION_DELAY_MIN_MS,
+                            REPATRIATION_DELAY_MAX_MS
+                        ),
+                        repatriationPendingDelayLabel: 'le chargement de toutes les ressources',
+                        message:
+                            'Rappatriement — ressources chargées, préparation de la réserve de deutérium…',
+                    });
+                    refreshUi();
+                    loadResourcesButton.click();
+                    continue;
+                }
+
+                if (run.phase === 'repatriation-adjust-deuterium') {
+                    updateRun(runId, {
+                        message:
+                            'Rappatriement — action 3/3 (4/5) : deutérium actuel − 5 000 000…',
+                    });
+                    refreshUi();
+                    const deuteriumInput = await waitForElement(
+                        REPATRIATION_DEUTERIUM_SELECTOR,
+                        {
+                            timeoutMs: ELEMENT_TIMEOUT_MS,
+                            clickable: false,
+                        }
+                    );
+                    if (!getActiveRun(runId)) return;
+
+                    deuteriumInput.click();
+                    const currentValue = readNonNegativeIntegerInput(
+                        deuteriumInput,
+                        'deuterium'
+                    );
+                    const targetValue = Math.max(0, currentValue - 5000000);
+                    setFormControlValue(deuteriumInput, String(targetValue));
+                    updateRun(runId, {
+                        phase: 'repatriation-send-fleet',
+                        repatriationPendingDelayMs: getRandomDelayMs(
+                            REPATRIATION_DELAY_MIN_MS,
+                            REPATRIATION_DELAY_MAX_MS
+                        ),
+                        repatriationPendingDelayLabel: 'la modification du deutérium',
+                        message:
+                            `Rappatriement — deutérium : ${formatInteger(currentValue)} − ` +
+                            `5 000 000 = ${formatInteger(targetValue)}.`,
+                    });
+                    refreshUi();
+                    continue;
+                }
+
+                if (run.phase === 'repatriation-send-fleet') {
+                    updateRun(runId, {
+                        message: 'Rappatriement — action 3/3 (5/5) : envoyer la flotte…',
+                    });
+                    refreshUi();
+                    const sendButton = await waitForElement(REPATRIATION_SEND_SELECTOR, {
+                        timeoutMs: ELEMENT_TIMEOUT_MS,
+                        clickable: true,
+                    });
+                    const activeRun = getActiveRun(runId);
+                    if (!activeRun) return;
+
+                    sendButton.click();
+                    GM_setValue(RUN_KEY, {
+                        ...activeRun,
+                        status: 'completed',
+                        phase: 'repatriation-completed',
+                        updatedAt: Date.now(),
+                        message:
+                            'Rappatriement terminé : flotte stationnée sur la lune avec les ressources prévues.',
+                    });
+                    void clearThisTabRunId(runId);
+                    refreshUi();
+                    return;
+                }
+
+                throw new Error(`Phase Rappatriement inconnue : ${run.phase}`);
+            }
+        } catch (error) {
+            await failRun(runId, error instanceof Error ? error.message : String(error), error);
+        }
+    }
+
+    async function consumeRepatriationDelay(runId) {
+        const run = getActiveRun(runId);
+        if (!run) return false;
+        const delayMs = Math.max(
+            0,
+            Math.floor(Number(run.repatriationPendingDelayMs) || 0)
+        );
+        if (delayMs === 0) return true;
+
+        const label = run.repatriationPendingDelayLabel || 'l’action précédente';
+        updateRun(runId, {
+            message:
+                `Rappatriement — attente aléatoire ${(delayMs / 1000).toFixed(2)} s ` +
+                `après ${label}…`,
+        });
+        refreshUi();
+        await delay(delayMs);
+        if (!getActiveRun(runId)) return false;
+
+        updateRun(runId, {
+            repatriationPendingDelayMs: 0,
+            repatriationPendingDelayLabel: '',
         });
         refreshUi();
         return true;
@@ -4337,6 +4774,10 @@
             await resumeExpeditionV2Automation(run.runId);
             return;
         }
+        if (run.profileId === 11) {
+            await resumeRepatriationAutomation(run.runId);
+            return;
+        }
         if (run.profileId === 2 && !config.startUrl) {
             await failRun(run.runId, 'Lien de départ de la série 2 absent ou invalide.');
             return;
@@ -4891,7 +5332,10 @@
 
     function normalizeProfileId(profileId) {
         const value = Number(profileId);
-        if (value === 4 || value === 6 || value === 7 || value === 8 || value === 9) return value;
+        if (
+            value === 4 || value === 6 || value === 7 || value === 8 ||
+            value === 9 || value === 11
+        ) return value;
         return value === 2 ? 2 : 1;
     }
 
@@ -4908,6 +5352,7 @@
         if (normalizedProfileId === 7) return 'Constructions';
         if (normalizedProfileId === 8) return 'Ghost';
         if (normalizedProfileId === 9) return 'Expédition V2';
+        if (normalizedProfileId === 11) return 'Rappatriement';
         return normalizedProfileId === 2 ? 'Expéditions' : 'Ressources';
     }
 
@@ -4923,7 +5368,8 @@
             normalizedProfileId === 6 ||
             normalizedProfileId === 7 ||
             normalizedProfileId === 8 ||
-            normalizedProfileId === 9
+            normalizedProfileId === 9 ||
+            normalizedProfileId === 11
         ) return [];
         return normalizedProfileId === 2 ? ACTION_STEPS_2 : ACTION_STEPS_1;
     }
@@ -4946,6 +5392,9 @@
         }
         if (profileId === 9) {
             return formatExpeditionV2DebugProgress(run);
+        }
+        if (profileId === 11) {
+            return formatRepatriationDebugProgress(run);
         }
         const config = getStoredConfig(profileId);
         const actionSteps = getActionSteps(profileId);
@@ -5092,6 +5541,42 @@
 
         const message = typeof run.message === 'string' ? run.message : '';
         return `Import\n${actionLabel}` + (message ? `\n${message}` : '');
+    }
+
+    function formatRepatriationDebugProgress(run) {
+        let actionLabel;
+        if (run.status !== 'running') {
+            actionLabel = `État : ${run.status}`;
+        } else if (Number(run.repatriationPendingDelayMs) > 0) {
+            actionLabel =
+                `Pause après ${run.repatriationPendingDelayLabel || 'l’action précédente'} — ` +
+                `${(Number(run.repatriationPendingDelayMs) / 1000).toFixed(2)} s`;
+        } else {
+            const fieldIndex = Math.min(
+                REPATRIATION_FLEET_FIELDS.length,
+                Math.max(0, Number(run.repatriationFleetFieldIndex) || 0)
+            );
+            const labels = {
+                'repatriation-open-link': 'Action 1/3 — charger l’URL',
+                'repatriation-send-all': 'Action 2/3 — sélectionner tous les vaisseaux',
+                'repatriation-adjust-fleet':
+                    `Action 2/3 — ajuster la flotte ${fieldIndex}/` +
+                    `${REPATRIATION_FLEET_FIELDS.length}`,
+                'repatriation-continue': 'Action 2/3 — cliquer sur Continuer',
+                'repatriation-wait-page-2': 'Action 2/3 — attendre la seconde page',
+                'repatriation-select-moon': 'Action 3/3 — sélectionner la Lune',
+                'repatriation-select-station': 'Action 3/3 — sélectionner Stationner',
+                'repatriation-load-resources': 'Action 3/3 — charger toutes les ressources',
+                'repatriation-adjust-deuterium':
+                    'Action 3/3 — conserver 5 000 000 de deutérium',
+                'repatriation-send-fleet': 'Action 3/3 — envoyer la flotte',
+                'repatriation-completed': 'Rappatriement terminé',
+            };
+            actionLabel = labels[run.phase] || `Phase inconnue : ${run.phase}`;
+        }
+
+        const message = typeof run.message === 'string' ? run.message : '';
+        return `Rappatriement\n${actionLabel}` + (message ? `\n${message}` : '');
     }
 
     function formatGhostDebugProgress(run) {
@@ -5673,6 +6158,20 @@
             `Impossible de lire ${LIFEFORM_SLOT_USED_SELECTOR} et ` +
             `${LIFEFORM_SLOT_VALUE_SELECTOR} après ${timeoutMs} ms.`
         );
+    }
+
+    function readNonNegativeIntegerInput(input, label) {
+        const rawValue = String(input?.value ?? '').trim();
+        if (!rawValue) return 0;
+        const digits = rawValue.replace(/[^\d]/g, '');
+        if (!digits) {
+            throw new Error(`Impossible de lire la valeur actuelle de ${label}.`);
+        }
+        const value = Number(digits);
+        if (!Number.isSafeInteger(value) || value < 0) {
+            throw new Error(`La valeur actuelle de ${label} est invalide : ${rawValue}.`);
+        }
+        return value;
     }
 
     function setFormControlValue(element, value) {
