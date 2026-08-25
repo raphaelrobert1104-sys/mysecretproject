@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Projet secret — boucle multi-liens
 // @namespace    local.projet-secret
-// @version      6.11.0
+// @version      6.11.1
 // @updateURL    https://raw.githubusercontent.com/raphaelrobert1104-sys/mysecretproject/main/outputs/projet-secret.user.js
 // @downloadURL  https://raw.githubusercontent.com/raphaelrobert1104-sys/mysecretproject/main/outputs/projet-secret.user.js
 // @description  Automatise Ressources, Expéditions V1/V2, Forme de vie, Import, Constructions et Ghost avec configurations privées.
@@ -21,7 +21,7 @@
 (function () {
     'use strict';
 
-    const SCRIPT_VERSION = '6.11.0';
+    const SCRIPT_VERSION = '6.11.1';
     const CONFIG_KEYS = {
         1: 'secretMultiLinkConfig',
         2: 'secretMultiLinkConfig2',
@@ -107,14 +107,6 @@
     const GHOST_SYSTEM_DEFAULT_MIN = 1;
     const GHOST_SYSTEM_DEFAULT_MAX = 499;
     const GHOST_SYSTEM_SEARCH_MAX_ITERATIONS = 40;
-    const GHOST_FLEET_FIELDS = [
-        { name: 'deathstar', deduction: 1, label: 'deathstar' },
-        { name: 'reaper', deduction: 1, label: 'reaper' },
-        { name: 'explorer', deduction: 1, label: 'explorer' },
-        { name: 'transporterSmall', deduction: 11000, label: 'transporterSmall' },
-        { name: 'recycler', deduction: 1, label: 'recycler' },
-        { name: 'espionageProbe', deduction: 1, label: 'espionageProbe' },
-    ];
 
     class ElementNotFoundError extends Error {
         constructor(selector, timeoutMs) {
@@ -2693,7 +2685,6 @@
             ghostTime,
             ghostTargetDateTime,
             ghostReturnTime: '',
-            ghostFleetFieldIndex: 0,
             ghostPendingDelayMs: 0,
             ghostPendingDelayLabel: '',
             startedAt: now,
@@ -2767,8 +2758,7 @@
                     if (!getActiveRun(runId)) return;
 
                     updateRun(runId, {
-                        phase: 'ghost-set-fleet',
-                        ghostFleetFieldIndex: 0,
+                        phase: 'ghost-continue',
                         ghostPendingDelayMs: getRandomDelayMs(
                             GHOST_DELAY_MIN_MS,
                             GHOST_DELAY_MAX_MS
@@ -2781,65 +2771,16 @@
                     continue;
                 }
 
-                if (run.phase === 'ghost-after-send-all') {
+                if (
+                    run.phase === 'ghost-after-send-all' ||
+                    run.phase === 'ghost-set-fleet'
+                ) {
                     updateRun(runId, {
-                        phase: 'ghost-set-fleet',
-                        ghostFleetFieldIndex: 0,
-                        message: 'Ghost — reprise de l’action 3/6 : préparation des valeurs de flotte…',
-                    });
-                    refreshUi();
-                    continue;
-                }
-
-                if (run.phase === 'ghost-set-fleet') {
-                    const fieldIndex = Math.max(
-                        0,
-                        Math.min(
-                            GHOST_FLEET_FIELDS.length,
-                            Math.floor(Number(run.ghostFleetFieldIndex) || 0)
-                        )
-                    );
-                    if (fieldIndex >= GHOST_FLEET_FIELDS.length) {
-                        updateRun(runId, {
-                            phase: 'ghost-continue',
-                            message: 'Ghost — action 3/6 : valeurs de flotte saisies, préparation de Continuer…',
-                        });
-                        refreshUi();
-                        continue;
-                    }
-
-                    const field = GHOST_FLEET_FIELDS[fieldIndex];
-                    const selector = `input[name="${field.name}"]`;
-                    updateRun(runId, {
+                        phase: 'ghost-continue',
+                        ghostPendingDelayMs: 0,
+                        ghostPendingDelayLabel: '',
                         message:
-                            `Ghost — action 3/6 (${fieldIndex + 1}/${GHOST_FLEET_FIELDS.length + 1}) : ` +
-                            `${field.label} = valeur affichée − ${formatInteger(field.deduction)}…`,
-                    });
-                    refreshUi();
-                    const input = await waitForElement(selector, {
-                        timeoutMs: ELEMENT_TIMEOUT_MS,
-                        clickable: false,
-                    });
-                    if (!getActiveRun(runId)) return;
-
-                    const displayedValue = readGhostDisplayedFleetValue(input, field.label);
-                    const targetValue = Math.max(0, displayedValue - field.deduction);
-                    setFormControlValue(input, String(targetValue));
-                    const nextFieldIndex = fieldIndex + 1;
-                    updateRun(runId, {
-                        phase: nextFieldIndex >= GHOST_FLEET_FIELDS.length
-                            ? 'ghost-continue'
-                            : 'ghost-set-fleet',
-                        ghostFleetFieldIndex: nextFieldIndex,
-                        ghostPendingDelayMs: getRandomDelayMs(
-                            GHOST_DELAY_MIN_MS,
-                            GHOST_DELAY_MAX_MS
-                        ),
-                        ghostPendingDelayLabel: `la saisie de ${field.label}`,
-                        message:
-                            `Ghost — ${field.label} : ${formatInteger(displayedValue)} affiché, ` +
-                            `${formatInteger(field.deduction)} retiré, ` +
-                            `${formatInteger(targetValue)} saisi.`,
+                            'Ghost — ancienne action 3 détectée : reprise directe sur Continuer…',
                     });
                     refreshUi();
                     continue;
@@ -2847,9 +2788,7 @@
 
                 if (run.phase === 'ghost-continue') {
                     updateRun(runId, {
-                        message:
-                            `Ghost — action 3/6 (${GHOST_FLEET_FIELDS.length + 1}/` +
-                            `${GHOST_FLEET_FIELDS.length + 1}) : cliquer sur Continuer…`,
+                        message: 'Ghost — action 3/6 : cliquer sur Continuer…',
                     });
                     refreshUi();
                     const continueButton = await waitForElement(GHOST_CONTINUE_SELECTOR, {
@@ -5167,11 +5106,8 @@
             const labels = {
                 'ghost-open-link': 'Action 1/6 — charger l’URL',
                 'ghost-send-all': 'Action 2/6 — sélectionner tous les vaisseaux',
-                'ghost-after-send-all': 'Action 3/6 — préparer les valeurs de flotte',
-                'ghost-set-fleet':
-                    `Action 3/6 — valeurs de flotte ` +
-                    `${Math.min(GHOST_FLEET_FIELDS.length, Math.max(0, Number(run.ghostFleetFieldIndex) || 0))}/` +
-                    `${GHOST_FLEET_FIELDS.length}`,
+                'ghost-after-send-all': 'Action 3/6 — reprendre sur Continuer',
+                'ghost-set-fleet': 'Action 3/6 — reprendre sur Continuer',
                 'ghost-continue': 'Action 3/6 — cliquer sur Continuer',
                 'ghost-after-continue': 'Action 4/6 — attendre la page de destination',
                 'ghost-wait-destination-page': 'Action 4/6 — attendre la page de destination',
@@ -5736,29 +5672,6 @@
         throw new Error(
             `Impossible de lire ${LIFEFORM_SLOT_USED_SELECTOR} et ` +
             `${LIFEFORM_SLOT_VALUE_SELECTOR} après ${timeoutMs} ms.`
-        );
-    }
-
-    function readGhostDisplayedFleetValue(input, label) {
-        const fleetRow = input.closest('li.technology') || input.parentElement;
-        const amountElement = fleetRow?.querySelector('.amount');
-        const stockElement = fleetRow?.querySelector('.stockAmount');
-        const candidates = [
-            amountElement?.getAttribute('data-value'),
-            stockElement?.innerText,
-            stockElement?.textContent,
-        ];
-
-        for (const candidate of candidates) {
-            if (candidate === null || candidate === undefined) continue;
-            const digits = String(candidate).replace(/[^\d]/g, '');
-            if (!digits) continue;
-            const value = Number(digits);
-            if (Number.isSafeInteger(value) && value >= 0) return value;
-        }
-
-        throw new Error(
-            `Impossible de lire la valeur affichée de ${label} dans sa ligne de flotte.`
         );
     }
 
