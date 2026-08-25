@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Projet secret — boucle multi-liens
 // @namespace    local.projet-secret
-// @version      6.7.4
+// @version      6.8.0
 // @updateURL    https://raw.githubusercontent.com/raphaelrobert1104-sys/mysecretproject/main/outputs/projet-secret.user.js
 // @downloadURL  https://raw.githubusercontent.com/raphaelrobert1104-sys/mysecretproject/main/outputs/projet-secret.user.js
 // @description  Automatise Ressources, Expéditions V1/V2, Forme de vie, Import, Constructions et Ghost avec configurations privées.
@@ -21,6 +21,7 @@
 (function () {
     'use strict';
 
+    const SCRIPT_VERSION = '6.8.0';
     const CONFIG_KEYS = {
         1: 'secretMultiLinkConfig',
         2: 'secretMultiLinkConfig2',
@@ -89,6 +90,15 @@
     const CONSTRUCTION_CONTINUE_SELECTOR = '#continueToFleet2 > span';
     const CONSTRUCTION_SEND_SELECTOR = '#sendFleet > span';
     const GHOST_SEND_ALL_SELECTOR = '#sendall';
+    const GHOST_CONTINUE_SELECTOR = '#continueToFleet2 > span';
+    const GHOST_FLEET_FIELDS = [
+        { name: 'deathstar', value: '1', label: 'deathstar' },
+        { name: 'reaper', value: '1', label: 'reaper' },
+        { name: 'explorer', value: '1', label: 'explorer' },
+        { name: 'transporterSmall', value: '11000', label: 'transporterSmall' },
+        { name: 'recycler', value: '1', label: 'recycler' },
+        { name: 'espionageProbe', value: '1', label: 'espionageProbe' },
+    ];
 
     class ElementNotFoundError extends Error {
         constructor(selector, timeoutMs) {
@@ -728,7 +738,7 @@
                     right: 0;
                     top: 62px;
                     width: min(390px, calc(100vw - 20px));
-                    grid-template-columns: 8px minmax(0, 1fr) 28px;
+                    grid-template-columns: 8px minmax(0, 1fr) auto;
                     align-items: start;
                     gap: 10px;
                     padding: 11px 10px 11px 12px;
@@ -758,12 +768,27 @@
                     white-space: pre-line;
                     overflow-wrap: anywhere;
                 }
+                .debug-progress-meta {
+                    display: flex;
+                    align-items: flex-start;
+                    gap: 5px;
+                    margin: -4px -3px 0 0;
+                }
+                .debug-progress-version {
+                    margin-top: 5px;
+                    color: currentColor;
+                    font: 600 9px/1 system-ui, sans-serif;
+                    letter-spacing: .04em;
+                    text-shadow: none;
+                    opacity: .52;
+                    white-space: nowrap;
+                }
                 .debug-progress-close {
                     display: grid;
                     place-items: center;
                     width: 28px;
                     height: 28px;
-                    margin: -4px -3px 0 0;
+                    margin: 0;
                     padding: 0;
                     border: 1px solid rgba(255, 255, 255, .14);
                     border-radius: 9px;
@@ -1095,7 +1120,10 @@
             <div class="dock">
                 <div class="debug-progress">
                     <div class="debug-progress-content" role="status" aria-live="polite"></div>
-                    <button type="button" class="debug-progress-close" title="Fermer le résumé" aria-label="Fermer le résumé des actions">×</button>
+                    <div class="debug-progress-meta">
+                        <span class="debug-progress-version">v${SCRIPT_VERSION}</span>
+                        <button type="button" class="debug-progress-close" title="Fermer le résumé" aria-label="Fermer le résumé des actions">×</button>
+                    </div>
                 </div>
                 <div class="toolbar">
                     <div class="menu-group simple-menu-group">
@@ -2679,11 +2707,12 @@
             phase: 'ghost-open-link',
             currentLinkIndex: 0,
             ghostTime,
+            ghostFleetFieldIndex: 0,
             ghostPendingDelayMs: 0,
             ghostPendingDelayLabel: '',
             startedAt: now,
             updatedAt: now,
-            message: `Ghost — action 1/2 : ouverture de l’URL configurée (heure ${ghostTime})…`,
+            message: `Ghost — action 1/3 : ouverture de l’URL configurée (heure ${ghostTime})…`,
         };
 
         GM_setValue(RUN_KEY, run);
@@ -2732,7 +2761,7 @@
                             GHOST_DELAY_MAX_MS
                         ),
                         ghostPendingDelayLabel: 'le chargement de l’URL',
-                        message: 'Ghost — action 1/2 terminée : page chargée.',
+                        message: 'Ghost — action 1/3 terminée : page chargée.',
                     });
                     refreshUi();
                     continue;
@@ -2740,7 +2769,7 @@
 
                 if (run.phase === 'ghost-send-all') {
                     updateRun(runId, {
-                        message: 'Ghost — action 2/2 : sélectionner tous les vaisseaux…',
+                        message: 'Ghost — action 2/3 : sélectionner tous les vaisseaux…',
                     });
                     refreshUi();
                     const sendAllButton = await waitForElement(GHOST_SEND_ALL_SELECTOR, {
@@ -2750,13 +2779,14 @@
                     if (!getActiveRun(runId)) return;
 
                     updateRun(runId, {
-                        phase: 'ghost-after-send-all',
+                        phase: 'ghost-set-fleet',
+                        ghostFleetFieldIndex: 0,
                         ghostPendingDelayMs: getRandomDelayMs(
                             GHOST_DELAY_MIN_MS,
                             GHOST_DELAY_MAX_MS
                         ),
                         ghostPendingDelayLabel: 'la sélection de tous les vaisseaux',
-                        message: 'Ghost — action 2/2 effectuée : tous les vaisseaux ont été sélectionnés.',
+                        message: 'Ghost — action 2/3 effectuée : tous les vaisseaux ont été sélectionnés.',
                     });
                     refreshUi();
                     sendAllButton.click();
@@ -2764,6 +2794,92 @@
                 }
 
                 if (run.phase === 'ghost-after-send-all') {
+                    updateRun(runId, {
+                        phase: 'ghost-set-fleet',
+                        ghostFleetFieldIndex: 0,
+                        message: 'Ghost — reprise de l’action 3/3 : préparation des valeurs de flotte…',
+                    });
+                    refreshUi();
+                    continue;
+                }
+
+                if (run.phase === 'ghost-set-fleet') {
+                    const fieldIndex = Math.max(
+                        0,
+                        Math.min(
+                            GHOST_FLEET_FIELDS.length,
+                            Math.floor(Number(run.ghostFleetFieldIndex) || 0)
+                        )
+                    );
+                    if (fieldIndex >= GHOST_FLEET_FIELDS.length) {
+                        updateRun(runId, {
+                            phase: 'ghost-continue',
+                            message: 'Ghost — action 3/3 : valeurs de flotte saisies, préparation de Continuer…',
+                        });
+                        refreshUi();
+                        continue;
+                    }
+
+                    const field = GHOST_FLEET_FIELDS[fieldIndex];
+                    const selector = `input[name="${field.name}"]`;
+                    updateRun(runId, {
+                        message:
+                            `Ghost — action 3/3 (${fieldIndex + 1}/${GHOST_FLEET_FIELDS.length + 1}) : ` +
+                            `${field.label} = ${field.value}…`,
+                    });
+                    refreshUi();
+                    const input = await waitForElement(selector, {
+                        timeoutMs: ELEMENT_TIMEOUT_MS,
+                        clickable: false,
+                    });
+                    if (!getActiveRun(runId)) return;
+
+                    setFormControlValue(input, field.value);
+                    const nextFieldIndex = fieldIndex + 1;
+                    updateRun(runId, {
+                        phase: nextFieldIndex >= GHOST_FLEET_FIELDS.length
+                            ? 'ghost-continue'
+                            : 'ghost-set-fleet',
+                        ghostFleetFieldIndex: nextFieldIndex,
+                        ghostPendingDelayMs: getRandomDelayMs(
+                            GHOST_DELAY_MIN_MS,
+                            GHOST_DELAY_MAX_MS
+                        ),
+                        ghostPendingDelayLabel: `la saisie de ${field.label}`,
+                        message: `Ghost — ${field.label} réglé sur ${field.value}.`,
+                    });
+                    refreshUi();
+                    continue;
+                }
+
+                if (run.phase === 'ghost-continue') {
+                    updateRun(runId, {
+                        message:
+                            `Ghost — action 3/3 (${GHOST_FLEET_FIELDS.length + 1}/` +
+                            `${GHOST_FLEET_FIELDS.length + 1}) : cliquer sur Continuer…`,
+                    });
+                    refreshUi();
+                    const continueButton = await waitForElement(GHOST_CONTINUE_SELECTOR, {
+                        timeoutMs: ELEMENT_TIMEOUT_MS,
+                        clickable: true,
+                    });
+                    if (!getActiveRun(runId)) return;
+
+                    updateRun(runId, {
+                        phase: 'ghost-after-continue',
+                        ghostPendingDelayMs: getRandomDelayMs(
+                            GHOST_DELAY_MIN_MS,
+                            GHOST_DELAY_MAX_MS
+                        ),
+                        ghostPendingDelayLabel: 'le clic sur Continuer',
+                        message: 'Ghost — action 3/3 terminée : clic sur Continuer effectué.',
+                    });
+                    refreshUi();
+                    continueButton.click();
+                    continue;
+                }
+
+                if (run.phase === 'ghost-after-continue') {
                     const activeRun = getActiveRun(runId);
                     if (!activeRun) return;
                     GM_setValue(RUN_KEY, {
@@ -2772,8 +2888,8 @@
                         phase: 'ghost-completed',
                         updatedAt: Date.now(),
                         message:
-                            `Ghost terminé à ce stade : URL chargée et tous les vaisseaux ` +
-                            `sélectionnés. Heure conservée : ${activeRun.ghostTime}.`,
+                            `Ghost terminé à ce stade : flotte configurée et bouton Continuer cliqué. ` +
+                            `Heure conservée : ${activeRun.ghostTime}.`,
                     });
                     await clearThisTabRunId(runId);
                     refreshUi();
@@ -4352,9 +4468,15 @@
                 `${(Number(run.ghostPendingDelayMs) / 1000).toFixed(2)} s`;
         } else {
             const labels = {
-                'ghost-open-link': 'Action 1/2 — charger l’URL',
-                'ghost-send-all': 'Action 2/2 — sélectionner tous les vaisseaux',
-                'ghost-after-send-all': 'Finalisation de la sélection',
+                'ghost-open-link': 'Action 1/3 — charger l’URL',
+                'ghost-send-all': 'Action 2/3 — sélectionner tous les vaisseaux',
+                'ghost-after-send-all': 'Action 3/3 — préparer les valeurs de flotte',
+                'ghost-set-fleet':
+                    `Action 3/3 — valeurs de flotte ` +
+                    `${Math.min(GHOST_FLEET_FIELDS.length, Math.max(0, Number(run.ghostFleetFieldIndex) || 0))}/` +
+                    `${GHOST_FLEET_FIELDS.length}`,
+                'ghost-continue': 'Action 3/3 — cliquer sur Continuer',
+                'ghost-after-continue': 'Action 3/3 — finalisation après Continuer',
                 'ghost-completed': 'Ghost terminé',
             };
             actionLabel = labels[run.phase] || `Phase inconnue : ${run.phase}`;
