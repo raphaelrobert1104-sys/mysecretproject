@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Projet secret — boucle multi-liens
 // @namespace    local.projet-secret
-// @version      6.9.1
+// @version      6.9.2
 // @updateURL    https://raw.githubusercontent.com/raphaelrobert1104-sys/mysecretproject/main/outputs/projet-secret.user.js
 // @downloadURL  https://raw.githubusercontent.com/raphaelrobert1104-sys/mysecretproject/main/outputs/projet-secret.user.js
 // @description  Automatise Ressources, Expéditions V1/V2, Forme de vie, Import, Constructions et Ghost avec configurations privées.
@@ -21,7 +21,7 @@
 (function () {
     'use strict';
 
-    const SCRIPT_VERSION = '6.9.1';
+    const SCRIPT_VERSION = '6.9.2';
     const CONFIG_KEYS = {
         1: 'secretMultiLinkConfig',
         2: 'secretMultiLinkConfig2',
@@ -72,7 +72,8 @@
     };
     const EXPEDITION_V2_TEMPLATE_TRIGGER_SELECTOR =
         '#galaxyExpeditionFleetTemplateContainer > span > a';
-    const EXPEDITION_V2_BUTTON_SELECTOR = '#expeditionbutton';
+    const EXPEDITION_V2_BUTTON_SELECTOR =
+        '#sendExpeditionFleetTemplateFleet[onclick*="sendExpedtionFleetFromTemplate"]';
     const EXPEDITION_V2_STOP_TEXT = 'trop d`expéditions simultanées';
     const EXPEDITION_V2_MAX_LAUNCHES = 100;
     const IMPORT_MAX_SELECTOR =
@@ -3316,8 +3317,7 @@
                     refreshUi();
                     const expeditionButton = await waitForElement(EXPEDITION_V2_BUTTON_SELECTOR, {
                         timeoutMs: ELEMENT_TIMEOUT_MS,
-                        clickable: false,
-                        visible: false,
+                        clickable: true,
                     });
                     if (!getActiveRun(runId)) return;
 
