@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Projet secret — boucle multi-liens
 // @namespace    local.projet-secret
-// @version      6.9.0
+// @version      6.9.1
 // @updateURL    https://raw.githubusercontent.com/raphaelrobert1104-sys/mysecretproject/main/outputs/projet-secret.user.js
 // @downloadURL  https://raw.githubusercontent.com/raphaelrobert1104-sys/mysecretproject/main/outputs/projet-secret.user.js
 // @description  Automatise Ressources, Expéditions V1/V2, Forme de vie, Import, Constructions et Ghost avec configurations privées.
@@ -21,7 +21,7 @@
 (function () {
     'use strict';
 
-    const SCRIPT_VERSION = '6.9.0';
+    const SCRIPT_VERSION = '6.9.1';
     const CONFIG_KEYS = {
         1: 'secretMultiLinkConfig',
         2: 'secretMultiLinkConfig2',
@@ -97,12 +97,12 @@
     const GHOST_DURATION_SELECTOR = 'div.step.step2[data-step="1"]';
     const GHOST_RETURN_TIME_SELECTOR = '#returnTime';
     const GHOST_FLEET_FIELDS = [
-        { name: 'deathstar', value: '1', label: 'deathstar' },
-        { name: 'reaper', value: '1', label: 'reaper' },
-        { name: 'explorer', value: '1', label: 'explorer' },
-        { name: 'transporterSmall', value: '11000', label: 'transporterSmall' },
-        { name: 'recycler', value: '1', label: 'recycler' },
-        { name: 'espionageProbe', value: '1', label: 'espionageProbe' },
+        { name: 'deathstar', deduction: 1, label: 'deathstar' },
+        { name: 'reaper', deduction: 1, label: 'reaper' },
+        { name: 'explorer', deduction: 1, label: 'explorer' },
+        { name: 'transporterSmall', deduction: 11000, label: 'transporterSmall' },
+        { name: 'recycler', deduction: 1, label: 'recycler' },
+        { name: 'espionageProbe', deduction: 1, label: 'espionageProbe' },
     ];
 
     class ElementNotFoundError extends Error {
@@ -2802,7 +2802,7 @@
                     updateRun(runId, {
                         message:
                             `Ghost — action 3/4 (${fieldIndex + 1}/${GHOST_FLEET_FIELDS.length + 1}) : ` +
-                            `${field.label} = ${field.value}…`,
+                            `${field.label} = valeur affichée − ${formatInteger(field.deduction)}…`,
                     });
                     refreshUi();
                     const input = await waitForElement(selector, {
@@ -2811,7 +2811,9 @@
                     });
                     if (!getActiveRun(runId)) return;
 
-                    setFormControlValue(input, field.value);
+                    const displayedValue = readGhostDisplayedFleetValue(input, field.label);
+                    const targetValue = Math.max(0, displayedValue - field.deduction);
+                    setFormControlValue(input, String(targetValue));
                     const nextFieldIndex = fieldIndex + 1;
                     updateRun(runId, {
                         phase: nextFieldIndex >= GHOST_FLEET_FIELDS.length
@@ -2823,7 +2825,10 @@
                             GHOST_DELAY_MAX_MS
                         ),
                         ghostPendingDelayLabel: `la saisie de ${field.label}`,
-                        message: `Ghost — ${field.label} réglé sur ${field.value}.`,
+                        message:
+                            `Ghost — ${field.label} : ${formatInteger(displayedValue)} affiché, ` +
+                            `${formatInteger(field.deduction)} retiré, ` +
+                            `${formatInteger(targetValue)} saisi.`,
                     });
                     refreshUi();
                     continue;
@@ -5137,6 +5142,29 @@
         throw new Error(
             `Impossible de lire ${LIFEFORM_SLOT_USED_SELECTOR} et ` +
             `${LIFEFORM_SLOT_VALUE_SELECTOR} après ${timeoutMs} ms.`
+        );
+    }
+
+    function readGhostDisplayedFleetValue(input, label) {
+        const fleetRow = input.closest('li.technology') || input.parentElement;
+        const amountElement = fleetRow?.querySelector('.amount');
+        const stockElement = fleetRow?.querySelector('.stockAmount');
+        const candidates = [
+            amountElement?.getAttribute('data-value'),
+            stockElement?.innerText,
+            stockElement?.textContent,
+        ];
+
+        for (const candidate of candidates) {
+            if (candidate === null || candidate === undefined) continue;
+            const digits = String(candidate).replace(/[^\d]/g, '');
+            if (!digits) continue;
+            const value = Number(digits);
+            if (Number.isSafeInteger(value) && value >= 0) return value;
+        }
+
+        throw new Error(
+            `Impossible de lire la valeur affichée de ${label} dans sa ligne de flotte.`
         );
     }
 
