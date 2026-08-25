@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Projet secret — boucle multi-liens
 // @namespace    local.projet-secret
-// @version      6.8.0
+// @version      6.9.0
 // @updateURL    https://raw.githubusercontent.com/raphaelrobert1104-sys/mysecretproject/main/outputs/projet-secret.user.js
 // @downloadURL  https://raw.githubusercontent.com/raphaelrobert1104-sys/mysecretproject/main/outputs/projet-secret.user.js
 // @description  Automatise Ressources, Expéditions V1/V2, Forme de vie, Import, Constructions et Ghost avec configurations privées.
@@ -21,7 +21,7 @@
 (function () {
     'use strict';
 
-    const SCRIPT_VERSION = '6.8.0';
+    const SCRIPT_VERSION = '6.9.0';
     const CONFIG_KEYS = {
         1: 'secretMultiLinkConfig',
         2: 'secretMultiLinkConfig2',
@@ -35,6 +35,7 @@
     const TAB_RUN_ID_KEY = 'secretMultiLinkRunId';
     const DEBUG_DISMISSED_RUN_KEY = 'secretMultiLinkDebugDismissedRunId';
     const GHOST_TIME_KEY = 'secretMultiLinkGhostTime';
+    const GHOST_DATETIME_KEY = 'secretMultiLinkGhostDateTime';
     const MAX_LINKS_BY_PROFILE = {
         1: 15,
         2: 10,
@@ -91,6 +92,10 @@
     const CONSTRUCTION_SEND_SELECTOR = '#sendFleet > span';
     const GHOST_SEND_ALL_SELECTOR = '#sendall';
     const GHOST_CONTINUE_SELECTOR = '#continueToFleet2 > span';
+    const GHOST_POSITION_SELECTOR = '#position';
+    const GHOST_MISSION_SELECTOR = '#missionButton6';
+    const GHOST_DURATION_SELECTOR = 'div.step.step2[data-step="1"]';
+    const GHOST_RETURN_TIME_SELECTOR = '#returnTime';
     const GHOST_FLEET_FIELDS = [
         { name: 'deathstar', value: '1', label: 'deathstar' },
         { name: 'reaper', value: '1', label: 'reaper' },
@@ -410,14 +415,6 @@
                 <input class="named-link-url" type="url" spellcheck="false" autocomplete="off" placeholder="https://…">
             </div>
         `).join('');
-        const ghostHourOptions = Array.from({ length: 24 }, (_, hour) => {
-            const value = String(hour).padStart(2, '0');
-            return `<option value="${value}">${value}</option>`;
-        }).join('');
-        const ghostMinuteOptions = Array.from({ length: 60 }, (_, minute) => {
-            const value = String(minute).padStart(2, '0');
-            return `<option value="${value}">${value}</option>`;
-        }).join('');
         const shadow = host.attachShadow({ mode: 'closed' });
         shadow.innerHTML = `
             <style>
@@ -1051,20 +1048,10 @@
                     letter-spacing: .16em;
                 }
                 .ghost-time-grid {
-                    display: grid;
-                    grid-template-columns: 1fr auto 1fr;
-                    align-items: end;
-                    gap: 10px;
                     margin: 16px 0 12px;
                 }
-                .ghost-time-separator {
-                    padding-bottom: 10px;
-                    color: #c4b5fd;
-                    font-size: 22px;
-                    font-weight: 900;
-                }
                 .ghost-time-field label { margin-bottom: 6px; }
-                .ghost-time-field select {
+                .ghost-time-field input {
                     width: 100%;
                     min-height: 46px;
                     padding: 9px 11px;
@@ -1074,14 +1061,13 @@
                     color: #f8fafc;
                     font-size: 16px;
                     font-weight: 800;
-                    text-align: center;
+                    color-scheme: dark;
                     outline: none;
                 }
-                .ghost-time-field select:focus {
+                .ghost-time-field input:focus {
                     border-color: #a78bfa;
                     box-shadow: 0 0 0 3px rgba(167, 139, 250, .2);
                 }
-                .ghost-time-field select option { background: #0f172a; color: #f8fafc; }
                 .ghost-time-preview {
                     margin: 0 0 14px;
                     padding: 10px 12px;
@@ -1265,19 +1251,14 @@
                         </div>
                         <button type="button" class="close ghost-runner-close" aria-label="Fermer">×</button>
                     </div>
-                    <p class="help">Choisissez l’heure et la minute à conserver, puis démarrez Ghost.</p>
+                    <p class="help">Choisissez la date et l’heure en une seule fois, puis démarrez Ghost.</p>
                     <div class="ghost-time-grid">
                         <div class="ghost-time-field">
-                            <label for="ghost-hour">Heure</label>
-                            <select id="ghost-hour" class="ghost-hour">${ghostHourOptions}</select>
-                        </div>
-                        <span class="ghost-time-separator" aria-hidden="true">:</span>
-                        <div class="ghost-time-field">
-                            <label for="ghost-minute">Minute</label>
-                            <select id="ghost-minute" class="ghost-minute">${ghostMinuteOptions}</select>
+                            <label for="ghost-datetime">Date et heure cibles</label>
+                            <input id="ghost-datetime" class="ghost-datetime" type="datetime-local" step="60">
                         </div>
                     </div>
-                    <div class="ghost-time-preview">Horaire sélectionné : <span class="ghost-time-value">00:00</span></div>
+                    <div class="ghost-time-preview">Cible sélectionnée : <span class="ghost-time-value">—</span></div>
                     <div class="actions">
                         <button type="button" class="save ghost-runner-cancel">Annuler</button>
                         <button type="button" class="start ghost-runner-confirm">Valider et démarrer</button>
@@ -1354,8 +1335,7 @@
             ghostRunnerClose: shadow.querySelector('.ghost-runner-close'),
             ghostRunnerCancel: shadow.querySelector('.ghost-runner-cancel'),
             ghostRunnerConfirm: shadow.querySelector('.ghost-runner-confirm'),
-            ghostHour: shadow.querySelector('.ghost-hour'),
-            ghostMinute: shadow.querySelector('.ghost-minute'),
+            ghostDateTime: shadow.querySelector('.ghost-datetime'),
             ghostTimeValue: shadow.querySelector('.ghost-time-value'),
         };
 
@@ -1404,8 +1384,8 @@
         refs.ghostRunnerClose.addEventListener('click', closeGhostRunner);
         refs.ghostRunnerCancel.addEventListener('click', closeGhostRunner);
         refs.ghostRunnerConfirm.addEventListener('click', confirmGhostTime);
-        refs.ghostHour.addEventListener('change', updateGhostTimePreview);
-        refs.ghostMinute.addEventListener('change', updateGhostTimePreview);
+        refs.ghostDateTime.addEventListener('input', updateGhostTimePreview);
+        refs.ghostDateTime.addEventListener('change', updateGhostTimePreview);
         refs.debugProgressClose.addEventListener('click', () => {
             const run = getRunState();
             if (run.runId) {
@@ -1525,16 +1505,14 @@
             const config = getStoredConfig(8);
             if (config.links.length !== 1) {
                 open(8);
-                showError('Configurez l’URL unique de Ghost avant de choisir l’heure.');
+                showError('Configurez l’URL unique de Ghost avant de choisir la date et l’heure.');
                 return;
             }
 
-            const storedTime = getStoredGhostTime();
             closeDropdowns();
             closePanel();
             closeConstructionRunner();
-            refs.ghostHour.value = storedTime.hour;
-            refs.ghostMinute.value = storedTime.minute;
+            refs.ghostDateTime.value = getStoredGhostDateTimeValue();
             updateGhostTimePreview();
             refs.ghostRunner.classList.add('open');
         }
@@ -1544,23 +1522,19 @@
         }
 
         function updateGhostTimePreview() {
-            refs.ghostTimeValue.textContent = `${refs.ghostHour.value}:${refs.ghostMinute.value}`;
+            refs.ghostTimeValue.textContent = formatGhostDateTime(refs.ghostDateTime.value);
         }
 
         function confirmGhostTime() {
-            const time = `${refs.ghostHour.value}:${refs.ghostMinute.value}`;
-            if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(time)) return;
-            GM_setValue(GHOST_TIME_KEY, time);
+            const dateTime = normalizeGhostDateTime(refs.ghostDateTime.value);
+            if (!dateTime) {
+                refs.ghostDateTime.focus();
+                return;
+            }
+            GM_setValue(GHOST_DATETIME_KEY, dateTime);
+            GM_setValue(GHOST_TIME_KEY, dateTime.slice(11, 16));
             closeGhostRunner();
-            void startGhostAutomation(time);
-        }
-
-        function getStoredGhostTime() {
-            const stored = String(GM_getValue(GHOST_TIME_KEY, '00:00'));
-            const match = /^([01]\d|2[0-3]):([0-5]\d)$/.exec(stored);
-            return match
-                ? { hour: match[1], minute: match[2] }
-                : { hour: '00', minute: '00' };
+            void startGhostAutomation(dateTime);
         }
 
         function openConstructionRunner() {
@@ -2681,7 +2655,7 @@
         return true;
     }
 
-    async function startGhostAutomation(selectedTime = '') {
+    async function startGhostAutomation(selectedDateTime = '') {
         const config = getStoredConfig(8);
         if (config.links.length !== 1) {
             const ui = await ensureUi();
@@ -2691,10 +2665,9 @@
             return;
         }
 
-        const storedTime = getStoredGhostTimeValue();
-        const ghostTime = /^([01]\d|2[0-3]):[0-5]\d$/.test(selectedTime)
-            ? selectedTime
-            : storedTime;
+        const ghostTargetDateTime = normalizeGhostDateTime(selectedDateTime) ||
+            getStoredGhostDateTimeValue();
+        const ghostTime = ghostTargetDateTime.slice(11, 16);
         const now = Date.now();
         const runId = createRunId();
         const run = {
@@ -2707,12 +2680,16 @@
             phase: 'ghost-open-link',
             currentLinkIndex: 0,
             ghostTime,
+            ghostTargetDateTime,
+            ghostReturnTime: '',
             ghostFleetFieldIndex: 0,
             ghostPendingDelayMs: 0,
             ghostPendingDelayLabel: '',
             startedAt: now,
             updatedAt: now,
-            message: `Ghost — action 1/3 : ouverture de l’URL configurée (heure ${ghostTime})…`,
+            message:
+                `Ghost — action 1/4 : ouverture de l’URL configurée ` +
+                `(cible ${formatGhostDateTime(ghostTargetDateTime)})…`,
         };
 
         GM_setValue(RUN_KEY, run);
@@ -2761,7 +2738,7 @@
                             GHOST_DELAY_MAX_MS
                         ),
                         ghostPendingDelayLabel: 'le chargement de l’URL',
-                        message: 'Ghost — action 1/3 terminée : page chargée.',
+                        message: 'Ghost — action 1/4 terminée : page chargée.',
                     });
                     refreshUi();
                     continue;
@@ -2769,7 +2746,7 @@
 
                 if (run.phase === 'ghost-send-all') {
                     updateRun(runId, {
-                        message: 'Ghost — action 2/3 : sélectionner tous les vaisseaux…',
+                        message: 'Ghost — action 2/4 : sélectionner tous les vaisseaux…',
                     });
                     refreshUi();
                     const sendAllButton = await waitForElement(GHOST_SEND_ALL_SELECTOR, {
@@ -2786,7 +2763,7 @@
                             GHOST_DELAY_MAX_MS
                         ),
                         ghostPendingDelayLabel: 'la sélection de tous les vaisseaux',
-                        message: 'Ghost — action 2/3 effectuée : tous les vaisseaux ont été sélectionnés.',
+                        message: 'Ghost — action 2/4 effectuée : tous les vaisseaux ont été sélectionnés.',
                     });
                     refreshUi();
                     sendAllButton.click();
@@ -2797,7 +2774,7 @@
                     updateRun(runId, {
                         phase: 'ghost-set-fleet',
                         ghostFleetFieldIndex: 0,
-                        message: 'Ghost — reprise de l’action 3/3 : préparation des valeurs de flotte…',
+                        message: 'Ghost — reprise de l’action 3/4 : préparation des valeurs de flotte…',
                     });
                     refreshUi();
                     continue;
@@ -2814,7 +2791,7 @@
                     if (fieldIndex >= GHOST_FLEET_FIELDS.length) {
                         updateRun(runId, {
                             phase: 'ghost-continue',
-                            message: 'Ghost — action 3/3 : valeurs de flotte saisies, préparation de Continuer…',
+                            message: 'Ghost — action 3/4 : valeurs de flotte saisies, préparation de Continuer…',
                         });
                         refreshUi();
                         continue;
@@ -2824,7 +2801,7 @@
                     const selector = `input[name="${field.name}"]`;
                     updateRun(runId, {
                         message:
-                            `Ghost — action 3/3 (${fieldIndex + 1}/${GHOST_FLEET_FIELDS.length + 1}) : ` +
+                            `Ghost — action 3/4 (${fieldIndex + 1}/${GHOST_FLEET_FIELDS.length + 1}) : ` +
                             `${field.label} = ${field.value}…`,
                     });
                     refreshUi();
@@ -2855,7 +2832,7 @@
                 if (run.phase === 'ghost-continue') {
                     updateRun(runId, {
                         message:
-                            `Ghost — action 3/3 (${GHOST_FLEET_FIELDS.length + 1}/` +
+                            `Ghost — action 3/4 (${GHOST_FLEET_FIELDS.length + 1}/` +
                             `${GHOST_FLEET_FIELDS.length + 1}) : cliquer sur Continuer…`,
                     });
                     refreshUi();
@@ -2866,30 +2843,134 @@
                     if (!getActiveRun(runId)) return;
 
                     updateRun(runId, {
-                        phase: 'ghost-after-continue',
+                        phase: 'ghost-wait-destination-page',
+                        ghostPendingDelayMs: 0,
+                        ghostPendingDelayLabel: '',
+                        message:
+                            'Ghost — action 3/4 terminée : clic sur Continuer effectué, ' +
+                            'attente de la page de destination…',
+                    });
+                    refreshUi();
+                    const pageExitPromise = waitForPageExit(3000);
+                    continueButton.click();
+                    const pageExited = await pageExitPromise;
+                    if (pageExited) return;
+                    continue;
+                }
+
+                if (
+                    run.phase === 'ghost-after-continue' ||
+                    run.phase === 'ghost-wait-destination-page'
+                ) {
+                    const renderResult = await waitUntilPageUsable(PAGE_TIMEOUT_MS);
+                    if (renderResult.timedOut) {
+                        throw new Error('La page de destination Ghost ne s’est pas chargée à temps.');
+                    }
+                    if (!getActiveRun(runId)) return;
+
+                    updateRun(runId, {
+                        phase: 'ghost-set-position',
                         ghostPendingDelayMs: getRandomDelayMs(
                             GHOST_DELAY_MIN_MS,
                             GHOST_DELAY_MAX_MS
                         ),
-                        ghostPendingDelayLabel: 'le clic sur Continuer',
-                        message: 'Ghost — action 3/3 terminée : clic sur Continuer effectué.',
+                        ghostPendingDelayLabel: 'le chargement de la page de destination',
+                        message: 'Ghost — action 4/4 : page chargée, préparation de la position 16…',
                     });
                     refreshUi();
-                    continueButton.click();
                     continue;
                 }
 
-                if (run.phase === 'ghost-after-continue') {
+                if (run.phase === 'ghost-set-position') {
+                    updateRun(runId, {
+                        message: 'Ghost — action 4/4 (1/4) : renseigner la position 16…',
+                    });
+                    refreshUi();
+                    const positionInput = await waitForElement(GHOST_POSITION_SELECTOR, {
+                        timeoutMs: ELEMENT_TIMEOUT_MS,
+                        clickable: false,
+                    });
+                    if (!getActiveRun(runId)) return;
+
+                    setFormControlValue(positionInput, '16');
+                    updateRun(runId, {
+                        phase: 'ghost-select-mission',
+                        ghostPendingDelayMs: getRandomDelayMs(
+                            GHOST_DELAY_MIN_MS,
+                            GHOST_DELAY_MAX_MS
+                        ),
+                        ghostPendingDelayLabel: 'la saisie de la position 16',
+                        message: 'Ghost — position réglée sur 16.',
+                    });
+                    refreshUi();
+                    continue;
+                }
+
+                if (run.phase === 'ghost-select-mission') {
+                    updateRun(runId, {
+                        message: 'Ghost — action 4/4 (2/4) : sélectionner la mission Espionner…',
+                    });
+                    refreshUi();
+                    const missionButton = await waitForElement(GHOST_MISSION_SELECTOR, {
+                        timeoutMs: ELEMENT_TIMEOUT_MS,
+                        clickable: true,
+                    });
+                    if (!getActiveRun(runId)) return;
+
+                    updateRun(runId, {
+                        phase: 'ghost-select-duration',
+                        ghostPendingDelayMs: getRandomDelayMs(
+                            GHOST_DELAY_MIN_MS,
+                            GHOST_DELAY_MAX_MS
+                        ),
+                        ghostPendingDelayLabel: 'la sélection de la mission Espionner',
+                        message: 'Ghost — mission Espionner sélectionnée.',
+                    });
+                    refreshUi();
+                    missionButton.click();
+                    continue;
+                }
+
+                if (run.phase === 'ghost-select-duration') {
+                    updateRun(runId, {
+                        message: 'Ghost — action 4/4 (3/4) : sélectionner la durée 10…',
+                    });
+                    refreshUi();
+                    const durationButton = await waitForGhostDuration(ELEMENT_TIMEOUT_MS);
+                    if (!getActiveRun(runId)) return;
+
+                    updateRun(runId, {
+                        phase: 'ghost-read-return-time',
+                        ghostPendingDelayMs: getRandomDelayMs(
+                            GHOST_DELAY_MIN_MS,
+                            GHOST_DELAY_MAX_MS
+                        ),
+                        ghostPendingDelayLabel: 'la sélection de la durée 10',
+                        message: 'Ghost — durée 10 sélectionnée.',
+                    });
+                    refreshUi();
+                    durationButton.click();
+                    continue;
+                }
+
+                if (run.phase === 'ghost-read-return-time') {
+                    updateRun(runId, {
+                        message: 'Ghost — action 4/4 (4/4) : lire l’heure de retour…',
+                    });
+                    refreshUi();
+                    const returnTime = await readGhostReturnTime(ELEMENT_TIMEOUT_MS);
                     const activeRun = getActiveRun(runId);
                     if (!activeRun) return;
                     GM_setValue(RUN_KEY, {
                         ...activeRun,
                         status: 'completed',
                         phase: 'ghost-completed',
+                        ghostReturnTime: returnTime,
                         updatedAt: Date.now(),
                         message:
-                            `Ghost terminé à ce stade : flotte configurée et bouton Continuer cliqué. ` +
-                            `Heure conservée : ${activeRun.ghostTime}.`,
+                            `Ghost terminé : position 16, mission Espionner et durée 10 sélectionnées. ` +
+                            `Retour lu : ${returnTime}. Cible configurée : ` +
+                            `${formatGhostDateTime(activeRun.ghostTargetDateTime)}.`,
                     });
                     await clearThisTabRunId(runId);
                     refreshUi();
@@ -2925,9 +3006,58 @@
         return true;
     }
 
-    function getStoredGhostTimeValue() {
-        const stored = String(GM_getValue(GHOST_TIME_KEY, '00:00'));
-        return /^([01]\d|2[0-3]):[0-5]\d$/.test(stored) ? stored : '00:00';
+    function getStoredGhostDateTimeValue() {
+        const storedDateTime = normalizeGhostDateTime(
+            String(GM_getValue(GHOST_DATETIME_KEY, ''))
+        );
+        if (storedDateTime) return storedDateTime;
+
+        const legacyTime = String(GM_getValue(GHOST_TIME_KEY, ''));
+        const now = new Date();
+        const datePart = [
+            String(now.getFullYear()).padStart(4, '0'),
+            String(now.getMonth() + 1).padStart(2, '0'),
+            String(now.getDate()).padStart(2, '0'),
+        ].join('-');
+        if (/^([01]\d|2[0-3]):[0-5]\d$/.test(legacyTime)) {
+            return `${datePart}T${legacyTime}`;
+        }
+
+        return `${datePart}T${String(now.getHours()).padStart(2, '0')}:` +
+            String(now.getMinutes()).padStart(2, '0');
+    }
+
+    function normalizeGhostDateTime(value) {
+        const match = /^(\d{4})-(\d{2})-(\d{2})T([01]\d|2[0-3]):([0-5]\d)$/.exec(
+            String(value || '').trim()
+        );
+        if (!match) return '';
+
+        const [, yearText, monthText, dayText, hourText, minuteText] = match;
+        const year = Number(yearText);
+        const month = Number(monthText);
+        const day = Number(dayText);
+        const hour = Number(hourText);
+        const minute = Number(minuteText);
+        const parsed = new Date(year, month - 1, day, hour, minute, 0, 0);
+        if (
+            parsed.getFullYear() !== year ||
+            parsed.getMonth() !== month - 1 ||
+            parsed.getDate() !== day ||
+            parsed.getHours() !== hour ||
+            parsed.getMinutes() !== minute
+        ) {
+            return '';
+        }
+        return `${yearText}-${monthText}-${dayText}T${hourText}:${minuteText}`;
+    }
+
+    function formatGhostDateTime(value) {
+        const normalized = normalizeGhostDateTime(value);
+        if (!normalized) return 'date et heure non définies';
+        const [datePart, timePart] = normalized.split('T');
+        const [year, month, day] = datePart.split('-');
+        return `${day}/${month}/${year} à ${timePart}`;
     }
 
     async function startExpeditionV2Automation(options = {}) {
@@ -4468,25 +4598,33 @@
                 `${(Number(run.ghostPendingDelayMs) / 1000).toFixed(2)} s`;
         } else {
             const labels = {
-                'ghost-open-link': 'Action 1/3 — charger l’URL',
-                'ghost-send-all': 'Action 2/3 — sélectionner tous les vaisseaux',
-                'ghost-after-send-all': 'Action 3/3 — préparer les valeurs de flotte',
+                'ghost-open-link': 'Action 1/4 — charger l’URL',
+                'ghost-send-all': 'Action 2/4 — sélectionner tous les vaisseaux',
+                'ghost-after-send-all': 'Action 3/4 — préparer les valeurs de flotte',
                 'ghost-set-fleet':
-                    `Action 3/3 — valeurs de flotte ` +
+                    `Action 3/4 — valeurs de flotte ` +
                     `${Math.min(GHOST_FLEET_FIELDS.length, Math.max(0, Number(run.ghostFleetFieldIndex) || 0))}/` +
                     `${GHOST_FLEET_FIELDS.length}`,
-                'ghost-continue': 'Action 3/3 — cliquer sur Continuer',
-                'ghost-after-continue': 'Action 3/3 — finalisation après Continuer',
+                'ghost-continue': 'Action 3/4 — cliquer sur Continuer',
+                'ghost-after-continue': 'Action 4/4 — attendre la page de destination',
+                'ghost-wait-destination-page': 'Action 4/4 — attendre la page de destination',
+                'ghost-set-position': 'Action 4/4 — renseigner la position 16',
+                'ghost-select-mission': 'Action 4/4 — sélectionner Espionner',
+                'ghost-select-duration': 'Action 4/4 — sélectionner la durée 10',
+                'ghost-read-return-time': 'Action 4/4 — lire l’heure de retour',
                 'ghost-completed': 'Ghost terminé',
             };
             actionLabel = labels[run.phase] || `Phase inconnue : ${run.phase}`;
         }
 
-        const time = /^([01]\d|2[0-3]):[0-5]\d$/.test(String(run.ghostTime || ''))
-            ? run.ghostTime
-            : '00:00';
+        const targetDateTime = formatGhostDateTime(
+            run.ghostTargetDateTime || getStoredGhostDateTimeValue()
+        );
+        const returnTime = String(run.ghostReturnTime || '').trim();
         const message = typeof run.message === 'string' ? run.message : '';
-        return `Ghost — heure ${time}\n${actionLabel}` + (message ? `\n${message}` : '');
+        return `Ghost — cible ${targetDateTime}\n${actionLabel}` +
+            (returnTime ? `\nRetour lu : ${returnTime}` : '') +
+            (message ? `\n${message}` : '');
     }
 
     function formatConstructionDebugProgress(run) {
@@ -4845,6 +4983,41 @@
         }
 
         throw new ElementNotFoundError(selector, options.timeoutMs);
+    }
+
+    async function waitForGhostDuration(timeoutMs) {
+        const deadline = Date.now() + timeoutMs;
+        while (Date.now() < deadline) {
+            const candidates = [...document.querySelectorAll(GHOST_DURATION_SELECTOR)];
+            const duration = candidates.find((element) => {
+                const text = String(element.textContent || '').replace(/\s+/g, ' ').trim();
+                return text === '10' && isElementVisible(element) && isElementClickable(element);
+            });
+            if (duration) return duration;
+            await delay(75);
+        }
+
+        throw new ElementNotFoundError(
+            `${GHOST_DURATION_SELECTOR} avec le texte 10`,
+            timeoutMs
+        );
+    }
+
+    async function readGhostReturnTime(timeoutMs) {
+        const deadline = Date.now() + timeoutMs;
+        while (Date.now() < deadline) {
+            const element = document.querySelector(GHOST_RETURN_TIME_SELECTOR);
+            const value = element
+                ? String(element.innerText || element.textContent || '').replace(/\s+/g, ' ').trim()
+                : '';
+            if (value) return value;
+            await delay(75);
+        }
+
+        throw new Error(
+            `Impossible de lire l’heure de retour dans ${GHOST_RETURN_TIME_SELECTOR} ` +
+            `après ${timeoutMs} ms.`
+        );
     }
 
     async function waitForExpeditionV2TemplateOption(dropdownId, timeoutMs) {
