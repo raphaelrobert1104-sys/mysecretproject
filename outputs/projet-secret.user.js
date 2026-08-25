@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Projet secret — boucle multi-liens
 // @namespace    local.projet-secret
-// @version      6.7.2
+// @version      6.7.3
 // @updateURL    https://raw.githubusercontent.com/raphaelrobert1104-sys/mysecretproject/main/outputs/projet-secret.user.js
 // @downloadURL  https://raw.githubusercontent.com/raphaelrobert1104-sys/mysecretproject/main/outputs/projet-secret.user.js
 // @description  Automatise Ressources, Expéditions V1/V2, Forme de vie, Import, Constructions et Ghost avec configurations privées.
@@ -68,7 +68,8 @@
         next: '#galaxyHeader > form > span.galaxy_icons.next.ipiHintable',
         prev: '#galaxyHeader > form > span.galaxy_icons.prev.ipiHintable',
     };
-    const EXPEDITION_V2_TEMPLATE_SELECT_SELECTOR = '#expeditionFleetTemplateSelect';
+    const EXPEDITION_V2_TEMPLATE_TRIGGER_SELECTOR =
+        '#galaxyExpeditionFleetTemplateContainer > span > a';
     const EXPEDITION_V2_BUTTON_SELECTOR = '#expeditionbutton';
     const EXPEDITION_V2_STOP_TEXT = 'trop d`expéditions simultanées';
     const EXPEDITION_V2_MAX_LAUNCHES = 100;
@@ -2895,7 +2896,7 @@
                     );
                     updateRun(runId, {
                         phase: directionTarget === 0
-                            ? 'expedition-v2-template-zero'
+                            ? 'expedition-v2-open-template'
                             : 'expedition-v2-direction',
                         expeditionV2PendingDelayMs: getRandomDelayMs(
                             EXPEDITION_V2_DELAY_MIN_MS,
@@ -2923,7 +2924,7 @@
                     );
                     if (completedClicks >= directionTarget) {
                         updateRun(runId, {
-                            phase: 'expedition-v2-template-zero',
+                            phase: 'expedition-v2-open-template',
                             message: 'Expédition V2 — étape 2/4 terminée, préparation du modèle de flotte…',
                         });
                         refreshUi();
@@ -2946,7 +2947,7 @@
                     const nextClickCount = completedClicks + 1;
                     updateRun(runId, {
                         phase: nextClickCount >= directionTarget
-                            ? 'expedition-v2-template-zero'
+                            ? 'expedition-v2-open-template'
                             : 'expedition-v2-direction',
                         expeditionV2DirectionClicks: nextClickCount,
                         expeditionV2PendingDelayMs: getRandomDelayMs(
@@ -2964,51 +2965,50 @@
                     continue;
                 }
 
-                if (run.phase === 'expedition-v2-template-zero') {
+                if (run.phase === 'expedition-v2-open-template') {
                     updateRun(runId, {
-                        message: 'Expédition V2 — étape 3/4 : remettre le modèle de flotte à 0…',
+                        message: 'Expédition V2 — étape 3/4 : ouvrir la liste des modèles de flotte…',
                     });
                     refreshUi();
-                    const templateSelect = await waitForElement(
-                        EXPEDITION_V2_TEMPLATE_SELECT_SELECTOR,
+                    const templateTrigger = await waitForElement(
+                        EXPEDITION_V2_TEMPLATE_TRIGGER_SELECTOR,
                         {
                             timeoutMs: ELEMENT_TIMEOUT_MS,
-                            clickable: false,
-                            visible: false,
+                            clickable: true,
                         }
                     );
                     if (!getActiveRun(runId)) return;
-                    revealSelect(templateSelect);
+                    const dropdownId = String(templateTrigger.getAttribute('rel') || '')
+                        .trim()
+                        .replace(/^#/, '');
 
                     updateRun(runId, {
                         phase: 'expedition-v2-select-expe',
+                        expeditionV2TemplateDropdownId: dropdownId,
                         expeditionV2PendingDelayMs: getRandomDelayMs(
                             EXPEDITION_V2_DELAY_MIN_MS,
                             EXPEDITION_V2_DELAY_MAX_MS
                         ),
-                        expeditionV2PendingDelayLabel: 'la remise du modèle à 0',
-                        message: 'Expédition V2 — étape 3/4 : valeur du modèle réglée sur 0.',
+                        expeditionV2PendingDelayLabel: 'l’ouverture de la liste des modèles',
+                        message:
+                            `Expédition V2 — étape 3/4 : liste ouverte` +
+                            `${dropdownId ? ` (${dropdownId})` : ''}.`,
                     });
                     refreshUi();
-                    setSelectValue(templateSelect, '0');
+                    templateTrigger.click();
                     continue;
                 }
 
                 if (run.phase === 'expedition-v2-select-expe') {
                     updateRun(runId, {
-                        message: 'Expédition V2 — étape 3/4 : régler le modèle sur EXPE (3020)…',
+                        message: 'Expédition V2 — étape 3/4 : cliquer sur EXPE (3020)…',
                     });
                     refreshUi();
-                    const templateSelect = await waitForElement(
-                        EXPEDITION_V2_TEMPLATE_SELECT_SELECTOR,
-                        {
-                            timeoutMs: ELEMENT_TIMEOUT_MS,
-                            clickable: false,
-                            visible: false,
-                        }
+                    const expeOption = await waitForExpeditionV2TemplateOption(
+                        run.expeditionV2TemplateDropdownId,
+                        ELEMENT_TIMEOUT_MS
                     );
                     if (!getActiveRun(runId)) return;
-                    revealSelect(templateSelect);
 
                     updateRun(runId, {
                         phase: 'expedition-v2-expeditions',
@@ -3017,10 +3017,10 @@
                             EXPEDITION_V2_DELAY_MAX_MS
                         ),
                         expeditionV2PendingDelayLabel: 'la sélection du modèle EXPE',
-                        message: 'Expédition V2 — étape 3/4 terminée : valeur 3020 (EXPE) sélectionnée.',
+                        message: 'Expédition V2 — étape 3/4 terminée : option EXPE sélectionnée.',
                     });
                     refreshUi();
-                    setSelectValue(templateSelect, '3020');
+                    expeOption.click();
                     continue;
                 }
 
@@ -4281,8 +4281,8 @@
                 'expedition-v2-open-link': 'Étape 1/4 — charger l’URL',
                 'expedition-v2-direction':
                     `Étape 2/4 — direction ${direction}, ${directionClicks}/${directionTarget} clic(s)`,
-                'expedition-v2-template-zero': 'Étape 3/4 — régler le modèle sur 0',
-                'expedition-v2-select-expe': 'Étape 3/4 — régler le modèle sur 3020 (EXPE)',
+                'expedition-v2-open-template': 'Étape 3/4 — ouvrir la liste des modèles',
+                'expedition-v2-select-expe': 'Étape 3/4 — cliquer sur EXPE (3020)',
                 'expedition-v2-expeditions':
                     `Étape 4/4 — ${launchCount} lancement(s), attente du message d’arrêt`,
                 'expedition-v2-completed': 'Expédition V2 terminée',
@@ -4697,14 +4697,43 @@
                 throw new Error(`Sélecteur CSS invalide : ${selector}`);
             }
 
-            const visibilityMatches = options.visible === false || (element && isElementVisible(element));
-            if (element && visibilityMatches && (!options.clickable || isElementClickable(element))) {
+            if (element && isElementVisible(element) && (!options.clickable || isElementClickable(element))) {
                 return element;
             }
             await delay(75);
         }
 
         throw new ElementNotFoundError(selector, options.timeoutMs);
+    }
+
+    async function waitForExpeditionV2TemplateOption(dropdownId, timeoutMs) {
+        const normalizedDropdownId = String(dropdownId || '').trim().replace(/^#/, '');
+        const deadline = Date.now() + timeoutMs;
+
+        while (Date.now() < deadline) {
+            const dropdown = normalizedDropdownId
+                ? document.getElementById(normalizedDropdownId)
+                : null;
+            const scopedCandidates = dropdown
+                ? [...dropdown.querySelectorAll('a[data-value="3020"]')]
+                : [];
+            const globalCandidates = [
+                ...document.querySelectorAll('a[data-value="3020"]'),
+            ];
+            const candidates = [...new Set([...scopedCandidates, ...globalCandidates])];
+            const option = candidates.find((element) => {
+                const text = String(element.textContent || '').replace(/\s+/g, ' ').trim();
+                return text === 'EXPE' && isElementVisible(element) && isElementClickable(element);
+            });
+
+            if (option) return option;
+            await delay(75);
+        }
+
+        const selectorDescription = normalizedDropdownId
+            ? `#${normalizedDropdownId} a[data-value="3020"]`
+            : 'a[data-value="3020"] avec le texte EXPE';
+        throw new ElementNotFoundError(selectorDescription, timeoutMs);
     }
 
     async function readExpeditionSlots(timeoutMs) {
@@ -4807,36 +4836,6 @@
         );
         element.dispatchEvent(new Event('change', { bubbles: true }));
         element.blur();
-    }
-
-    function setSelectValue(element, value) {
-        if (!(element instanceof HTMLSelectElement)) {
-            throw new Error('Le contrôle de modèle de flotte n’est pas un élément <select>.');
-        }
-        if (![...element.options].some((option) => option.value === value)) {
-            throw new Error(`La valeur ${value} est absente du modèle de flotte.`);
-        }
-
-        const descriptor = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value');
-        if (descriptor?.set) {
-            descriptor.set.call(element, value);
-        } else {
-            element.value = value;
-        }
-        element.dispatchEvent(new Event('input', { bubbles: true }));
-        element.dispatchEvent(new Event('change', { bubbles: true }));
-    }
-
-    function revealSelect(element) {
-        element.hidden = false;
-        element.removeAttribute('hidden');
-        element.setAttribute('aria-hidden', 'false');
-        element.style.setProperty('display', 'inline-block', 'important');
-        element.style.setProperty('visibility', 'visible', 'important');
-        element.style.setProperty('opacity', '1', 'important');
-        element.style.setProperty('pointer-events', 'auto', 'important');
-        element.style.setProperty('min-width', '150px', 'important');
-        element.style.setProperty('min-height', '32px', 'important');
     }
 
     function isElementVisible(element) {
