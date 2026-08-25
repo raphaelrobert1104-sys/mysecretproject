@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Projet secret — boucle multi-liens
 // @namespace    local.projet-secret
-// @version      6.7.3
+// @version      6.7.4
 // @updateURL    https://raw.githubusercontent.com/raphaelrobert1104-sys/mysecretproject/main/outputs/projet-secret.user.js
 // @downloadURL  https://raw.githubusercontent.com/raphaelrobert1104-sys/mysecretproject/main/outputs/projet-secret.user.js
 // @description  Automatise Ressources, Expéditions V1/V2, Forme de vie, Import, Constructions et Ghost avec configurations privées.
@@ -3011,7 +3011,7 @@
                     if (!getActiveRun(runId)) return;
 
                     updateRun(runId, {
-                        phase: 'expedition-v2-expeditions',
+                        phase: 'expedition-v2-confirm-expe',
                         expeditionV2PendingDelayMs: getRandomDelayMs(
                             EXPEDITION_V2_DELAY_MIN_MS,
                             EXPEDITION_V2_DELAY_MAX_MS
@@ -3021,6 +3021,22 @@
                     });
                     refreshUi();
                     expeOption.click();
+                    continue;
+                }
+
+                if (run.phase === 'expedition-v2-confirm-expe') {
+                    updateRun(runId, {
+                        message: 'Expédition V2 — étape 3/4 : vérifier que le modèle EXPE est actif…',
+                    });
+                    refreshUi();
+                    await waitForExpeditionV2TemplateSelection(ELEMENT_TIMEOUT_MS);
+                    if (!getActiveRun(runId)) return;
+
+                    updateRun(runId, {
+                        phase: 'expedition-v2-expeditions',
+                        message: 'Expédition V2 — étape 3/4 confirmée : modèle EXPE actif.',
+                    });
+                    refreshUi();
                     continue;
                 }
 
@@ -3049,7 +3065,8 @@
                     refreshUi();
                     const expeditionButton = await waitForElement(EXPEDITION_V2_BUTTON_SELECTOR, {
                         timeoutMs: ELEMENT_TIMEOUT_MS,
-                        clickable: true,
+                        clickable: false,
+                        visible: false,
                     });
                     if (!getActiveRun(runId)) return;
 
@@ -4283,6 +4300,7 @@
                     `Étape 2/4 — direction ${direction}, ${directionClicks}/${directionTarget} clic(s)`,
                 'expedition-v2-open-template': 'Étape 3/4 — ouvrir la liste des modèles',
                 'expedition-v2-select-expe': 'Étape 3/4 — cliquer sur EXPE (3020)',
+                'expedition-v2-confirm-expe': 'Étape 3/4 — confirmer le modèle EXPE',
                 'expedition-v2-expeditions':
                     `Étape 4/4 — ${launchCount} lancement(s), attente du message d’arrêt`,
                 'expedition-v2-completed': 'Expédition V2 terminée',
@@ -4697,7 +4715,8 @@
                 throw new Error(`Sélecteur CSS invalide : ${selector}`);
             }
 
-            if (element && isElementVisible(element) && (!options.clickable || isElementClickable(element))) {
+            const visibilityMatches = options.visible === false || (element && isElementVisible(element));
+            if (element && visibilityMatches && (!options.clickable || isElementClickable(element))) {
                 return element;
             }
             await delay(75);
@@ -4734,6 +4753,26 @@
             ? `#${normalizedDropdownId} a[data-value="3020"]`
             : 'a[data-value="3020"] avec le texte EXPE';
         throw new ElementNotFoundError(selectorDescription, timeoutMs);
+    }
+
+    async function waitForExpeditionV2TemplateSelection(timeoutMs) {
+        const deadline = Date.now() + timeoutMs;
+
+        while (Date.now() < deadline) {
+            const nativeSelect = document.querySelector('#expeditionFleetTemplateSelect');
+            const trigger = document.querySelector(EXPEDITION_V2_TEMPLATE_TRIGGER_SELECTOR);
+            const triggerValue = String(trigger?.getAttribute('data-value') || '').trim();
+            const triggerText = String(trigger?.textContent || '').replace(/\s+/g, ' ').trim();
+
+            if (nativeSelect?.value === '3020' || triggerValue === '3020' || triggerText === 'EXPE') {
+                return;
+            }
+            await delay(75);
+        }
+
+        throw new Error(
+            'Le clic sur EXPE a été effectué, mais la page n’a pas confirmé le modèle 3020.'
+        );
     }
 
     async function readExpeditionSlots(timeoutMs) {
