@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Projet secret — boucle multi-liens
 // @namespace    local.projet-secret
-// @version      6.9.3
+// @version      6.10.0
 // @updateURL    https://raw.githubusercontent.com/raphaelrobert1104-sys/mysecretproject/main/outputs/projet-secret.user.js
 // @downloadURL  https://raw.githubusercontent.com/raphaelrobert1104-sys/mysecretproject/main/outputs/projet-secret.user.js
 // @description  Automatise Ressources, Expéditions V1/V2, Forme de vie, Import, Constructions et Ghost avec configurations privées.
@@ -21,7 +21,7 @@
 (function () {
     'use strict';
 
-    const SCRIPT_VERSION = '6.9.3';
+    const SCRIPT_VERSION = '6.10.0';
     const CONFIG_KEYS = {
         1: 'secretMultiLinkConfig',
         2: 'secretMultiLinkConfig2',
@@ -96,9 +96,14 @@
     const GHOST_SEND_ALL_SELECTOR = '#sendall';
     const GHOST_CONTINUE_SELECTOR = '#continueToFleet2 > span';
     const GHOST_POSITION_SELECTOR = '#position';
+    const GHOST_SYSTEM_SELECTOR = '#system';
     const GHOST_MISSION_SELECTOR = '#missionButton6';
     const GHOST_DURATION_SELECTOR = 'div.step.step2[data-step="1"]';
     const GHOST_RETURN_TIME_SELECTOR = '#returnTime';
+    const GHOST_RETURN_TOLERANCE_MS = 15 * 60 * 1000;
+    const GHOST_SYSTEM_DEFAULT_MIN = 1;
+    const GHOST_SYSTEM_DEFAULT_MAX = 499;
+    const GHOST_SYSTEM_SEARCH_MAX_ITERATIONS = 40;
     const GHOST_FLEET_FIELDS = [
         { name: 'deathstar', deduction: 1, label: 'deathstar' },
         { name: 'reaper', deduction: 1, label: 'reaper' },
@@ -2691,7 +2696,7 @@
             startedAt: now,
             updatedAt: now,
             message:
-                `Ghost — action 1/4 : ouverture de l’URL configurée ` +
+                `Ghost — action 1/5 : ouverture de l’URL configurée ` +
                 `(cible ${formatGhostDateTime(ghostTargetDateTime)})…`,
         };
 
@@ -2741,7 +2746,7 @@
                             GHOST_DELAY_MAX_MS
                         ),
                         ghostPendingDelayLabel: 'le chargement de l’URL',
-                        message: 'Ghost — action 1/4 terminée : page chargée.',
+                        message: 'Ghost — action 1/5 terminée : page chargée.',
                     });
                     refreshUi();
                     continue;
@@ -2749,7 +2754,7 @@
 
                 if (run.phase === 'ghost-send-all') {
                     updateRun(runId, {
-                        message: 'Ghost — action 2/4 : sélectionner tous les vaisseaux…',
+                        message: 'Ghost — action 2/5 : sélectionner tous les vaisseaux…',
                     });
                     refreshUi();
                     const sendAllButton = await waitForElement(GHOST_SEND_ALL_SELECTOR, {
@@ -2766,7 +2771,7 @@
                             GHOST_DELAY_MAX_MS
                         ),
                         ghostPendingDelayLabel: 'la sélection de tous les vaisseaux',
-                        message: 'Ghost — action 2/4 effectuée : tous les vaisseaux ont été sélectionnés.',
+                        message: 'Ghost — action 2/5 effectuée : tous les vaisseaux ont été sélectionnés.',
                     });
                     refreshUi();
                     sendAllButton.click();
@@ -2777,7 +2782,7 @@
                     updateRun(runId, {
                         phase: 'ghost-set-fleet',
                         ghostFleetFieldIndex: 0,
-                        message: 'Ghost — reprise de l’action 3/4 : préparation des valeurs de flotte…',
+                        message: 'Ghost — reprise de l’action 3/5 : préparation des valeurs de flotte…',
                     });
                     refreshUi();
                     continue;
@@ -2794,7 +2799,7 @@
                     if (fieldIndex >= GHOST_FLEET_FIELDS.length) {
                         updateRun(runId, {
                             phase: 'ghost-continue',
-                            message: 'Ghost — action 3/4 : valeurs de flotte saisies, préparation de Continuer…',
+                            message: 'Ghost — action 3/5 : valeurs de flotte saisies, préparation de Continuer…',
                         });
                         refreshUi();
                         continue;
@@ -2804,7 +2809,7 @@
                     const selector = `input[name="${field.name}"]`;
                     updateRun(runId, {
                         message:
-                            `Ghost — action 3/4 (${fieldIndex + 1}/${GHOST_FLEET_FIELDS.length + 1}) : ` +
+                            `Ghost — action 3/5 (${fieldIndex + 1}/${GHOST_FLEET_FIELDS.length + 1}) : ` +
                             `${field.label} = valeur affichée − ${formatInteger(field.deduction)}…`,
                     });
                     refreshUi();
@@ -2840,7 +2845,7 @@
                 if (run.phase === 'ghost-continue') {
                     updateRun(runId, {
                         message:
-                            `Ghost — action 3/4 (${GHOST_FLEET_FIELDS.length + 1}/` +
+                            `Ghost — action 3/5 (${GHOST_FLEET_FIELDS.length + 1}/` +
                             `${GHOST_FLEET_FIELDS.length + 1}) : cliquer sur Continuer…`,
                     });
                     refreshUi();
@@ -2855,7 +2860,7 @@
                         ghostPendingDelayMs: 0,
                         ghostPendingDelayLabel: '',
                         message:
-                            'Ghost — action 3/4 terminée : clic sur Continuer effectué, ' +
+                            'Ghost — action 3/5 terminée : clic sur Continuer effectué, ' +
                             'attente de la page de destination…',
                     });
                     refreshUi();
@@ -2883,7 +2888,7 @@
                             GHOST_DELAY_MAX_MS
                         ),
                         ghostPendingDelayLabel: 'le chargement de la page de destination',
-                        message: 'Ghost — action 4/4 : page chargée, préparation de la position 16…',
+                        message: 'Ghost — action 4/5 : page chargée, préparation de la position 16…',
                     });
                     refreshUi();
                     continue;
@@ -2891,7 +2896,7 @@
 
                 if (run.phase === 'ghost-set-position') {
                     updateRun(runId, {
-                        message: 'Ghost — action 4/4 (1/4) : renseigner la position 16…',
+                        message: 'Ghost — action 4/5 (1/4) : renseigner la position 16…',
                     });
                     refreshUi();
                     const positionInput = await waitForElement(GHOST_POSITION_SELECTOR, {
@@ -2916,7 +2921,7 @@
 
                 if (run.phase === 'ghost-select-mission') {
                     updateRun(runId, {
-                        message: 'Ghost — action 4/4 (2/4) : sélectionner la mission Espionner…',
+                        message: 'Ghost — action 4/5 (2/4) : sélectionner la mission Espionner…',
                     });
                     refreshUi();
                     const missionButton = await waitForElement(GHOST_MISSION_SELECTOR, {
@@ -2941,7 +2946,7 @@
 
                 if (run.phase === 'ghost-select-duration') {
                     updateRun(runId, {
-                        message: 'Ghost — action 4/4 (3/4) : sélectionner la durée 10…',
+                        message: 'Ghost — action 4/5 (3/4) : sélectionner la durée 10…',
                     });
                     refreshUi();
                     const durationButton = await waitForGhostDuration(ELEMENT_TIMEOUT_MS);
@@ -2963,26 +2968,169 @@
 
                 if (run.phase === 'ghost-read-return-time') {
                     updateRun(runId, {
-                        message: 'Ghost — action 4/4 (4/4) : lire l’heure de retour…',
+                        message: 'Ghost — action 4/5 (4/4) : lire l’heure de retour initiale…',
                     });
                     refreshUi();
                     const returnTime = await readGhostReturnTime(ELEMENT_TIMEOUT_MS);
                     const activeRun = getActiveRun(runId);
                     if (!activeRun) return;
-                    GM_setValue(RUN_KEY, {
-                        ...activeRun,
-                        status: 'completed',
-                        phase: 'ghost-completed',
-                        ghostReturnTime: returnTime,
-                        updatedAt: Date.now(),
-                        message:
-                            `Ghost terminé : position 16, mission Espionner et durée 10 sélectionnées. ` +
-                            `Retour lu : ${returnTime}. Cible configurée : ` +
-                            `${formatGhostDateTime(activeRun.ghostTargetDateTime)}.`,
+                    const targetMs = parseGhostTargetDateTimeMs(activeRun.ghostTargetDateTime);
+                    const returnMs = parseGhostReturnTimeMs(returnTime);
+                    if (!Number.isFinite(targetMs) || !Number.isFinite(returnMs)) {
+                        throw new Error(
+                            `Impossible de comparer le retour « ${returnTime} » avec la cible configurée.`
+                        );
+                    }
+
+                    const systemInput = await waitForElement(GHOST_SYSTEM_SELECTOR, {
+                        timeoutMs: ELEMENT_TIMEOUT_MS,
+                        clickable: false,
                     });
-                    await clearThisTabRunId(runId);
+                    if (!getActiveRun(runId)) return;
+                    const bounds = readGhostSystemBounds(systemInput);
+                    const initialSystem = clampInteger(
+                        Number(systemInput.value),
+                        bounds.minimum,
+                        bounds.maximum
+                    );
+                    const initialSample = {
+                        system: initialSystem,
+                        returnMs,
+                        returnTime,
+                    };
+
+                    if (isGhostReturnWithinTolerance(returnMs, targetMs)) {
+                        await completeGhostSystemSearch(runId, initialSample, 0);
+                        return;
+                    }
+
+                    updateRun(runId, {
+                        phase: 'ghost-search-system',
+                        ghostReturnTime: returnTime,
+                        ghostSystemInitial: initialSystem,
+                        ghostSystemMinimum: bounds.minimum,
+                        ghostSystemMaximum: bounds.maximum,
+                        ghostSystemSearchSamples: [initialSample],
+                        ghostSystemSearchIteration: 0,
+                        ghostSystemSearchDirection: 0,
+                        ghostSystemSearchStep: 2,
+                        ghostSystemSearchTriedOpposite: false,
+                        ghostPendingDelayMs: getRandomDelayMs(
+                            GHOST_DELAY_MIN_MS,
+                            GHOST_DELAY_MAX_MS
+                        ),
+                        ghostPendingDelayLabel: 'la lecture de l’heure de retour initiale',
+                        message:
+                            `Ghost — action 4/5 terminée : retour initial ${returnTime} au ` +
+                            `système ${initialSystem}. Début de la triangulation à ±15 minutes.`,
+                    });
                     refreshUi();
-                    return;
+                    continue;
+                }
+
+                if (run.phase === 'ghost-search-system') {
+                    const targetMs = parseGhostTargetDateTimeMs(run.ghostTargetDateTime);
+                    if (!Number.isFinite(targetMs)) {
+                        throw new Error('La date et l’heure cibles de Ghost sont invalides.');
+                    }
+                    const samples = normalizeGhostSystemSamples(run.ghostSystemSearchSamples);
+                    const iteration = Math.max(
+                        0,
+                        Math.floor(Number(run.ghostSystemSearchIteration) || 0)
+                    );
+                    if (iteration >= GHOST_SYSTEM_SEARCH_MAX_ITERATIONS) {
+                        throw createGhostSystemSearchError(samples, targetMs);
+                    }
+
+                    const selection = chooseNextGhostSystem(run, samples, targetMs);
+                    if (!selection) {
+                        throw createGhostSystemSearchError(samples, targetMs);
+                    }
+
+                    updateRun(runId, {
+                        ...selection.patch,
+                        phase: 'ghost-read-system-return',
+                        ghostSystemCandidate: selection.system,
+                        ghostSystemPreviousReturnTime: String(run.ghostReturnTime || ''),
+                        ghostPendingDelayMs: getRandomDelayMs(
+                            GHOST_DELAY_MIN_MS,
+                            GHOST_DELAY_MAX_MS
+                        ),
+                        ghostPendingDelayLabel:
+                            `la saisie du système ${selection.system}`,
+                        message:
+                            `Ghost — action 5/5, essai ${iteration + 1}/` +
+                            `${GHOST_SYSTEM_SEARCH_MAX_ITERATIONS} : système ${selection.system}…`,
+                    });
+                    refreshUi();
+                    const systemInput = await waitForElement(GHOST_SYSTEM_SELECTOR, {
+                        timeoutMs: ELEMENT_TIMEOUT_MS,
+                        clickable: false,
+                    });
+                    if (!getActiveRun(runId)) return;
+                    setFormControlValue(systemInput, String(selection.system));
+                    continue;
+                }
+
+                if (run.phase === 'ghost-read-system-return') {
+                    const candidate = clampInteger(
+                        Number(run.ghostSystemCandidate),
+                        Number(run.ghostSystemMinimum),
+                        Number(run.ghostSystemMaximum)
+                    );
+                    updateRun(runId, {
+                        message:
+                            `Ghost — action 5/5 : lecture du retour obtenu au système ` +
+                            `${candidate}…`,
+                    });
+                    refreshUi();
+                    const returnTime = await readGhostReturnTimeAfterSystemChange(
+                        run.ghostSystemPreviousReturnTime,
+                        ELEMENT_TIMEOUT_MS
+                    );
+                    const returnMs = parseGhostReturnTimeMs(returnTime);
+                    const targetMs = parseGhostTargetDateTimeMs(run.ghostTargetDateTime);
+                    if (!Number.isFinite(returnMs) || !Number.isFinite(targetMs)) {
+                        throw new Error(`Impossible d’interpréter l’heure de retour « ${returnTime} ».`);
+                    }
+
+                    const samples = addGhostSystemSample(run.ghostSystemSearchSamples, {
+                        system: candidate,
+                        returnMs,
+                        returnTime,
+                    });
+                    const iteration = Math.max(
+                        0,
+                        Math.floor(Number(run.ghostSystemSearchIteration) || 0)
+                    ) + 1;
+                    if (isGhostReturnWithinTolerance(returnMs, targetMs)) {
+                        await completeGhostSystemSearch(
+                            runId,
+                            { system: candidate, returnMs, returnTime },
+                            iteration
+                        );
+                        return;
+                    }
+
+                    updateRun(runId, {
+                        phase: 'ghost-search-system',
+                        ghostReturnTime: returnTime,
+                        ghostSystemSearchSamples: samples,
+                        ghostSystemSearchIteration: iteration,
+                        ghostSystemCandidate: null,
+                        ghostSystemPreviousReturnTime: '',
+                        ghostPendingDelayMs: getRandomDelayMs(
+                            GHOST_DELAY_MIN_MS,
+                            GHOST_DELAY_MAX_MS
+                        ),
+                        ghostPendingDelayLabel:
+                            `la lecture du retour ${returnTime} au système ${candidate}`,
+                        message:
+                            `Ghost — système ${candidate} donne ${returnTime}, hors de la ` +
+                            'plage cible. La triangulation continue…',
+                    });
+                    refreshUi();
+                    continue;
                 }
 
                 throw new Error(`Phase Ghost inconnue : ${run.phase}`);
@@ -3066,6 +3214,328 @@
         const [datePart, timePart] = normalized.split('T');
         const [year, month, day] = datePart.split('-');
         return `${day}/${month}/${year} à ${timePart}`;
+    }
+
+    function parseGhostTargetDateTimeMs(value) {
+        const normalized = normalizeGhostDateTime(value);
+        if (!normalized) return Number.NaN;
+        const [datePart, timePart] = normalized.split('T');
+        const [year, month, day] = datePart.split('-').map(Number);
+        const [hour, minute] = timePart.split(':').map(Number);
+        return new Date(year, month - 1, day, hour, minute, 0, 0).getTime();
+    }
+
+    function parseGhostReturnTimeMs(value) {
+        const match = /^(\d{1,2})[./-](\d{1,2})[./-](\d{2}|\d{4})\s+(\d{1,2}):(\d{2})(?::(\d{2}))?$/.exec(
+            String(value || '').replace(/\s+/g, ' ').trim()
+        );
+        if (!match) return Number.NaN;
+
+        const day = Number(match[1]);
+        const month = Number(match[2]);
+        const rawYear = Number(match[3]);
+        const year = match[3].length === 2 ? 2000 + rawYear : rawYear;
+        const hour = Number(match[4]);
+        const minute = Number(match[5]);
+        const second = Number(match[6] || 0);
+        const parsed = new Date(year, month - 1, day, hour, minute, second, 0);
+        if (
+            parsed.getFullYear() !== year ||
+            parsed.getMonth() !== month - 1 ||
+            parsed.getDate() !== day ||
+            parsed.getHours() !== hour ||
+            parsed.getMinutes() !== minute ||
+            parsed.getSeconds() !== second
+        ) {
+            return Number.NaN;
+        }
+        return parsed.getTime();
+    }
+
+    function isGhostReturnWithinTolerance(returnMs, targetMs) {
+        return Number.isFinite(returnMs) &&
+            Number.isFinite(targetMs) &&
+            Math.abs(returnMs - targetMs) <= GHOST_RETURN_TOLERANCE_MS;
+    }
+
+    function readGhostSystemBounds(input) {
+        const rawMinimum = Number.parseInt(input.getAttribute('min') || '', 10);
+        const rawMaximum = Number.parseInt(input.getAttribute('max') || '', 10);
+        const minimum = Number.isSafeInteger(rawMinimum)
+            ? rawMinimum
+            : GHOST_SYSTEM_DEFAULT_MIN;
+        const maximum = Number.isSafeInteger(rawMaximum) && rawMaximum >= minimum
+            ? rawMaximum
+            : Math.max(minimum, GHOST_SYSTEM_DEFAULT_MAX);
+        return { minimum, maximum };
+    }
+
+    function clampInteger(value, minimum, maximum) {
+        const safeMinimum = Number.isFinite(minimum)
+            ? Math.floor(minimum)
+            : GHOST_SYSTEM_DEFAULT_MIN;
+        const safeMaximum = Number.isFinite(maximum) && maximum >= safeMinimum
+            ? Math.floor(maximum)
+            : Math.max(safeMinimum, GHOST_SYSTEM_DEFAULT_MAX);
+        const parsed = Number.isFinite(value) ? Math.round(value) : safeMinimum;
+        return Math.max(safeMinimum, Math.min(safeMaximum, parsed));
+    }
+
+    function normalizeGhostSystemSamples(rawSamples) {
+        const samplesBySystem = new Map();
+        if (Array.isArray(rawSamples)) {
+            rawSamples.forEach((sample) => {
+                const system = Math.round(Number(sample?.system));
+                const returnMs = Number(sample?.returnMs);
+                if (!Number.isSafeInteger(system) || !Number.isFinite(returnMs)) return;
+                samplesBySystem.set(system, {
+                    system,
+                    returnMs,
+                    returnTime: String(sample?.returnTime || ''),
+                });
+            });
+        }
+        return [...samplesBySystem.values()].sort((left, right) => left.system - right.system);
+    }
+
+    function addGhostSystemSample(rawSamples, sample) {
+        return normalizeGhostSystemSamples([
+            ...(Array.isArray(rawSamples) ? rawSamples : []),
+            sample,
+        ]);
+    }
+
+    function chooseNextGhostSystem(run, samples, targetMs) {
+        const rawMinimum = Math.round(Number(run.ghostSystemMinimum));
+        const rawMaximum = Math.round(Number(run.ghostSystemMaximum));
+        const minimum = Number.isSafeInteger(rawMinimum)
+            ? rawMinimum
+            : GHOST_SYSTEM_DEFAULT_MIN;
+        const maximum = Number.isSafeInteger(rawMaximum) && rawMaximum >= minimum
+            ? rawMaximum
+            : Math.max(minimum, GHOST_SYSTEM_DEFAULT_MAX);
+        const initial = clampInteger(
+            Number(run.ghostSystemInitial),
+            minimum,
+            maximum
+        );
+        const sampledSystems = new Set(samples.map((sample) => sample.system));
+        const makeSelection = (system, patch = {}) => ({
+            system: clampInteger(system, minimum, maximum),
+            patch,
+        });
+
+        if (!sampledSystems.has(initial)) return makeSelection(initial);
+
+        const bracketCandidates = [];
+        for (let index = 1; index < samples.length; index += 1) {
+            const left = samples[index - 1];
+            const right = samples[index];
+            const leftDelta = left.returnMs - targetMs;
+            const rightDelta = right.returnMs - targetMs;
+            if (leftDelta * rightDelta <= 0 && right.system - left.system > 1) {
+                bracketCandidates.push({ left, right });
+            }
+        }
+        bracketCandidates.sort(
+            (first, second) =>
+                (first.right.system - first.left.system) -
+                (second.right.system - second.left.system)
+        );
+        for (const bracket of bracketCandidates) {
+            const midpoint = Math.floor((bracket.left.system + bracket.right.system) / 2);
+            if (!sampledSystems.has(midpoint)) return makeSelection(midpoint);
+        }
+
+        const immediateProbes = [initial - 1, initial + 1]
+            .filter((system) => system >= minimum && system <= maximum);
+        const missingProbe = immediateProbes.find((system) => !sampledSystems.has(system));
+        if (missingProbe !== undefined) return makeSelection(missingProbe);
+
+        const initialSample = samples.find((sample) => sample.system === initial);
+        let direction = Number(run.ghostSystemSearchDirection);
+        if (direction !== -1 && direction !== 1) {
+            const neighbors = samples.filter(
+                (sample) => Math.abs(sample.system - initial) === 1
+            );
+            neighbors.sort((left, right) => {
+                const scoreDifference =
+                    Math.abs(left.returnMs - targetMs) - Math.abs(right.returnMs - targetMs);
+                if (scoreDifference !== 0) return scoreDifference;
+                const targetIsLater = targetMs >= (initialSample?.returnMs || targetMs);
+                return targetIsLater
+                    ? right.returnMs - left.returnMs
+                    : left.returnMs - right.returnMs;
+            });
+            direction = neighbors[0]?.system < initial ? -1 : 1;
+        }
+
+        const localMinimumCandidate = findGhostLocalMinimumRefinement(
+            samples,
+            sampledSystems,
+            targetMs
+        );
+        if (localMinimumCandidate !== null) {
+            return makeSelection(localMinimumCandidate, {
+                ghostSystemSearchDirection: direction,
+            });
+        }
+
+        const step = Math.max(2, Math.floor(Number(run.ghostSystemSearchStep) || 2));
+        const preferredExpansion = findGhostExpansionCandidate(
+            initial,
+            direction,
+            step,
+            minimum,
+            maximum,
+            sampledSystems
+        );
+        if (preferredExpansion) {
+            return makeSelection(preferredExpansion.system, {
+                ghostSystemSearchDirection: direction,
+                ghostSystemSearchStep: preferredExpansion.nextStep,
+            });
+        }
+
+        if (!run.ghostSystemSearchTriedOpposite) {
+            const oppositeDirection = -direction;
+            const oppositeExpansion = findGhostExpansionCandidate(
+                initial,
+                oppositeDirection,
+                2,
+                minimum,
+                maximum,
+                sampledSystems
+            );
+            if (oppositeExpansion) {
+                return makeSelection(oppositeExpansion.system, {
+                    ghostSystemSearchDirection: oppositeDirection,
+                    ghostSystemSearchStep: oppositeExpansion.nextStep,
+                    ghostSystemSearchTriedOpposite: true,
+                });
+            }
+        }
+
+        const refinementCandidate = findGhostNearestRefinement(
+            samples,
+            sampledSystems,
+            targetMs
+        );
+        return refinementCandidate === null ? null : makeSelection(refinementCandidate);
+    }
+
+    function findGhostExpansionCandidate(
+        initial,
+        direction,
+        startingStep,
+        minimum,
+        maximum,
+        sampledSystems
+    ) {
+        let step = Math.max(1, startingStep);
+        for (let attempt = 0; attempt < 16; attempt += 1) {
+            const system = clampInteger(initial + direction * step, minimum, maximum);
+            if (!sampledSystems.has(system)) {
+                return {
+                    system,
+                    nextStep: Math.min(maximum - minimum + 1, step * 2),
+                };
+            }
+            if (system === minimum || system === maximum) return null;
+            step *= 2;
+        }
+        return null;
+    }
+
+    function findGhostLocalMinimumRefinement(samples, sampledSystems, targetMs) {
+        const smallestReturn = samples.reduce(
+            (minimum, sample) => Math.min(minimum, sample.returnMs),
+            Number.POSITIVE_INFINITY
+        );
+        if (targetMs >= smallestReturn) return null;
+
+        const candidates = [];
+        for (let index = 1; index < samples.length - 1; index += 1) {
+            const left = samples[index - 1];
+            const center = samples[index];
+            const right = samples[index + 1];
+            if (center.returnMs > left.returnMs || center.returnMs > right.returnMs) continue;
+            if (center.system - left.system > 1) {
+                candidates.push({
+                    gap: center.system - left.system,
+                    system: Math.floor((left.system + center.system) / 2),
+                });
+            }
+            if (right.system - center.system > 1) {
+                candidates.push({
+                    gap: right.system - center.system,
+                    system: Math.floor((center.system + right.system) / 2),
+                });
+            }
+        }
+        candidates.sort((left, right) => right.gap - left.gap);
+        return candidates.find((candidate) => !sampledSystems.has(candidate.system))?.system ?? null;
+    }
+
+    function findGhostNearestRefinement(samples, sampledSystems, targetMs) {
+        if (samples.length < 2) return null;
+        const ranked = [];
+        for (let index = 1; index < samples.length; index += 1) {
+            const left = samples[index - 1];
+            const right = samples[index];
+            const gap = right.system - left.system;
+            if (gap <= 1) continue;
+            const score = Math.min(
+                Math.abs(left.returnMs - targetMs),
+                Math.abs(right.returnMs - targetMs)
+            );
+            ranked.push({
+                score,
+                gap,
+                system: Math.floor((left.system + right.system) / 2),
+            });
+        }
+        ranked.sort((left, right) => left.score - right.score || right.gap - left.gap);
+        return ranked.find((candidate) => !sampledSystems.has(candidate.system))?.system ?? null;
+    }
+
+    function createGhostSystemSearchError(samples, targetMs) {
+        const nearest = [...samples].sort(
+            (left, right) =>
+                Math.abs(left.returnMs - targetMs) - Math.abs(right.returnMs - targetMs)
+        )[0];
+        if (!nearest) {
+            return new Error('La triangulation Ghost n’a produit aucune heure de retour exploitable.');
+        }
+        const differenceMinutes = Math.abs(nearest.returnMs - targetMs) / 60000;
+        return new Error(
+            `Aucun système testé n’atteint la plage de ±15 minutes. Meilleur résultat : ` +
+            `système ${nearest.system}, retour ${nearest.returnTime}, écart ` +
+            `${differenceMinutes.toFixed(1)} minute(s).`
+        );
+    }
+
+    async function completeGhostSystemSearch(runId, sample, iteration) {
+        const run = getActiveRun(runId);
+        if (!run) return;
+        const differenceMinutes = Math.abs(
+            sample.returnMs - parseGhostTargetDateTimeMs(run.ghostTargetDateTime)
+        ) / 60000;
+        GM_setValue(RUN_KEY, {
+            ...run,
+            status: 'completed',
+            phase: 'ghost-completed',
+            ghostReturnTime: sample.returnTime,
+            ghostMatchedSystem: sample.system,
+            ghostSystemSearchIteration: iteration,
+            updatedAt: Date.now(),
+            message:
+                `Ghost terminé : système ${sample.system} retenu, retour ${sample.returnTime}, ` +
+                `écart ${differenceMinutes.toFixed(1)} minute(s) avec la cible ` +
+                `${formatGhostDateTime(run.ghostTargetDateTime)}.`,
+        });
+        await clearThisTabRunId(runId);
+        refreshUi();
     }
 
     async function startExpeditionV2Automation(options = {}) {
@@ -4633,20 +5103,26 @@
                 `${(Number(run.ghostPendingDelayMs) / 1000).toFixed(2)} s`;
         } else {
             const labels = {
-                'ghost-open-link': 'Action 1/4 — charger l’URL',
-                'ghost-send-all': 'Action 2/4 — sélectionner tous les vaisseaux',
-                'ghost-after-send-all': 'Action 3/4 — préparer les valeurs de flotte',
+                'ghost-open-link': 'Action 1/5 — charger l’URL',
+                'ghost-send-all': 'Action 2/5 — sélectionner tous les vaisseaux',
+                'ghost-after-send-all': 'Action 3/5 — préparer les valeurs de flotte',
                 'ghost-set-fleet':
-                    `Action 3/4 — valeurs de flotte ` +
+                    `Action 3/5 — valeurs de flotte ` +
                     `${Math.min(GHOST_FLEET_FIELDS.length, Math.max(0, Number(run.ghostFleetFieldIndex) || 0))}/` +
                     `${GHOST_FLEET_FIELDS.length}`,
-                'ghost-continue': 'Action 3/4 — cliquer sur Continuer',
-                'ghost-after-continue': 'Action 4/4 — attendre la page de destination',
-                'ghost-wait-destination-page': 'Action 4/4 — attendre la page de destination',
-                'ghost-set-position': 'Action 4/4 — renseigner la position 16',
-                'ghost-select-mission': 'Action 4/4 — sélectionner Espionner',
-                'ghost-select-duration': 'Action 4/4 — sélectionner la durée 10',
-                'ghost-read-return-time': 'Action 4/4 — lire l’heure de retour',
+                'ghost-continue': 'Action 3/5 — cliquer sur Continuer',
+                'ghost-after-continue': 'Action 4/5 — attendre la page de destination',
+                'ghost-wait-destination-page': 'Action 4/5 — attendre la page de destination',
+                'ghost-set-position': 'Action 4/5 — renseigner la position 16',
+                'ghost-select-mission': 'Action 4/5 — sélectionner Espionner',
+                'ghost-select-duration': 'Action 4/5 — sélectionner la durée 10',
+                'ghost-read-return-time': 'Action 4/5 — lire l’heure de retour initiale',
+                'ghost-search-system':
+                    `Action 5/5 — trianguler le système ` +
+                    `(${Math.max(0, Number(run.ghostSystemSearchIteration) || 0)} essai(s))`,
+                'ghost-read-system-return':
+                    `Action 5/5 — lire le retour du système ` +
+                    `${run.ghostSystemCandidate ?? 'en cours'}`,
                 'ghost-completed': 'Ghost terminé',
             };
             actionLabel = labels[run.phase] || `Phase inconnue : ${run.phase}`;
@@ -4656,9 +5132,12 @@
             run.ghostTargetDateTime || getStoredGhostDateTimeValue()
         );
         const returnTime = String(run.ghostReturnTime || '').trim();
+        const matchedSystem = Number.isSafeInteger(Number(run.ghostMatchedSystem))
+            ? ` — système ${Number(run.ghostMatchedSystem)}`
+            : '';
         const message = typeof run.message === 'string' ? run.message : '';
         return `Ghost — cible ${targetDateTime}\n${actionLabel}` +
-            (returnTime ? `\nRetour lu : ${returnTime}` : '') +
+            (returnTime ? `\nRetour lu : ${returnTime}${matchedSystem}` : '') +
             (message ? `\n${message}` : '');
     }
 
@@ -5052,6 +5531,27 @@
         throw new Error(
             `Impossible de lire l’heure de retour dans ${GHOST_RETURN_TIME_SELECTOR} ` +
             `après ${timeoutMs} ms.`
+        );
+    }
+
+    async function readGhostReturnTimeAfterSystemChange(previousValue, timeoutMs) {
+        const normalizedPrevious = String(previousValue || '').replace(/\s+/g, ' ').trim();
+        const deadline = Date.now() + timeoutMs;
+        let latestValue = '';
+
+        while (Date.now() < deadline) {
+            const element = document.querySelector(GHOST_RETURN_TIME_SELECTOR);
+            latestValue = element
+                ? String(element.innerText || element.textContent || '').replace(/\s+/g, ' ').trim()
+                : '';
+            if (latestValue && latestValue !== normalizedPrevious) return latestValue;
+            await delay(75);
+        }
+
+        if (latestValue) return latestValue;
+        throw new Error(
+            `Impossible de relire l’heure de retour dans ${GHOST_RETURN_TIME_SELECTOR} ` +
+            `après la modification du système.`
         );
     }
 
