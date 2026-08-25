@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Projet secret — boucle multi-liens
 // @namespace    local.projet-secret
-// @version      6.9.2
+// @version      6.9.3
 // @updateURL    https://raw.githubusercontent.com/raphaelrobert1104-sys/mysecretproject/main/outputs/projet-secret.user.js
 // @downloadURL  https://raw.githubusercontent.com/raphaelrobert1104-sys/mysecretproject/main/outputs/projet-secret.user.js
 // @description  Automatise Ressources, Expéditions V1/V2, Forme de vie, Import, Constructions et Ghost avec configurations privées.
@@ -21,7 +21,7 @@
 (function () {
     'use strict';
 
-    const SCRIPT_VERSION = '6.9.2';
+    const SCRIPT_VERSION = '6.9.3';
     const CONFIG_KEYS = {
         1: 'secretMultiLinkConfig',
         2: 'secretMultiLinkConfig2',
@@ -62,6 +62,8 @@
     const GHOST_DELAY_MAX_MS = POST_ACTION_DELAY_MAX_MS;
     const EXPEDITION_V2_DELAY_MIN_MS = POST_ACTION_DELAY_MIN_MS;
     const EXPEDITION_V2_DELAY_MAX_MS = POST_ACTION_DELAY_MAX_MS;
+    const EXPEDITION_V2_LAUNCH_DELAY_MIN_MS = 800;
+    const EXPEDITION_V2_LAUNCH_DELAY_MAX_MS = 1400;
     const EXPEDITION_SLOTS_SELECTOR = '#slots > div:nth-child(2) > span';
     const LIFEFORM_DISCOVER_SELECTOR = '#discoverSystemBtn';
     const LIFEFORM_SLOT_USED_SELECTOR = '#slots #slotUsed';
@@ -3094,8 +3096,10 @@
             expeditionV2DirectionTarget: directionTarget,
             expeditionV2DirectionClicks: 0,
             expeditionV2LaunchCount: 0,
+            expeditionV2LaunchDelayReady: false,
             expeditionV2PendingDelayMs: 0,
             expeditionV2PendingDelayLabel: '',
+            expeditionV2PendingDelayPosition: '',
             startedAt: now,
             updatedAt: now,
             message:
@@ -3309,9 +3313,28 @@
                         );
                     }
 
+                    if (!run.expeditionV2LaunchDelayReady) {
+                        const pendingLaunchNumber = launchCount + 1;
+                        updateRun(runId, {
+                            expeditionV2LaunchDelayReady: true,
+                            expeditionV2PendingDelayMs: getExactRandomDelayMs(
+                                EXPEDITION_V2_LAUNCH_DELAY_MIN_MS,
+                                EXPEDITION_V2_LAUNCH_DELAY_MAX_MS
+                            ),
+                            expeditionV2PendingDelayLabel:
+                                `le clic d’envoi ${pendingLaunchNumber}`,
+                            expeditionV2PendingDelayPosition: 'before',
+                            message:
+                                `Expédition V2 — étape 4/4 : préparation du clic ` +
+                                `${pendingLaunchNumber}, avec une nouvelle attente aléatoire…`,
+                        });
+                        refreshUi();
+                        continue;
+                    }
+
                     updateRun(runId, {
                         message:
-                            `Expédition V2 — étape 4/4 : lancement de l’expédition ` +
+                            `Expédition V2 — étape 4/4 : clic d’envoi de l’expédition ` +
                             `${launchCount + 1}…`,
                     });
                     refreshUi();
@@ -3324,12 +3347,10 @@
                     const nextLaunchCount = launchCount + 1;
                     updateRun(runId, {
                         expeditionV2LaunchCount: nextLaunchCount,
-                        expeditionV2PendingDelayMs: getRandomDelayMs(
-                            EXPEDITION_V2_DELAY_MIN_MS,
-                            EXPEDITION_V2_DELAY_MAX_MS
-                        ),
-                        expeditionV2PendingDelayLabel:
-                            `le lancement de l’expédition ${nextLaunchCount}`,
+                        expeditionV2LaunchDelayReady: false,
+                        expeditionV2PendingDelayMs: 0,
+                        expeditionV2PendingDelayLabel: '',
+                        expeditionV2PendingDelayPosition: '',
                         message:
                             `Expédition V2 — ${nextLaunchCount} expédition(s) lancée(s), ` +
                             'recherche du message d’arrêt…',
@@ -3353,9 +3374,13 @@
         if (delayMs === 0) return true;
 
         const label = run.expeditionV2PendingDelayLabel || 'l’action précédente';
+        const delayPosition = run.expeditionV2PendingDelayPosition === 'before'
+            ? 'avant'
+            : 'après';
         updateRun(runId, {
             message:
-                `Expédition V2 — attente aléatoire ${(delayMs / 1000).toFixed(2)} s après ${label}…`,
+                `Expédition V2 — attente aléatoire ${(delayMs / 1000).toFixed(2)} s ` +
+                `${delayPosition} ${label}…`,
         });
         refreshUi();
         await delay(delayMs);
@@ -3364,6 +3389,7 @@
         updateRun(runId, {
             expeditionV2PendingDelayMs: 0,
             expeditionV2PendingDelayLabel: '',
+            expeditionV2PendingDelayPosition: '',
         });
         refreshUi();
         return true;
@@ -4541,8 +4567,12 @@
         if (run.status !== 'running') {
             actionLabel = `État : ${run.status}`;
         } else if (Number(run.expeditionV2PendingDelayMs) > 0) {
+            const delayPosition = run.expeditionV2PendingDelayPosition === 'before'
+                ? 'avant'
+                : 'après';
             actionLabel =
-                `Pause après ${run.expeditionV2PendingDelayLabel || 'l’action précédente'} — ` +
+                `Pause ${delayPosition} ` +
+                `${run.expeditionV2PendingDelayLabel || 'l’action précédente'} — ` +
                 `${(Number(run.expeditionV2PendingDelayMs) / 1000).toFixed(2)} s`;
         } else {
             const labels = {
@@ -5395,6 +5425,12 @@
     function getRandomDelayMs(minimumMs, maximumMs) {
         const minimum = scaleActionDelayMs(minimumMs);
         const maximum = Math.max(minimum, scaleActionDelayMs(maximumMs));
+        return Math.round(minimum + getSecureRandomFraction() * (maximum - minimum));
+    }
+
+    function getExactRandomDelayMs(minimumMs, maximumMs) {
+        const minimum = Math.max(0, Math.round(Number(minimumMs) || 0));
+        const maximum = Math.max(minimum, Math.round(Number(maximumMs) || 0));
         return Math.round(minimum + getSecureRandomFraction() * (maximum - minimum));
     }
 
