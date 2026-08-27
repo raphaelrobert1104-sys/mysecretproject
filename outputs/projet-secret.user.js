@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Projet secret — boucle multi-liens
 // @namespace    local.projet-secret
-// @version      6.14.1
+// @version      6.14.2
 // @updateURL    https://raw.githubusercontent.com/raphaelrobert1104-sys/mysecretproject/main/outputs/projet-secret.user.js
 // @downloadURL  https://raw.githubusercontent.com/raphaelrobert1104-sys/mysecretproject/main/outputs/projet-secret.user.js
 // @description  Automatise Ressources, Expédition V2, Forme de vie, Import, Constructions, Ghost et Rappatriement avec configurations privées.
@@ -21,7 +21,7 @@
 (function () {
     'use strict';
 
-    const SCRIPT_VERSION = '6.14.1';
+    const SCRIPT_VERSION = '6.14.2';
     const CONFIG_KEYS = {
         1: 'secretMultiLinkConfig',
         2: 'secretMultiLinkConfig2',
@@ -108,7 +108,7 @@
     const GHOST_SYSTEM_SELECTOR = '#system';
     const GHOST_MISSION_SELECTOR = '#missionButton6';
     const GHOST_DURATION_SELECTOR =
-        '#speedPercentage > div.steps > div.step.step2.selected[data-step="2"]';
+        '#speedPercentage > div.steps > div.step.step2[data-step="2"]';
     const GHOST_RETURN_TIME_SELECTOR = '#returnTime';
     const GHOST_LOAD_ALL_RESOURCES_SELECTOR =
         '#allresources > img[data-ipi-highlight-step="ipiFleetCargoLoadAll"], ' +
