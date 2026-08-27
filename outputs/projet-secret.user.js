@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Projet secret — boucle multi-liens
 // @namespace    local.projet-secret
-// @version      6.14.0
+// @version      6.14.1
 // @updateURL    https://raw.githubusercontent.com/raphaelrobert1104-sys/mysecretproject/main/outputs/projet-secret.user.js
 // @downloadURL  https://raw.githubusercontent.com/raphaelrobert1104-sys/mysecretproject/main/outputs/projet-secret.user.js
 // @description  Automatise Ressources, Expédition V2, Forme de vie, Import, Constructions, Ghost et Rappatriement avec configurations privées.
@@ -21,7 +21,7 @@
 (function () {
     'use strict';
 
-    const SCRIPT_VERSION = '6.14.0';
+    const SCRIPT_VERSION = '6.14.1';
     const CONFIG_KEYS = {
         1: 'secretMultiLinkConfig',
         2: 'secretMultiLinkConfig2',
@@ -107,7 +107,8 @@
     const GHOST_POSITION_SELECTOR = '#position';
     const GHOST_SYSTEM_SELECTOR = '#system';
     const GHOST_MISSION_SELECTOR = '#missionButton6';
-    const GHOST_DURATION_SELECTOR = 'div.step.step2[data-step="2"]';
+    const GHOST_DURATION_SELECTOR =
+        '#speedPercentage > div.steps > div.step.step2.selected[data-step="2"]';
     const GHOST_RETURN_TIME_SELECTOR = '#returnTime';
     const GHOST_LOAD_ALL_RESOURCES_SELECTOR =
         '#allresources > img[data-ipi-highlight-step="ipiFleetCargoLoadAll"], ' +
@@ -3306,8 +3307,7 @@
                     const durationButton = await waitForGhostDuration(ELEMENT_TIMEOUT_MS);
                     if (!getActiveRun(runId)) return;
 
-                    durationButton.scrollIntoView({ block: 'nearest', inline: 'nearest' });
-                    durationButton.click();
+                    clickGhostDuration20(durationButton);
                     await waitForGhostDurationSelection(ELEMENT_TIMEOUT_MS);
                     if (!getActiveRun(runId)) return;
 
@@ -3318,7 +3318,7 @@
                             GHOST_DELAY_MAX_MS
                         ),
                         ghostPendingDelayLabel: 'la sélection de la durée 20',
-                        message: 'Ghost — durée 20 sélectionnée.',
+                        message: 'Ghost — clic confirmé sur la durée 20 sélectionnée.',
                     });
                     refreshUi();
                     continue;
@@ -6219,6 +6219,72 @@
             `${GHOST_DURATION_SELECTOR} avec le texte 20`,
             timeoutMs
         );
+    }
+
+    function clickGhostDuration20(durationButton) {
+        let clickObserved = false;
+        durationButton.addEventListener('click', () => {
+            clickObserved = true;
+        }, { capture: true, once: true });
+
+        durationButton.scrollIntoView({ block: 'center', inline: 'nearest' });
+        try {
+            durationButton.focus({ preventScroll: true });
+        } catch {
+            durationButton.focus();
+        }
+
+        const eventWindow = durationButton.ownerDocument?.defaultView || window;
+        const rect = durationButton.getBoundingClientRect();
+        const clientX = rect.left + rect.width / 2;
+        const clientY = rect.top + rect.height / 2;
+        const mouseOptions = {
+            bubbles: true,
+            cancelable: true,
+            composed: true,
+            view: eventWindow,
+            clientX,
+            clientY,
+            button: 0,
+        };
+
+        if (typeof eventWindow.PointerEvent === 'function') {
+            durationButton.dispatchEvent(new eventWindow.PointerEvent('pointerdown', {
+                ...mouseOptions,
+                buttons: 1,
+                pointerId: 1,
+                pointerType: 'mouse',
+                isPrimary: true,
+            }));
+        }
+        durationButton.dispatchEvent(new eventWindow.MouseEvent('mousedown', {
+            ...mouseOptions,
+            buttons: 1,
+        }));
+        if (typeof eventWindow.PointerEvent === 'function') {
+            durationButton.dispatchEvent(new eventWindow.PointerEvent('pointerup', {
+                ...mouseOptions,
+                buttons: 0,
+                pointerId: 1,
+                pointerType: 'mouse',
+                isPrimary: true,
+            }));
+        }
+        durationButton.dispatchEvent(new eventWindow.MouseEvent('mouseup', {
+            ...mouseOptions,
+            buttons: 0,
+        }));
+
+        const nativeClick = eventWindow.HTMLElement?.prototype?.click;
+        if (typeof nativeClick === 'function') {
+            nativeClick.call(durationButton);
+        } else {
+            durationButton.click();
+        }
+
+        if (!clickObserved) {
+            throw new Error('Le clic natif sur la durée 20 n’a pas été émis par le navigateur.');
+        }
     }
 
     async function waitForGhostDurationSelection(timeoutMs) {
