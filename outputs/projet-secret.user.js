@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Projet secret — boucle multi-liens
 // @namespace    local.projet-secret
-// @version      6.13.0
+// @version      6.13.1
 // @updateURL    https://raw.githubusercontent.com/raphaelrobert1104-sys/mysecretproject/main/outputs/projet-secret.user.js
 // @downloadURL  https://raw.githubusercontent.com/raphaelrobert1104-sys/mysecretproject/main/outputs/projet-secret.user.js
 // @description  Automatise Ressources, Expédition V2, Forme de vie, Import, Constructions, Ghost et Rappatriement avec configurations privées.
@@ -21,7 +21,7 @@
 (function () {
     'use strict';
 
-    const SCRIPT_VERSION = '6.13.0';
+    const SCRIPT_VERSION = '6.13.1';
     const CONFIG_KEYS = {
         1: 'secretMultiLinkConfig',
         2: 'secretMultiLinkConfig2',
@@ -62,6 +62,8 @@
     const CONSTRUCTION_DELAY_MAX_MS = POST_ACTION_DELAY_MAX_MS;
     const GHOST_DELAY_MIN_MS = POST_ACTION_DELAY_MIN_MS;
     const GHOST_DELAY_MAX_MS = POST_ACTION_DELAY_MAX_MS;
+    const GHOST_FINAL_DELAY_MIN_MS = 800;
+    const GHOST_FINAL_DELAY_MAX_MS = 1200;
     const EXPEDITION_V2_DELAY_MIN_MS = POST_ACTION_DELAY_MIN_MS;
     const EXPEDITION_V2_DELAY_MAX_MS = POST_ACTION_DELAY_MAX_MS;
     const REPATRIATION_DELAY_MIN_MS = POST_ACTION_DELAY_MIN_MS;
@@ -105,7 +107,8 @@
     const GHOST_DURATION_SELECTOR = 'div.step.step2[data-step="2"]';
     const GHOST_RETURN_TIME_SELECTOR = '#returnTime';
     const GHOST_LOAD_ALL_RESOURCES_SELECTOR =
-        '#allresources > img[data-ipi-highlight-step="ipiFleetCargoLoadAll"]';
+        '#allresources > img[data-ipi-highlight-step="ipiFleetCargoLoadAll"], ' +
+        'img[data-ipi-highlight-step="ipiFleetCargoLoadAll"]';
     const GHOST_SEND_FLEET_SELECTOR = '#sendFleet';
     const GHOST_RETURN_TOLERANCE_MS = 15 * 60 * 1000;
     const GHOST_SYSTEM_APPROX_STEP_MS = (17 * 60 + 15) * 1000;
@@ -3279,6 +3282,11 @@
                     const durationButton = await waitForGhostDuration(ELEMENT_TIMEOUT_MS);
                     if (!getActiveRun(runId)) return;
 
+                    durationButton.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+                    durationButton.click();
+                    await waitForGhostDurationSelection(ELEMENT_TIMEOUT_MS);
+                    if (!getActiveRun(runId)) return;
+
                     updateRun(runId, {
                         phase: 'ghost-read-return-time',
                         ghostPendingDelayMs: getRandomDelayMs(
@@ -3289,7 +3297,6 @@
                         message: 'Ghost — durée 20 sélectionnée.',
                     });
                     refreshUi();
-                    durationButton.click();
                     continue;
                 }
 
@@ -3328,7 +3335,7 @@
 
                     if (isGhostReturnWithinTolerance(returnMs, targetMs)) {
                         await prepareGhostFinalSend(runId, initialSample, 0);
-                        return;
+                        continue;
                     }
 
                     updateRun(runId, {
@@ -3447,7 +3454,7 @@
                             { system: candidate, returnMs, returnTime },
                             iteration
                         );
-                        return;
+                        continue;
                     }
 
                     updateRun(runId, {
@@ -3486,18 +3493,20 @@
                     );
                     if (!getActiveRun(runId)) return;
 
+                    loadAllButton.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+                    loadAllButton.click();
+
                     updateRun(runId, {
                         phase: 'ghost-send-fleet',
-                        ghostPendingDelayMs: getRandomDelayMs(
-                            GHOST_DELAY_MIN_MS,
-                            GHOST_DELAY_MAX_MS
+                        ghostPendingDelayMs: getExactRandomDelayMs(
+                            GHOST_FINAL_DELAY_MIN_MS,
+                            GHOST_FINAL_DELAY_MAX_MS
                         ),
                         ghostPendingDelayLabel: 'le chargement de toutes les ressources',
                         message:
                             'Ghost — action 6/6 (1/2) terminée : toutes les ressources ont été chargées.',
                     });
                     refreshUi();
-                    loadAllButton.click();
                     continue;
                 }
 
@@ -3513,6 +3522,7 @@
                     const activeRun = getActiveRun(runId);
                     if (!activeRun) return;
 
+                    sendFleetButton.scrollIntoView({ block: 'nearest', inline: 'nearest' });
                     sendFleetButton.click();
                     GM_setValue(RUN_KEY, {
                         ...activeRun,
@@ -3963,16 +3973,17 @@
             ghostReturnTime: sample.returnTime,
             ghostMatchedSystem: sample.system,
             ghostSystemSearchIteration: iteration,
-            ghostPendingDelayMs: getRandomDelayMs(
-                GHOST_DELAY_MIN_MS,
-                GHOST_DELAY_MAX_MS
+            ghostPendingDelayMs: getExactRandomDelayMs(
+                GHOST_FINAL_DELAY_MIN_MS,
+                GHOST_FINAL_DELAY_MAX_MS
             ),
             ghostPendingDelayLabel: 'la fin de la triangulation du système',
             message:
                 `Ghost — action 5/6 terminée : système ${sample.system} retenu, ` +
                 `retour ${sample.returnTime}, ` +
                 `écart ${differenceMinutes.toFixed(1)} minute(s) avec la cible ` +
-                `${formatGhostDateTime(run.ghostTargetDateTime)}. Préparation des ressources.`,
+                `${formatGhostDateTime(run.ghostTargetDateTime)}. ` +
+                'Courte pause avant le chargement des ressources.',
         });
         refreshUi();
     }
@@ -5658,8 +5669,8 @@
                 'ghost-read-system-return':
                     `Action 5/6 — lire le retour du système ` +
                     `${run.ghostSystemCandidate ?? 'en cours'}`,
-                'ghost-load-all-resources': 'Action 6/6 — charger toutes les ressources',
-                'ghost-send-fleet': 'Action 6/6 — envoyer la flotte',
+                'ghost-load-all-resources': 'Action 6/6 (1/2) — charger toutes les ressources',
+                'ghost-send-fleet': 'Action 6/6 (2/2) — envoyer la flotte',
                 'ghost-completed': 'Ghost terminé',
             };
             actionLabel = labels[run.phase] || `Phase inconnue : ${run.phase}`;
@@ -6051,6 +6062,23 @@
         throw new ElementNotFoundError(
             `${GHOST_DURATION_SELECTOR} avec le texte 20`,
             timeoutMs
+        );
+    }
+
+    async function waitForGhostDurationSelection(timeoutMs) {
+        const deadline = Date.now() + timeoutMs;
+        while (Date.now() < deadline) {
+            const selectedDuration = [...document.querySelectorAll(GHOST_DURATION_SELECTOR)]
+                .find((element) => {
+                    const text = String(element.textContent || '').replace(/\s+/g, ' ').trim();
+                    return text === '20' && element.classList.contains('selected');
+                });
+            if (selectedDuration) return selectedDuration;
+            await delay(75);
+        }
+
+        throw new Error(
+            'Le clic sur la durée 20 a été effectué, mais la page n’a pas confirmé sa sélection.'
         );
     }
 
