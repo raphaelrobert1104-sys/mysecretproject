@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Projet secret — boucle multi-liens
 // @namespace    local.projet-secret
-// @version      6.13.1
+// @version      6.14.0
 // @updateURL    https://raw.githubusercontent.com/raphaelrobert1104-sys/mysecretproject/main/outputs/projet-secret.user.js
 // @downloadURL  https://raw.githubusercontent.com/raphaelrobert1104-sys/mysecretproject/main/outputs/projet-secret.user.js
 // @description  Automatise Ressources, Expédition V2, Forme de vie, Import, Constructions, Ghost et Rappatriement avec configurations privées.
@@ -21,7 +21,7 @@
 (function () {
     'use strict';
 
-    const SCRIPT_VERSION = '6.13.1';
+    const SCRIPT_VERSION = '6.14.0';
     const CONFIG_KEYS = {
         1: 'secretMultiLinkConfig',
         2: 'secretMultiLinkConfig2',
@@ -37,6 +37,9 @@
     const DEBUG_DISMISSED_RUN_KEY = 'secretMultiLinkDebugDismissedRunId';
     const GHOST_TIME_KEY = 'secretMultiLinkGhostTime';
     const GHOST_DATETIME_KEY = 'secretMultiLinkGhostDateTime';
+    const GHOST_JAPAN_DATETIME_KEY = 'secretMultiLinkGhostJapanDateTime';
+    const GHOST_JAPAN_TIME_ZONE = 'Asia/Tokyo';
+    const GHOST_FRANCE_TIME_ZONE = 'Europe/Paris';
     const MAX_LINKS_BY_PROFILE = {
         1: 15,
         2: 10,
@@ -1065,6 +1068,7 @@
                     margin: 16px 0 12px;
                 }
                 .ghost-time-field label { margin-bottom: 6px; }
+                .ghost-time-field + .ghost-time-field { margin-top: 11px; }
                 .ghost-time-field input {
                     width: 100%;
                     min-height: 46px;
@@ -1081,6 +1085,13 @@
                 .ghost-time-field input:focus {
                     border-color: #a78bfa;
                     box-shadow: 0 0 0 3px rgba(167, 139, 250, .2);
+                }
+                .ghost-time-field input[readonly] {
+                    cursor: default;
+                    border-color: rgba(52, 211, 153, .38);
+                    background: rgba(6, 78, 59, .22);
+                    color: #d1fae5;
+                    box-shadow: none;
                 }
                 .ghost-time-preview {
                     margin: 0 0 14px;
@@ -1261,14 +1272,18 @@
                         </div>
                         <button type="button" class="close ghost-runner-close" aria-label="Fermer">×</button>
                     </div>
-                    <p class="help">Choisissez la date et l’heure en une seule fois, puis démarrez Ghost.</p>
+                    <p class="help">Choisissez l’horaire japonais. La cible française est calculée automatiquement selon l’heure d’été ou d’hiver.</p>
                     <div class="ghost-time-grid">
                         <div class="ghost-time-field">
-                            <label for="ghost-datetime">Date et heure cibles</label>
-                            <input id="ghost-datetime" class="ghost-datetime" type="datetime-local" step="60">
+                            <label for="ghost-japan-datetime">Heure souhaitée Japon</label>
+                            <input id="ghost-japan-datetime" class="ghost-japan-datetime" type="datetime-local" step="60">
+                        </div>
+                        <div class="ghost-time-field">
+                            <label for="ghost-datetime">Date et heure cibles (France)</label>
+                            <input id="ghost-datetime" class="ghost-datetime" type="datetime-local" step="60" readonly aria-readonly="true" tabindex="-1">
                         </div>
                     </div>
-                    <div class="ghost-time-preview">Cible sélectionnée : <span class="ghost-time-value">—</span></div>
+                    <div class="ghost-time-preview">Conversion automatique : <span class="ghost-time-value">—</span></div>
                     <div class="actions">
                         <button type="button" class="save ghost-runner-cancel">Annuler</button>
                         <button type="button" class="start ghost-runner-confirm">Valider et démarrer</button>
@@ -1343,6 +1358,7 @@
             ghostRunnerClose: shadow.querySelector('.ghost-runner-close'),
             ghostRunnerCancel: shadow.querySelector('.ghost-runner-cancel'),
             ghostRunnerConfirm: shadow.querySelector('.ghost-runner-confirm'),
+            ghostJapanDateTime: shadow.querySelector('.ghost-japan-datetime'),
             ghostDateTime: shadow.querySelector('.ghost-datetime'),
             ghostTimeValue: shadow.querySelector('.ghost-time-value'),
         };
@@ -1390,8 +1406,8 @@
         refs.ghostRunnerClose.addEventListener('click', closeGhostRunner);
         refs.ghostRunnerCancel.addEventListener('click', closeGhostRunner);
         refs.ghostRunnerConfirm.addEventListener('click', confirmGhostTime);
-        refs.ghostDateTime.addEventListener('input', updateGhostTimePreview);
-        refs.ghostDateTime.addEventListener('change', updateGhostTimePreview);
+        refs.ghostJapanDateTime.addEventListener('input', updateGhostTimePreview);
+        refs.ghostJapanDateTime.addEventListener('change', updateGhostTimePreview);
         refs.debugProgressClose.addEventListener('click', () => {
             const run = getRunState();
             if (run.runId) {
@@ -1512,7 +1528,7 @@
             closeDropdowns();
             closePanel();
             closeConstructionRunner();
-            refs.ghostDateTime.value = getStoredGhostDateTimeValue();
+            refs.ghostJapanDateTime.value = getStoredGhostJapanDateTimeValue();
             updateGhostTimePreview();
             refs.ghostRunner.classList.add('open');
         }
@@ -1522,19 +1538,27 @@
         }
 
         function updateGhostTimePreview() {
-            refs.ghostTimeValue.textContent = formatGhostDateTime(refs.ghostDateTime.value);
+            const japanDateTime = normalizeGhostDateTime(refs.ghostJapanDateTime.value);
+            const franceDateTime = convertGhostJapanToFranceDateTime(japanDateTime);
+            refs.ghostDateTime.value = franceDateTime;
+            refs.ghostTimeValue.textContent = franceDateTime
+                ? `${formatGhostDateTime(franceDateTime)} en France · ` +
+                  `${getGhostJapanFranceDifferenceHours(japanDateTime)} h de moins qu’au Japon`
+                : 'sélectionnez une date et une heure japonaises';
         }
 
         function confirmGhostTime() {
-            const dateTime = normalizeGhostDateTime(refs.ghostDateTime.value);
-            if (!dateTime) {
-                refs.ghostDateTime.focus();
+            const japanDateTime = normalizeGhostDateTime(refs.ghostJapanDateTime.value);
+            const franceDateTime = convertGhostJapanToFranceDateTime(japanDateTime);
+            if (!japanDateTime || !franceDateTime) {
+                refs.ghostJapanDateTime.focus();
                 return;
             }
-            GM_setValue(GHOST_DATETIME_KEY, dateTime);
-            GM_setValue(GHOST_TIME_KEY, dateTime.slice(11, 16));
+            GM_setValue(GHOST_JAPAN_DATETIME_KEY, japanDateTime);
+            GM_setValue(GHOST_DATETIME_KEY, franceDateTime);
+            GM_setValue(GHOST_TIME_KEY, franceDateTime.slice(11, 16));
             closeGhostRunner();
-            void startGhostAutomation(dateTime);
+            void startGhostAutomation(franceDateTime);
         }
 
         function openConstructionRunner() {
@@ -3079,7 +3103,7 @@
             updatedAt: now,
             message:
                 `Ghost — action 1/6 : ouverture de l’URL configurée ` +
-                `(cible ${formatGhostDateTime(ghostTargetDateTime)})…`,
+                `(cible française ${formatGhostDateTime(ghostTargetDateTime)})…`,
         };
 
         GM_setValue(RUN_KEY, run);
@@ -3567,6 +3591,25 @@
         return true;
     }
 
+    function getStoredGhostJapanDateTimeValue() {
+        const storedJapanDateTime = normalizeGhostDateTime(
+            String(GM_getValue(GHOST_JAPAN_DATETIME_KEY, ''))
+        );
+        if (storedJapanDateTime) return storedJapanDateTime;
+
+        const storedFranceDateTime = normalizeGhostDateTime(
+            String(GM_getValue(GHOST_DATETIME_KEY, ''))
+        );
+        const migratedJapanDateTime = convertGhostDateTimeBetweenZones(
+            storedFranceDateTime,
+            GHOST_FRANCE_TIME_ZONE,
+            GHOST_JAPAN_TIME_ZONE
+        );
+        if (migratedJapanDateTime) return migratedJapanDateTime;
+
+        return formatGhostTimestampInTimeZone(Date.now(), GHOST_JAPAN_TIME_ZONE);
+    }
+
     function getStoredGhostDateTimeValue() {
         const storedDateTime = normalizeGhostDateTime(
             String(GM_getValue(GHOST_DATETIME_KEY, ''))
@@ -3574,18 +3617,131 @@
         if (storedDateTime) return storedDateTime;
 
         const legacyTime = String(GM_getValue(GHOST_TIME_KEY, ''));
-        const now = new Date();
-        const datePart = [
-            String(now.getFullYear()).padStart(4, '0'),
-            String(now.getMonth() + 1).padStart(2, '0'),
-            String(now.getDate()).padStart(2, '0'),
-        ].join('-');
+        const franceNow = formatGhostTimestampInTimeZone(
+            Date.now(),
+            GHOST_FRANCE_TIME_ZONE
+        );
+        const datePart = franceNow.slice(0, 10);
         if (/^([01]\d|2[0-3]):[0-5]\d$/.test(legacyTime)) {
             return `${datePart}T${legacyTime}`;
         }
 
-        return `${datePart}T${String(now.getHours()).padStart(2, '0')}:` +
-            String(now.getMinutes()).padStart(2, '0');
+        return franceNow;
+    }
+
+    function convertGhostJapanToFranceDateTime(japanDateTime) {
+        return convertGhostDateTimeBetweenZones(
+            japanDateTime,
+            GHOST_JAPAN_TIME_ZONE,
+            GHOST_FRANCE_TIME_ZONE
+        );
+    }
+
+    function convertGhostDateTimeBetweenZones(value, sourceTimeZone, targetTimeZone) {
+        const normalized = normalizeGhostDateTime(value);
+        if (!normalized) return '';
+        const timestamp = ghostWallDateTimeToTimestamp(normalized, sourceTimeZone);
+        if (!Number.isFinite(timestamp)) return '';
+        return formatGhostTimestampInTimeZone(timestamp, targetTimeZone);
+    }
+
+    function ghostWallDateTimeToTimestamp(value, timeZone) {
+        const normalized = normalizeGhostDateTime(value);
+        if (!normalized) return Number.NaN;
+        const [datePart, timePart] = normalized.split('T');
+        const [year, month, day] = datePart.split('-').map(Number);
+        const [hour, minute] = timePart.split(':').map(Number);
+        const desiredWallTime = Date.UTC(year, month - 1, day, hour, minute, 0, 0);
+        let timestamp = desiredWallTime;
+
+        for (let iteration = 0; iteration < 4; iteration += 1) {
+            const parts = getGhostDateTimePartsInZone(timestamp, timeZone);
+            const representedWallTime = Date.UTC(
+                parts.year,
+                parts.month - 1,
+                parts.day,
+                parts.hour,
+                parts.minute,
+                0,
+                0
+            );
+            const correction = representedWallTime - desiredWallTime;
+            if (correction === 0) return timestamp;
+            timestamp -= correction;
+        }
+
+        const finalParts = getGhostDateTimePartsInZone(timestamp, timeZone);
+        const finalValue = formatGhostDateTimeParts(finalParts);
+        return finalValue === normalized ? timestamp : Number.NaN;
+    }
+
+    function formatGhostTimestampInTimeZone(timestamp, timeZone) {
+        if (!Number.isFinite(Number(timestamp))) return '';
+        return formatGhostDateTimeParts(
+            getGhostDateTimePartsInZone(Number(timestamp), timeZone)
+        );
+    }
+
+    function getGhostDateTimePartsInZone(timestamp, timeZone) {
+        const formatter = new Intl.DateTimeFormat('en-CA', {
+            timeZone,
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit',
+            hourCycle: 'h23',
+        });
+        const values = {};
+        for (const part of formatter.formatToParts(new Date(timestamp))) {
+            if (part.type !== 'literal') values[part.type] = Number(part.value);
+        }
+        return {
+            year: values.year,
+            month: values.month,
+            day: values.day,
+            hour: values.hour,
+            minute: values.minute,
+        };
+    }
+
+    function formatGhostDateTimeParts(parts) {
+        if (
+            !Number.isInteger(parts?.year) || !Number.isInteger(parts?.month) ||
+            !Number.isInteger(parts?.day) || !Number.isInteger(parts?.hour) ||
+            !Number.isInteger(parts?.minute)
+        ) return '';
+        return `${String(parts.year).padStart(4, '0')}-` +
+            `${String(parts.month).padStart(2, '0')}-` +
+            `${String(parts.day).padStart(2, '0')}T` +
+            `${String(parts.hour).padStart(2, '0')}:` +
+            String(parts.minute).padStart(2, '0');
+    }
+
+    function getGhostJapanFranceDifferenceHours(japanDateTime) {
+        const timestamp = ghostWallDateTimeToTimestamp(
+            japanDateTime,
+            GHOST_JAPAN_TIME_ZONE
+        );
+        if (!Number.isFinite(timestamp)) return '?';
+        const japanOffset = getGhostTimeZoneOffsetMinutes(timestamp, GHOST_JAPAN_TIME_ZONE);
+        const franceOffset = getGhostTimeZoneOffsetMinutes(timestamp, GHOST_FRANCE_TIME_ZONE);
+        return Math.round((japanOffset - franceOffset) / 60);
+    }
+
+    function getGhostTimeZoneOffsetMinutes(timestamp, timeZone) {
+        const parts = getGhostDateTimePartsInZone(timestamp, timeZone);
+        const wallTime = Date.UTC(
+            parts.year,
+            parts.month - 1,
+            parts.day,
+            parts.hour,
+            parts.minute,
+            0,
+            0
+        );
+        const timestampAtMinute = Math.floor(timestamp / 60000) * 60000;
+        return Math.round((wallTime - timestampAtMinute) / 60000);
     }
 
     function normalizeGhostDateTime(value) {
@@ -3600,13 +3756,13 @@
         const day = Number(dayText);
         const hour = Number(hourText);
         const minute = Number(minuteText);
-        const parsed = new Date(year, month - 1, day, hour, minute, 0, 0);
+        const parsed = new Date(Date.UTC(year, month - 1, day, hour, minute, 0, 0));
         if (
-            parsed.getFullYear() !== year ||
-            parsed.getMonth() !== month - 1 ||
-            parsed.getDate() !== day ||
-            parsed.getHours() !== hour ||
-            parsed.getMinutes() !== minute
+            parsed.getUTCFullYear() !== year ||
+            parsed.getUTCMonth() !== month - 1 ||
+            parsed.getUTCDate() !== day ||
+            parsed.getUTCHours() !== hour ||
+            parsed.getUTCMinutes() !== minute
         ) {
             return '';
         }
@@ -5684,7 +5840,7 @@
             ? ` — système ${Number(run.ghostMatchedSystem)}`
             : '';
         const message = typeof run.message === 'string' ? run.message : '';
-        return `Ghost — cible ${targetDateTime}\n${actionLabel}` +
+        return `Ghost — cible France ${targetDateTime}\n${actionLabel}` +
             (returnTime ? `\nRetour lu : ${returnTime}${matchedSystem}` : '') +
             (message ? `\n${message}` : '');
     }
