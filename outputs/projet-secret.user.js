@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Projet secret — boucle multi-liens
 // @namespace    local.projet-secret
-// @version      6.12.0
+// @version      6.12.1
 // @updateURL    https://raw.githubusercontent.com/raphaelrobert1104-sys/mysecretproject/main/outputs/projet-secret.user.js
 // @downloadURL  https://raw.githubusercontent.com/raphaelrobert1104-sys/mysecretproject/main/outputs/projet-secret.user.js
 // @description  Automatise Ressources, Expéditions V1/V2, Forme de vie, Import, Constructions, Ghost et Rappatriement avec configurations privées.
@@ -21,7 +21,7 @@
 (function () {
     'use strict';
 
-    const SCRIPT_VERSION = '6.12.0';
+    const SCRIPT_VERSION = '6.12.1';
     const CONFIG_KEYS = {
         1: 'secretMultiLinkConfig',
         2: 'secretMultiLinkConfig2',
@@ -102,12 +102,13 @@
     const GHOST_POSITION_SELECTOR = '#position';
     const GHOST_SYSTEM_SELECTOR = '#system';
     const GHOST_MISSION_SELECTOR = '#missionButton6';
-    const GHOST_DURATION_SELECTOR = 'div.step.step2[data-step="1"]';
+    const GHOST_DURATION_SELECTOR = 'div.step.step2[data-step="2"]';
     const GHOST_RETURN_TIME_SELECTOR = '#returnTime';
     const GHOST_LOAD_ALL_RESOURCES_SELECTOR =
         '#allresources > img[data-ipi-highlight-step="ipiFleetCargoLoadAll"]';
     const GHOST_SEND_FLEET_SELECTOR = '#sendFleet';
     const GHOST_RETURN_TOLERANCE_MS = 15 * 60 * 1000;
+    const GHOST_SYSTEM_APPROX_STEP_MS = (17 * 60 + 15) * 1000;
     const GHOST_SYSTEM_DEFAULT_MIN = 1;
     const GHOST_SYSTEM_DEFAULT_MAX = 499;
     const GHOST_SYSTEM_SEARCH_MAX_ITERATIONS = 40;
@@ -3325,7 +3326,7 @@
 
                 if (run.phase === 'ghost-select-duration') {
                     updateRun(runId, {
-                        message: 'Ghost — action 4/6 (3/4) : sélectionner la durée 10…',
+                        message: 'Ghost — action 4/6 (3/4) : sélectionner la durée 20…',
                     });
                     refreshUi();
                     const durationButton = await waitForGhostDuration(ELEMENT_TIMEOUT_MS);
@@ -3337,8 +3338,8 @@
                             GHOST_DELAY_MIN_MS,
                             GHOST_DELAY_MAX_MS
                         ),
-                        ghostPendingDelayLabel: 'la sélection de la durée 10',
-                        message: 'Ghost — durée 10 sélectionnée.',
+                        ghostPendingDelayLabel: 'la sélection de la durée 20',
+                        message: 'Ghost — durée 20 sélectionnée.',
                     });
                     refreshUi();
                     durationButton.click();
@@ -3394,6 +3395,7 @@
                         ghostSystemSearchDirection: 0,
                         ghostSystemSearchStep: 2,
                         ghostSystemSearchTriedOpposite: false,
+                        ghostSystemProjectionUsed: false,
                         ghostPendingDelayMs: getRandomDelayMs(
                             GHOST_DELAY_MIN_MS,
                             GHOST_DELAY_MAX_MS
@@ -3401,7 +3403,8 @@
                         ghostPendingDelayLabel: 'la lecture de l’heure de retour initiale',
                         message:
                             `Ghost — action 4/6 terminée : retour initial ${returnTime} au ` +
-                            `système ${initialSystem}. Début de la triangulation à ±15 minutes.`,
+                            `système ${initialSystem}. Début de la triangulation à ±15 minutes ` +
+                            '(estimation initiale : environ 17 min 15 s par système).',
                     });
                     refreshUi();
                     continue;
@@ -3425,6 +3428,14 @@
                     if (!selection) {
                         throw createGhostSystemSearchError(samples, targetMs);
                     }
+                    const usesInitialProjection =
+                        !run.ghostSystemProjectionUsed &&
+                        selection.patch?.ghostSystemProjectionUsed === true;
+                    const searchMode = usesInitialProjection
+                        ? 'projection initiale'
+                        : samples.length < 3
+                          ? 'mesure de calibration'
+                          : 'correction mesurée';
 
                     updateRun(runId, {
                         ...selection.patch,
@@ -3439,7 +3450,8 @@
                             `la saisie du système ${selection.system}`,
                         message:
                             `Ghost — action 5/6, essai ${iteration + 1}/` +
-                            `${GHOST_SYSTEM_SEARCH_MAX_ITERATIONS} : système ${selection.system}…`,
+                            `${GHOST_SYSTEM_SEARCH_MAX_ITERATIONS} : système ${selection.system} ` +
+                            `(${searchMode})…`,
                     });
                     refreshUi();
                     const systemInput = await waitForElement(GHOST_SYSTEM_SELECTOR, {
@@ -3806,6 +3818,41 @@
             direction = neighbors[0]?.system < initial ? -1 : 1;
         }
 
+        let projectionWasHandled = Boolean(run.ghostSystemProjectionUsed);
+        if (!projectionWasHandled && initialSample) {
+            const directionSample = samples.find(
+                (sample) => sample.system === initial + direction
+            );
+            const targetDifference = targetMs - initialSample.returnMs;
+            const measuredDifference = directionSample
+                ? directionSample.returnMs - initialSample.returnMs
+                : 0;
+            const measuredMovesTowardTarget =
+                Math.sign(measuredDifference) === Math.sign(targetDifference) &&
+                Math.abs(measuredDifference) >= 1000;
+            const estimatedDistance = Math.max(
+                2,
+                Math.round(
+                    measuredMovesTowardTarget
+                        ? Math.abs(targetDifference / measuredDifference)
+                        : Math.abs(targetDifference) / GHOST_SYSTEM_APPROX_STEP_MS
+                )
+            );
+            const projectedSystem = clampInteger(
+                initial + direction * estimatedDistance,
+                minimum,
+                maximum
+            );
+            projectionWasHandled = true;
+            if (!sampledSystems.has(projectedSystem)) {
+                return makeSelection(projectedSystem, {
+                    ghostSystemSearchDirection: direction,
+                    ghostSystemSearchStep: Math.max(2, estimatedDistance * 2),
+                    ghostSystemProjectionUsed: true,
+                });
+            }
+        }
+
         const localMinimumCandidate = findGhostLocalMinimumRefinement(
             samples,
             sampledSystems,
@@ -3814,6 +3861,7 @@
         if (localMinimumCandidate !== null) {
             return makeSelection(localMinimumCandidate, {
                 ghostSystemSearchDirection: direction,
+                ghostSystemProjectionUsed: projectionWasHandled,
             });
         }
 
@@ -3830,6 +3878,7 @@
             return makeSelection(preferredExpansion.system, {
                 ghostSystemSearchDirection: direction,
                 ghostSystemSearchStep: preferredExpansion.nextStep,
+                ghostSystemProjectionUsed: projectionWasHandled,
             });
         }
 
@@ -3848,6 +3897,7 @@
                     ghostSystemSearchDirection: oppositeDirection,
                     ghostSystemSearchStep: oppositeExpansion.nextStep,
                     ghostSystemSearchTriedOpposite: true,
+                    ghostSystemProjectionUsed: projectionWasHandled,
                 });
             }
         }
@@ -3857,7 +3907,11 @@
             sampledSystems,
             targetMs
         );
-        return refinementCandidate === null ? null : makeSelection(refinementCandidate);
+        return refinementCandidate === null
+            ? null
+            : makeSelection(refinementCandidate, {
+                ghostSystemProjectionUsed: projectionWasHandled,
+            });
     }
 
     function findGhostExpansionCandidate(
@@ -5598,7 +5652,7 @@
                 'ghost-wait-destination-page': 'Action 4/6 — attendre la page de destination',
                 'ghost-set-position': 'Action 4/6 — renseigner la position 16',
                 'ghost-select-mission': 'Action 4/6 — sélectionner Espionner',
-                'ghost-select-duration': 'Action 4/6 — sélectionner la durée 10',
+                'ghost-select-duration': 'Action 4/6 — sélectionner la durée 20',
                 'ghost-read-return-time': 'Action 4/6 — lire l’heure de retour initiale',
                 'ghost-search-system':
                     `Action 5/6 — trianguler le système ` +
@@ -5990,14 +6044,14 @@
             const candidates = [...document.querySelectorAll(GHOST_DURATION_SELECTOR)];
             const duration = candidates.find((element) => {
                 const text = String(element.textContent || '').replace(/\s+/g, ' ').trim();
-                return text === '10' && isElementVisible(element) && isElementClickable(element);
+                return text === '20' && isElementVisible(element) && isElementClickable(element);
             });
             if (duration) return duration;
             await delay(75);
         }
 
         throw new ElementNotFoundError(
-            `${GHOST_DURATION_SELECTOR} avec le texte 10`,
+            `${GHOST_DURATION_SELECTOR} avec le texte 20`,
             timeoutMs
         );
     }
