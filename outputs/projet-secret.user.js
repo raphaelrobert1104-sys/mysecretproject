@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Projet secret — boucle multi-liens
 // @namespace    local.projet-secret
-// @version      6.14.3
+// @version      6.15.0
 // @updateURL    https://raw.githubusercontent.com/raphaelrobert1104-sys/mysecretproject/main/outputs/projet-secret.user.js
 // @downloadURL  https://raw.githubusercontent.com/raphaelrobert1104-sys/mysecretproject/main/outputs/projet-secret.user.js
 // @description  Automatise Ressources, Expédition V2, Forme de vie, Import, Constructions, Ghost et Rappatriement avec configurations privées.
@@ -21,7 +21,7 @@
 (function () {
     'use strict';
 
-    const SCRIPT_VERSION = '6.14.3';
+    const SCRIPT_VERSION = '6.15.0';
     const CONFIG_KEYS = {
         1: 'secretMultiLinkConfig',
         2: 'secretMultiLinkConfig2',
@@ -95,6 +95,10 @@
         '#div_importexport > div.content > div.right_box > div.right_content > div.bargain_overlay > a.bargain.import_bargain.take';
     const CONSTRUCTION_TRANSPORTER_SELECTOR =
         '#civil > li.technology.transporterSmall.interactive.hasDetails.tooltip.hideTooltipOnMouseenter.js_hideTipOnMobile.ipiHintable > input[type="text"]';
+    const CONSTRUCTION_LARGE_TRANSPORTER_SELECTOR =
+        '#civil > li.technology.transporterLarge.interactive.hasDetails.tooltip.hideTooltipOnMouseenter.js_hideTipOnMobile.ipiHintable > input[type="text"]';
+    const CONSTRUCTION_SMALL_TRANSPORTER_CAPACITY = 9000;
+    const CONSTRUCTION_LARGE_TRANSPORTER_CAPACITY = 52371;
     const CONSTRUCTION_RESOURCE_SELECTORS = {
         r1: '#metal',
         r2: '#crystal',
@@ -666,6 +670,28 @@
                 }
                 textarea:focus { border-color: #60a5fa; box-shadow: 0 0 0 2px rgba(96, 165, 250, .25); }
                 .named-links-field-group { display: none; }
+                .construction-loading-url-field {
+                    margin-bottom: 12px;
+                    padding: 10px;
+                    border: 1px solid rgba(96, 165, 250, .28);
+                    border-radius: 10px;
+                    background: rgba(30, 64, 175, .1);
+                }
+                .construction-loading-url {
+                    display: block;
+                    width: 100%;
+                    padding: 9px 10px;
+                    border: 1px solid #64748b;
+                    border-radius: 7px;
+                    background: #fff;
+                    color: #111827;
+                    font: 12px/1.4 ui-monospace, SFMono-Regular, Consolas, monospace;
+                    outline: none;
+                }
+                .construction-loading-url:focus {
+                    border-color: #60a5fa;
+                    box-shadow: 0 0 0 2px rgba(96, 165, 250, .25);
+                }
                 .named-links-grid {
                     display: grid;
                     gap: 7px;
@@ -881,7 +907,7 @@
                 }
                 .construction-flow {
                     display: grid;
-                    grid-template-columns: repeat(3, 1fr);
+                    grid-template-columns: repeat(4, 1fr);
                     gap: 5px;
                     margin: 13px 0;
                     padding: 4px;
@@ -972,7 +998,10 @@
                 .construction-order-remove:disabled { visibility: hidden; }
                 .construction-order-grid {
                     display: grid;
-                    grid-template-columns: repeat(3, minmax(82px, .72fr)) minmax(145px, 1.35fr);
+                    grid-template-columns:
+                        repeat(3, minmax(76px, .68fr))
+                        minmax(140px, 1.15fr)
+                        minmax(140px, 1.2fr);
                     gap: 8px;
                     align-items: end;
                 }
@@ -1118,9 +1147,11 @@
                     textarea { min-height: 165px; }
                     .actions button { min-height: 44px; }
                     .named-link-row { grid-template-columns: 22px minmax(82px, .7fr) minmax(145px, 1.3fr); }
-                    .named-link-row input, .construction-runner input, .construction-runner select { font-size: 16px; }
+                    .named-link-row input, .construction-loading-url,
+                    .construction-runner input, .construction-runner select { font-size: 16px; }
                     .construction-runner, .ghost-runner { padding: 14px; }
                     .construction-order-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+                    .construction-order-field.vehicle,
                     .construction-order-field.destination { grid-column: 1 / -1; }
                     .construction-orders-list { max-height: min(48vh, 480px); }
                 }
@@ -1213,6 +1244,11 @@
                         </div>
                     </div>
                     <div class="named-links-field-group">
+                        <div class="construction-loading-url-field">
+                            <label for="construction-loading-url">Page de chargement</label>
+                            <input id="construction-loading-url" class="construction-loading-url" type="url" spellcheck="false" autocomplete="off" placeholder="URL chargée avant chaque destination">
+                            <p class="field-help">Cette page est chargée et attendue avant l’ouverture de chaque destination.</p>
+                        </div>
                         <label>Destinations de Constructions</label>
                         <p class="field-help">Renseignez un nom d’affichage et son URL. Les lignes entièrement vides sont ignorées.</p>
                         <div class="named-links-grid">${constructionLinkRows}</div>
@@ -1246,9 +1282,10 @@
                         <button type="button" class="close construction-runner-close" aria-label="Fermer">×</button>
                     </div>
                     <div class="construction-flow" aria-hidden="true">
-                        <span>1 · Montants</span><span>2 · Destination</span><span>3 · Exécution</span>
+                        <span>1 · Montants</span><span>2 · Transport</span>
+                        <span>3 · Destination</span><span>4 · Exécution</span>
                     </div>
-                    <p class="help">Chaque ligne correspond à une exécution complète des actions 3 à 6. Les ressources sont exprimées en millions.</p>
+                    <p class="help">Chaque ligne correspond à une exécution complète des actions 4 à 7. Les ressources sont exprimées en millions.</p>
                     <div class="construction-orders">
                         <div class="construction-orders-header">
                             <span>Ordres à exécuter</span>
@@ -1257,8 +1294,8 @@
                         <div class="construction-orders-list"></div>
                         <button type="button" class="construction-add-order">＋ Ajouter une ligne</button>
                     </div>
-                    <div class="construction-calculation">1 exécution · Total réel : 0 · Petites voitures : 0</div>
-                    <p class="field-help">Exemple : 3.3 M devient 3 300 000. Le total réel est ensuite divisé par 9000 et arrondi au supérieur.</p>
+                    <div class="construction-calculation">1 exécution · Total réel : 0 · Petites : 0 · Grandes : 0</div>
+                    <p class="field-help">Exemple : 3.3 M devient 3 300 000. Calculs arrondis au supérieur : petites ÷ 9000, grandes ÷ 52371.</p>
                     <div class="construction-runner-error" role="alert"></div>
                     <div class="actions">
                         <button type="button" class="save construction-runner-cancel">Annuler</button>
@@ -1329,6 +1366,7 @@
             linksFieldGroup: shadow.querySelector('.links-field-group'),
             linksLabel: shadow.querySelector('.links-label'),
             namedLinksFieldGroup: shadow.querySelector('.named-links-field-group'),
+            constructionLoadingUrl: shadow.querySelector('.construction-loading-url'),
             namedLinkNames: [...shadow.querySelectorAll('.named-link-name')],
             namedLinkUrls: [...shadow.querySelectorAll('.named-link-url')],
             namedLinksCounter: shadow.querySelector('.named-links-counter'),
@@ -1564,6 +1602,12 @@
 
         function openConstructionRunner() {
             const config = getStoredConfig(7);
+            if (!config.constructionLoadingUrl) {
+                open(7);
+                showError('Configurez la Page de chargement avant de lancer Constructions.');
+                refs.constructionLoadingUrl.focus();
+                return;
+            }
             if (config.namedLinks.length === 0) {
                 open(7);
                 showError('Configurez au moins une destination nommée avant de lancer Constructions.');
@@ -1603,7 +1647,7 @@
             row.innerHTML = `
                 <div class="construction-order-header">
                     <span class="construction-order-title"></span>
-                    <span class="construction-order-summary">Total : 0 · Petites voitures : 0</span>
+                    <span class="construction-order-summary">Total : 0 · Petites : 0 · Grandes : 0</span>
                     <button type="button" class="construction-order-remove" title="Supprimer cette ligne" aria-label="Supprimer cette ligne">×</button>
                 </div>
                 <div class="construction-order-grid">
@@ -1627,6 +1671,13 @@
                             <input class="construction-order-r3" type="text" inputmode="decimal" autocomplete="off" placeholder="1">
                             <span>M</span>
                         </div>
+                    </div>
+                    <div class="construction-order-field vehicle">
+                        <label>Type de voiture</label>
+                        <select class="construction-order-vehicle">
+                            <option value="small">Petite voiture</option>
+                            <option value="large">Grande voiture</option>
+                        </select>
                     </div>
                     <div class="construction-order-field destination">
                         <label>Destination</label>
@@ -1671,11 +1722,16 @@
                 destinationSelect.value = String(initialLinkIndex);
             }
             destinationSelect.addEventListener('change', updateConstructionCalculation);
+            const vehicleSelect = row.querySelector('.construction-order-vehicle');
+            vehicleSelect.value = normalizeConstructionTransporterType(
+                initialValues.transporterType
+            );
+            vehicleSelect.addEventListener('change', updateConstructionCalculation);
             amountInputs.forEach((input, index) => {
                 input.addEventListener('keydown', (event) => {
                     if (event.key !== 'Enter' || event.isComposing) return;
                     event.preventDefault();
-                    const nextField = amountInputs[index + 1] || destinationSelect;
+                    const nextField = amountInputs[index + 1] || vehicleSelect;
                     nextField.focus();
                 });
             });
@@ -1694,7 +1750,8 @@
         function updateConstructionCalculation() {
             const rows = getConstructionOrderRows();
             let cumulativeTotal = 0;
-            let cumulativeTransporters = 0;
+            let cumulativeSmallTransporters = 0;
+            let cumulativeLargeTransporters = 0;
             let allRowsAreValid = rows.length > 0;
 
             rows.forEach((row, index) => {
@@ -1709,6 +1766,8 @@
                 });
                 row.querySelector('.construction-order-destination')
                     .setAttribute('aria-label', `Destination de la ligne ${index + 1}`);
+                row.querySelector('.construction-order-vehicle')
+                    .setAttribute('aria-label', `Type de voiture de la ligne ${index + 1}`);
 
                 const values = inputs.map((input) => parseConstructionMillions(input.value));
                 const summary = row.querySelector('.construction-order-summary');
@@ -1717,15 +1776,29 @@
                     summary.textContent = 'Montant à compléter';
                 } else {
                     const total = values.reduce((sum, value) => sum + value, 0);
-                    const transporterCount = Math.ceil(total / 9000);
+                    const smallTransporterCount = Math.ceil(
+                        total / CONSTRUCTION_SMALL_TRANSPORTER_CAPACITY
+                    );
+                    const largeTransporterCount = Math.ceil(
+                        total / CONSTRUCTION_LARGE_TRANSPORTER_CAPACITY
+                    );
                     if (!Number.isSafeInteger(total)) {
                         allRowsAreValid = false;
                         summary.textContent = 'Total trop élevé';
                     } else {
                         cumulativeTotal += total;
-                        cumulativeTransporters += transporterCount;
+                        cumulativeSmallTransporters += smallTransporterCount;
+                        cumulativeLargeTransporters += largeTransporterCount;
+                        const transporterType = normalizeConstructionTransporterType(
+                            row.querySelector('.construction-order-vehicle').value
+                        );
+                        const chosenLabel = transporterType === 'large'
+                            ? `Choix : ${formatInteger(largeTransporterCount)} grande(s)`
+                            : `Choix : ${formatInteger(smallTransporterCount)} petite(s)`;
                         summary.textContent =
-                            `Total : ${formatInteger(total)} · Petites voitures : ${formatInteger(transporterCount)}`;
+                            `Total : ${formatInteger(total)} · ` +
+                            `Petites : ${formatInteger(smallTransporterCount)} · ` +
+                            `Grandes : ${formatInteger(largeTransporterCount)} · ${chosenLabel}`;
                     }
                 }
             });
@@ -1743,7 +1816,8 @@
             refs.constructionCalculation.textContent = allRowsAreValid
                 ? `${rowCount} exécution${rowCount > 1 ? 's' : ''} · ` +
                     `Total réel cumulé : ${formatInteger(cumulativeTotal)} · ` +
-                    `Petites voitures cumulées : ${formatInteger(cumulativeTransporters)}`
+                    `Petites : ${formatInteger(cumulativeSmallTransporters)} · ` +
+                    `Grandes : ${formatInteger(cumulativeLargeTransporters)}`
                 : 'Corrigez les montants indiqués avant de démarrer.';
         }
 
@@ -1776,6 +1850,9 @@
                     r2: amounts[1],
                     r3: amounts[2],
                     selectedLinkIndex,
+                    transporterType: normalizeConstructionTransporterType(
+                        row.querySelector('.construction-order-vehicle').value
+                    ),
                 });
             }
 
@@ -1842,7 +1919,7 @@
                       : editingProfileId === 6
                         ? 'Une URL unique. Import clique sur le maximum, sur Payer, puis récupère l’objet.'
                       : editingProfileId === 7
-                          ? 'Jusqu’à 13 destinations. Chaque URL possède un nom affiché dans la fenêtre de lancement.'
+                          ? 'Configurez une Page de chargement et jusqu’à 13 destinations nommées. La Page de chargement précède chaque destination.'
                           : editingProfileId === 8
                             ? 'Une URL unique pour Ghost. Elle reste enregistrée dans le stockage privé de Tampermonkey.'
                           : editingProfileId === 9
@@ -1857,6 +1934,8 @@
                 editingProfileId === 2 ? String(config.smallVehicleCount) : '6400';
             refs.linksFieldGroup.style.display = editingProfileId === 7 ? 'none' : 'block';
             refs.namedLinksFieldGroup.style.display = editingProfileId === 7 ? 'block' : 'none';
+            refs.constructionLoadingUrl.value =
+                editingProfileId === 7 ? config.constructionLoadingUrl : '';
             refs.combinedConfig.style.display = 'none';
             const usesSingleUrl = [6, 8, 9, 11].includes(editingProfileId);
             refs.linksLabel.textContent = usesSingleUrl ? 'URL à ouvrir' : 'Liens à traiter';
@@ -1915,6 +1994,16 @@
             }
 
             if (editingProfileId === 7) {
+                const constructionLoadingUrl = validateHttpUrl(
+                    refs.constructionLoadingUrl.value
+                );
+                if (!constructionLoadingUrl) {
+                    showError(
+                        'Ajoutez une Page de chargement valide commençant par http:// ou https://.'
+                    );
+                    refs.constructionLoadingUrl.focus();
+                    return;
+                }
                 const parsedNamedLinks = parseNamedLinks(
                     refs.namedLinkNames.map((input, index) => ({
                         name: input.value,
@@ -1927,9 +2016,14 @@
                 }
 
                 showError('');
-                saveConfig(7, { namedLinks: parsedNamedLinks.namedLinks });
+                saveConfig(7, {
+                    namedLinks: parsedNamedLinks.namedLinks,
+                    constructionLoadingUrl,
+                });
                 refs.status.textContent =
-                    `Constructions : ${parsedNamedLinks.namedLinks.length} destination(s) enregistrée(s) dans Tampermonkey.`;
+                    'Constructions : Page de chargement et ' +
+                    parsedNamedLinks.namedLinks.length +
+                    ' destination(s) enregistrées dans Tampermonkey.';
                 if (shouldStart) openConstructionRunner();
                 return;
             }
@@ -2076,6 +2170,9 @@
                 refs.status.textContent =
                     `${getProfileLabel(targets[0])} : ${firstConfig.links.length} lien(s) · ` +
                     `${getProfileLabel(targets[1])} : ${secondConfig.links.length} lien(s).`;
+            } else if (editingProfileId === 7 && !config.constructionLoadingUrl) {
+                refs.status.textContent =
+                    'Constructions : configurez la Page de chargement.';
             } else if (config.links.length > 0) {
                 refs.status.textContent =
                     `${getProfileLabel(editingProfileId)} : ${config.links.length} lien(s) prêt(s).`;
@@ -4534,6 +4631,13 @@
 
     async function startConstructionAutomation(parameters) {
         const config = getStoredConfig(7);
+        if (!config.constructionLoadingUrl) {
+            const ui = await ensureUi();
+            ui.open(7);
+            ui.showError('Configurez la Page de chargement avant de lancer Constructions.');
+            ui.refresh();
+            return;
+        }
         const sourceOrders = Array.isArray(parameters?.orders)
             ? parameters.orders
             : [{
@@ -4541,6 +4645,7 @@
                 r2: parameters?.r2,
                 r3: parameters?.r3,
                 selectedLinkIndex: parameters?.selectedLinkIndex,
+                transporterType: parameters?.transporterType,
             }];
         const orders = [];
 
@@ -4571,13 +4676,27 @@
                 ui.refresh();
                 return;
             }
+            const transporterType = normalizeConstructionTransporterType(
+                sourceOrder?.transporterType
+            );
+            const smallTransporterCount = Math.ceil(
+                total / CONSTRUCTION_SMALL_TRANSPORTER_CAPACITY
+            );
+            const largeTransporterCount = Math.ceil(
+                total / CONSTRUCTION_LARGE_TRANSPORTER_CAPACITY
+            );
             orders.push({
                 selectedLinkIndex,
                 r1: amounts[0],
                 r2: amounts[1],
                 r3: amounts[2],
                 total,
-                transporterCount: Math.ceil(total / 9000),
+                transporterType,
+                smallTransporterCount,
+                largeTransporterCount,
+                transporterCount: transporterType === 'large'
+                    ? largeTransporterCount
+                    : smallTransporterCount,
             });
         }
 
@@ -4592,7 +4711,7 @@
             combinedMode: false,
             combinedKind: '',
             nextProfileId: null,
-            phase: 'construction-before-open-link',
+            phase: 'construction-before-loading-page',
             constructionOrders: orders,
             constructionOrderIndex: 0,
             currentLinkIndex: firstOrder.selectedLinkIndex,
@@ -4600,6 +4719,9 @@
             constructionR2: firstOrder.r2,
             constructionR3: firstOrder.r3,
             constructionTotal: firstOrder.total,
+            constructionTransporterType: firstOrder.transporterType,
+            constructionSmallTransporterCount: firstOrder.smallTransporterCount,
+            constructionLargeTransporterCount: firstOrder.largeTransporterCount,
             constructionTransporterCount: firstOrder.transporterCount,
             constructionPendingDelayMs: getRandomDelayMs(
                 CONSTRUCTION_DELAY_MIN_MS,
@@ -4609,9 +4731,13 @@
             startedAt: now,
             updatedAt: now,
             message:
-                `Constructions — ligne 1/${orders.length}, actions 1 et 2/6 validées : ${firstLink.name}, ` +
+                `Constructions — ligne 1/${orders.length}, actions 1 à 3/7 validées : ${firstLink.name}, ` +
                 `${formatInteger(firstOrder.total)} ressources, ` +
-                `${formatInteger(firstOrder.transporterCount)} petites voitures…`,
+                `${formatInteger(firstOrder.transporterCount)} ` +
+                `${getConstructionTransporterLabel(
+                    firstOrder.transporterType,
+                    firstOrder.transporterCount
+                )}…`,
         };
 
         GM_setValue(RUN_KEY, run);
@@ -4626,6 +4752,11 @@
             if (!run || run.profileId !== 7) return;
 
             const config = getStoredConfig(7);
+            if (!config.constructionLoadingUrl) {
+                throw new Error(
+                    'La Page de chargement de Constructions n’est plus configurée.'
+                );
+            }
 
             while (true) {
                 run = getActiveRun(runId);
@@ -4644,12 +4775,53 @@
                     continue;
                 }
 
+                if (run.phase === 'construction-before-loading-page') {
+                    updateRun(runId, {
+                        phase: 'construction-open-loading-page',
+                        message:
+                            `Constructions — ligne ${orderIndex + 1}/${orders.length}, ` +
+                            'action 4/7 : ouverture de la Page de chargement…',
+                    });
+                    refreshUi();
+                    navigateToUrl(config.constructionLoadingUrl, true);
+                    return;
+                }
+
+                if (run.phase === 'construction-open-loading-page') {
+                    if (!isConfiguredPage(config.constructionLoadingUrl, window.location.href)) {
+                        navigateToUrl(config.constructionLoadingUrl, false);
+                        return;
+                    }
+
+                    const renderResult = await waitUntilPageUsable(PAGE_TIMEOUT_MS);
+                    if (renderResult.timedOut) {
+                        throw new Error(
+                            'La Page de chargement de Constructions ne s’est pas chargée à temps.'
+                        );
+                    }
+                    if (!getActiveRun(runId)) return;
+
+                    updateRun(runId, {
+                        phase: 'construction-before-open-link',
+                        constructionPendingDelayMs: getRandomDelayMs(
+                            CONSTRUCTION_DELAY_MIN_MS,
+                            CONSTRUCTION_DELAY_MAX_MS
+                        ),
+                        constructionPendingDelayLabel: 'le chargement de la Page de chargement',
+                        message:
+                            `Constructions — ligne ${orderIndex + 1}/${orders.length}, ` +
+                            'Page de chargement prête, préparation de la destination…',
+                    });
+                    refreshUi();
+                    continue;
+                }
+
                 if (run.phase === 'construction-before-open-link') {
                     updateRun(runId, {
                         phase: 'construction-open-link',
                         message:
                             `Constructions — ligne ${orderIndex + 1}/${orders.length}, ` +
-                            `action 3/6 : ouverture de ${selectedLink.name}…`,
+                            `action 4/7 : ouverture de ${selectedLink.name}…`,
                     });
                     refreshUi();
                     navigateToUrl(selectedLink.url, true);
@@ -4677,20 +4849,30 @@
                         constructionPendingDelayLabel: 'le chargement de la destination',
                         message:
                             `Constructions — ligne ${orderIndex + 1}/${orders.length}, ` +
-                            `action 3/6 terminée : ${selectedLink.name} est chargée.`,
+                            `action 4/7 terminée : ${selectedLink.name} est chargée.`,
                     });
                     refreshUi();
                     continue;
                 }
 
                 if (run.phase === 'construction-fill-transporters') {
+                    const transporterType = normalizeConstructionTransporterType(
+                        currentOrder.transporterType
+                    );
+                    const transporterLabel = getConstructionTransporterLabel(
+                        transporterType,
+                        currentOrder.transporterCount
+                    );
+                    const transporterSelector = transporterType === 'large'
+                        ? CONSTRUCTION_LARGE_TRANSPORTER_SELECTOR
+                        : CONSTRUCTION_TRANSPORTER_SELECTOR;
                     updateRun(runId, {
                         message:
-                            `Constructions — ligne ${orderIndex + 1}/${orders.length}, action 4/6 : saisir ` +
-                            `${formatInteger(currentOrder.transporterCount)} petites voitures…`,
+                            `Constructions — ligne ${orderIndex + 1}/${orders.length}, action 5/7 : saisir ` +
+                            `${formatInteger(currentOrder.transporterCount)} ${transporterLabel}…`,
                     });
                     refreshUi();
-                    const input = await waitForElement(CONSTRUCTION_TRANSPORTER_SELECTOR, {
+                    const input = await waitForElement(transporterSelector, {
                         timeoutMs: ELEMENT_TIMEOUT_MS,
                         clickable: false,
                     });
@@ -4703,10 +4885,11 @@
                             500,
                             1500
                         ),
-                        constructionPendingDelayLabel: 'la saisie du nombre de petites voitures',
+                        constructionPendingDelayLabel:
+                            `la saisie du nombre de ${transporterLabel}`,
                         message:
-                            `Constructions — ligne ${orderIndex + 1}/${orders.length}, action 4/6 : ` +
-                            `${formatInteger(currentOrder.transporterCount)} petites voitures saisies, ` +
+                            `Constructions — ligne ${orderIndex + 1}/${orders.length}, action 5/7 : ` +
+                            `${formatInteger(currentOrder.transporterCount)} ${transporterLabel} saisies, ` +
                             'préparation du clic sur Continuer…',
                     });
                     refreshUi();
@@ -4717,7 +4900,7 @@
                     updateRun(runId, {
                         message:
                             `Constructions — ligne ${orderIndex + 1}/${orders.length}, ` +
-                            'action 4/6 : cliquer sur Continuer…',
+                            'action 5/7 : cliquer sur Continuer…',
                     });
                     refreshUi();
                     const continueButton = await waitForElement(CONSTRUCTION_CONTINUE_SELECTOR, {
@@ -4731,7 +4914,7 @@
                         phase: 'construction-wait-resources-page',
                         message:
                             `Constructions — ligne ${orderIndex + 1}/${orders.length}, ` +
-                            'action 4/6 terminée : attente de la page des ressources…',
+                            'action 5/7 terminée : attente de la page des ressources…',
                     });
                     refreshUi();
                     continueButton.click();
@@ -4759,7 +4942,7 @@
                         constructionPendingDelayLabel: 'le chargement de la page des ressources',
                         message:
                             `Constructions — ligne ${orderIndex + 1}/${orders.length}, ` +
-                            'page des ressources chargée, préparation de l’action 5/6…',
+                            'page des ressources chargée, préparation de l’action 6/7…',
                     });
                     refreshUi();
                     continue;
@@ -4774,7 +4957,7 @@
                     if (resourceEntries.some(([, selector]) => !selector)) {
                         await pauseConstructionForMissingActions(
                             runId,
-                            'Constructions prête jusqu’à l’action 4/6. Les sélecteurs X, Y et Z de l’action 5 restent à ajouter.'
+                            'Constructions prête jusqu’à l’action 5/7. Les sélecteurs X, Y et Z de l’action 6 restent à ajouter.'
                         );
                         return;
                     }
@@ -4782,7 +4965,7 @@
                     updateRun(runId, {
                         message:
                             `Constructions — ligne ${orderIndex + 1}/${orders.length}, ` +
-                            'action 5/6 : saisir R1, R2 et R3…',
+                            'action 6/7 : saisir R1, R2 et R3…',
                     });
                     refreshUi();
                     for (const [, selector, value] of resourceEntries) {
@@ -4803,7 +4986,7 @@
                         constructionPendingDelayLabel: 'la saisie de R1, R2 et R3',
                         message:
                             `Constructions — ligne ${orderIndex + 1}/${orders.length}, ` +
-                            'action 5/6 terminée : R1, R2 et R3 saisis.',
+                            'action 6/7 terminée : R1, R2 et R3 saisis.',
                     });
                     refreshUi();
                     continue;
@@ -4813,7 +4996,7 @@
                     if (!CONSTRUCTION_SEND_SELECTOR) {
                         await pauseConstructionForMissingActions(
                             runId,
-                            'Constructions prête jusqu’à l’action 5/6. Le sélecteur du bouton Envoyer reste à ajouter.'
+                            'Constructions prête jusqu’à l’action 6/7. Le sélecteur du bouton Envoyer reste à ajouter.'
                         );
                         return;
                     }
@@ -4821,7 +5004,7 @@
                     updateRun(runId, {
                         message:
                             `Constructions — ligne ${orderIndex + 1}/${orders.length}, ` +
-                            'action 6/6 : cliquer sur Envoyer…',
+                            'action 7/7 : cliquer sur Envoyer…',
                     });
                     refreshUi();
                     const sendButton = await waitForElement(CONSTRUCTION_SEND_SELECTOR, {
@@ -4844,13 +5027,16 @@
                         const pageExitPromise = waitForPageExit(3000);
                         GM_setValue(RUN_KEY, {
                             ...activeRun,
-                            phase: 'construction-before-open-link',
+                            phase: 'construction-before-loading-page',
                             constructionOrderIndex: nextOrderIndex,
                             currentLinkIndex: nextOrder.selectedLinkIndex,
                             constructionR1: nextOrder.r1,
                             constructionR2: nextOrder.r2,
                             constructionR3: nextOrder.r3,
                             constructionTotal: nextOrder.total,
+                            constructionTransporterType: nextOrder.transporterType,
+                            constructionSmallTransporterCount: nextOrder.smallTransporterCount,
+                            constructionLargeTransporterCount: nextOrder.largeTransporterCount,
                             constructionTransporterCount: nextOrder.transporterCount,
                             constructionPendingDelayMs: getRandomDelayMs(
                                 CONSTRUCTION_DELAY_MIN_MS,
@@ -4861,8 +5047,8 @@
                             updatedAt: Date.now(),
                             message:
                                 `Constructions — ligne ${orderIndex + 1}/${orders.length} terminée. ` +
-                                `La ligne ${nextOrderIndex + 1}/${orders.length} reprendra à l’action 3 ` +
-                                `sur ${nextLink.name}.`,
+                                `La ligne ${nextOrderIndex + 1}/${orders.length} reprendra à l’action 4 ` +
+                                'avec la Page de chargement.',
                         });
                         refreshUi();
                         sendButton.click();
@@ -5861,27 +6047,40 @@
                 `${(Number(run.constructionPendingDelayMs) / 1000).toFixed(2)} s`;
         } else {
             const labels = {
+                'construction-before-loading-page': orderIndex === 0
+                    ? 'Actions 1–3/7 — paramètres, choix et calculs validés'
+                    : 'Boucle suivante — reprise à l’action 4/7',
+                'construction-open-loading-page':
+                    'Action 4/7 — charger la Page de chargement',
                 'construction-before-open-link': orderIndex === 0
-                    ? 'Actions 1–2/6 — paramètres et destination validés'
-                    : 'Boucle suivante — reprise à l’action 3/6',
-                'construction-open-link': `Action 3/6 — charger ${destination}`,
-                'construction-fill-transporters': 'Action 4/6 — saisir les petites voitures',
-                'construction-continue': 'Action 4/6 — cliquer sur Continuer',
-                'construction-wait-resources-page': 'Action 4/6 — charger la page des ressources',
-                'construction-wait-send-page': 'Action 4/6 — charger la page des ressources',
-                'construction-fill-resources': 'Action 5/6 — saisir R1, R2 et R3',
-                'construction-send': 'Action 6/6 — cliquer sur Envoyer',
+                    ? 'Action 4/7 — préparer la destination'
+                    : 'Action 4/7 — préparer la destination suivante',
+                'construction-open-link': `Action 4/7 — charger ${destination}`,
+                'construction-fill-transporters': 'Action 5/7 — saisir les voitures',
+                'construction-continue': 'Action 5/7 — cliquer sur Continuer',
+                'construction-wait-resources-page': 'Action 5/7 — charger la page des ressources',
+                'construction-wait-send-page': 'Action 5/7 — charger la page des ressources',
+                'construction-fill-resources': 'Action 6/7 — saisir R1, R2 et R3',
+                'construction-send': 'Action 7/7 — cliquer sur Envoyer',
                 'construction-completed': 'Constructions terminée',
             };
             actionLabel = labels[run.phase] || `Phase inconnue : ${run.phase}`;
         }
 
         const message = typeof run.message === 'string' ? run.message : '';
+        const transporterCount = Number(currentOrder?.transporterCount) || 0;
+        const transporterType = normalizeConstructionTransporterType(
+            currentOrder?.transporterType
+        );
         return (
             `Constructions — Boucle ${orderIndex + 1}/${orders.length} — ${destination}\n${actionLabel}\n` +
             `R1 ${formatMillions(currentOrder?.r1)} M · ` +
             `R2 ${formatMillions(currentOrder?.r2)} M · ` +
-            `R3 ${formatMillions(currentOrder?.r3)} M` +
+            `R3 ${formatMillions(currentOrder?.r3)} M\n` +
+            `Transport : ${formatInteger(transporterCount)} ` +
+            getConstructionTransporterLabel(transporterType, transporterCount) +
+            ` · Petites ${formatInteger(currentOrder?.smallTransporterCount)}` +
+            ` · Grandes ${formatInteger(currentOrder?.largeTransporterCount)}` +
             (message ? `\n${message}` : '')
         );
     }
@@ -5894,7 +6093,14 @@
         const normalizedProfileId = normalizeProfileId(profileId);
         const stored = GM_getValue(CONFIG_KEYS[normalizedProfileId], null);
         if (!stored || typeof stored !== 'object') {
-            return { links: [], namedLinks: [], repeat: false, startUrl: '', smallVehicleCount: 6400 };
+            return {
+                links: [],
+                namedLinks: [],
+                repeat: false,
+                startUrl: '',
+                smallVehicleCount: 6400,
+                constructionLoadingUrl: '',
+            };
         }
 
         const maximum = getProfileLinkLimit(normalizedProfileId);
@@ -5912,19 +6118,32 @@
             normalizedProfileId === 2 && parsedSmallVehicleCount !== null
                 ? parsedSmallVehicleCount
                 : 6400;
-        return { links, namedLinks, repeat: Boolean(stored.repeat), startUrl, smallVehicleCount };
+        const constructionLoadingUrl = normalizedProfileId === 7
+            ? validateHttpUrl(stored.constructionLoadingUrl) || ''
+            : '';
+        return {
+            links,
+            namedLinks,
+            repeat: Boolean(stored.repeat),
+            startUrl,
+            smallVehicleCount,
+            constructionLoadingUrl,
+        };
     }
 
     function saveConfig(profileId, config) {
         const normalizedProfileId = normalizeProfileId(profileId);
         if (normalizedProfileId === 7) {
             const namedLinks = normalizeStoredNamedLinks(config.namedLinks);
+            const constructionLoadingUrl =
+                validateHttpUrl(config.constructionLoadingUrl) || '';
             GM_setValue(CONFIG_KEYS[normalizedProfileId], {
                 namedLinks,
                 links: namedLinks.map((entry) => entry.url),
                 repeat: false,
                 startUrl: '',
                 smallVehicleCount: 6400,
+                constructionLoadingUrl,
             });
             return;
         }
@@ -6062,18 +6281,63 @@
         return parsed;
     }
 
+    function normalizeConstructionTransporterType(value) {
+        return value === 'large' ? 'large' : 'small';
+    }
+
+    function getConstructionTransporterLabel(type, count) {
+        const isLarge = normalizeConstructionTransporterType(type) === 'large';
+        const isSingular = Number(count) === 1;
+        if (isLarge) return isSingular ? 'grande voiture' : 'grandes voitures';
+        return isSingular ? 'petite voiture' : 'petites voitures';
+    }
+
+    function normalizeConstructionRunOrder(order) {
+        const total = Math.max(0, Math.floor(Number(order?.total) || 0));
+        const transporterType = normalizeConstructionTransporterType(order?.transporterType);
+        const smallTransporterCount = Number.isSafeInteger(
+            Number(order?.smallTransporterCount)
+        )
+            ? Math.max(0, Number(order.smallTransporterCount))
+            : Math.ceil(total / CONSTRUCTION_SMALL_TRANSPORTER_CAPACITY);
+        const largeTransporterCount = Number.isSafeInteger(
+            Number(order?.largeTransporterCount)
+        )
+            ? Math.max(0, Number(order.largeTransporterCount))
+            : Math.ceil(total / CONSTRUCTION_LARGE_TRANSPORTER_CAPACITY);
+        return {
+            ...order,
+            selectedLinkIndex: Number(order?.selectedLinkIndex),
+            r1: Math.max(0, Math.floor(Number(order?.r1) || 0)),
+            r2: Math.max(0, Math.floor(Number(order?.r2) || 0)),
+            r3: Math.max(0, Math.floor(Number(order?.r3) || 0)),
+            total,
+            transporterType,
+            smallTransporterCount,
+            largeTransporterCount,
+            transporterCount: transporterType === 'large'
+                ? largeTransporterCount
+                : smallTransporterCount,
+        };
+    }
+
     function getConstructionRunOrders(run) {
         if (Array.isArray(run?.constructionOrders) && run.constructionOrders.length > 0) {
-            return run.constructionOrders.slice(0, MAX_CONSTRUCTION_ORDERS);
+            return run.constructionOrders
+                .slice(0, MAX_CONSTRUCTION_ORDERS)
+                .map(normalizeConstructionRunOrder);
         }
-        return [{
+        return [normalizeConstructionRunOrder({
             selectedLinkIndex: Number(run?.currentLinkIndex),
             r1: Number(run?.constructionR1) || 0,
             r2: Number(run?.constructionR2) || 0,
             r3: Number(run?.constructionR3) || 0,
             total: Number(run?.constructionTotal) || 0,
+            transporterType: run?.constructionTransporterType,
+            smallTransporterCount: run?.constructionSmallTransporterCount,
+            largeTransporterCount: run?.constructionLargeTransporterCount,
             transporterCount: Number(run?.constructionTransporterCount) || 0,
-        }];
+        })];
     }
 
     function getConstructionRunOrderIndex(run, orders = getConstructionRunOrders(run)) {
