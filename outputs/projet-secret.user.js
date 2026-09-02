@@ -1,10 +1,10 @@
 // ==UserScript==
 // @name         Projet secret — boucle multi-liens
 // @namespace    local.projet-secret
-// @version      6.16.0
+// @version      6.17.0
 // @updateURL    https://raw.githubusercontent.com/raphaelrobert1104-sys/mysecretproject/main/outputs/projet-secret.user.js
 // @downloadURL  https://raw.githubusercontent.com/raphaelrobert1104-sys/mysecretproject/main/outputs/projet-secret.user.js
-// @description  Automatise Ressources, Expédition V2, Forme de vie, Import, Constructions, Ghost, Rappatriement et Bâtiments Mecha avec configurations privées.
+// @description  Automatise Ressources, Expédition V2, Attaques, Forme de vie, Import, Constructions, Ghost, Rappatriement et Bâtiments Mecha avec configurations privées.
 // @author       Vous
 // @match        http://*/*
 // @match        https://*/*
@@ -21,7 +21,7 @@
 (function () {
     'use strict';
 
-    const SCRIPT_VERSION = '6.16.0';
+    const SCRIPT_VERSION = '6.17.0';
     const CONFIG_KEYS = {
         1: 'secretMultiLinkConfig',
         2: 'secretMultiLinkConfig2',
@@ -32,6 +32,7 @@
         9: 'secretExpeditionV2Config',
         11: 'secretRepatriationConfig',
         12: 'secretMechaBuildingsConfig',
+        13: 'secretAttacksConfig',
     };
     const RUN_KEY = 'secretMultiLinkRun';
     const TAB_RUN_ID_KEY = 'secretMultiLinkRunId';
@@ -51,6 +52,7 @@
         9: 1,
         11: 1,
         12: 13,
+        13: 200,
     };
     const PAGE_TIMEOUT_MS = 45000;
     const ELEMENT_TIMEOUT_MS = 7000;
@@ -76,9 +78,13 @@
     const MECHA_DELAY_MIN_MS = POST_ACTION_DELAY_MIN_MS;
     const MECHA_DELAY_MAX_MS = POST_ACTION_DELAY_MAX_MS;
     const MECHA_MAX_CYCLES = 10;
+    const ATTACK_DELAY_MIN_MS = POST_ACTION_DELAY_MIN_MS;
+    const ATTACK_DELAY_MAX_MS = POST_ACTION_DELAY_MAX_MS;
     const EXPEDITION_V2_LAUNCH_DELAY_MIN_MS = 800;
     const EXPEDITION_V2_LAUNCH_DELAY_MAX_MS = 1400;
     const EXPEDITION_SLOTS_SELECTOR = '#slots > div:nth-child(2) > span';
+    const ATTACK_FLEET_SLOTS_SELECTOR =
+        '#slots span.tooltip.advice[data-tooltip-title*="slots de flotte utilisés"]';
     const LIFEFORM_DISCOVER_SELECTOR = '#discoverSystemBtn';
     const LIFEFORM_SLOT_USED_SELECTOR = '#slots #slotUsed';
     const LIFEFORM_SLOT_VALUE_SELECTOR = '#slots #slotValue';
@@ -154,6 +160,10 @@
             selector: 'button.upgrade[data-technology="11102"]',
         },
     };
+    const ATTACK_TRANSPORTER_SELECTOR = 'input[name="transporterLarge"]';
+    const ATTACK_CONTINUE_SELECTOR = '#continueToFleet2 > span';
+    const ATTACK_SEND_SELECTOR = '#sendFleet > span';
+    const ATTACK_TRANSPORTER_COUNT = 250;
 
     class ElementNotFoundError extends Error {
         constructor(selector, timeoutMs) {
@@ -304,6 +314,18 @@
     });
     registerMenuCommandSafely('Démarrer Bâtiments Mecha', () => {
         void startFromStoredConfiguration(12);
+    });
+    registerMenuCommandSafely('Configurer Attaques', () => {
+        void openControlPanel(13);
+    });
+    registerMenuCommandSafely('Démarrer Attaques', () => {
+        void startFromStoredConfiguration(13);
+    });
+    registerMenuCommandSafely('Configurer Expéditions V2 & Attaques', () => {
+        void openControlPanel(14);
+    });
+    registerMenuCommandSafely('Démarrer Expéditions V2 & Attaques', () => {
+        void startExpeditionV2AttacksAutomation();
     });
     registerMenuCommandSafely('Configurer Expédition V2 & Forme de vie', () => {
         void openControlPanel(10);
@@ -585,6 +607,13 @@
                 .control-group.mecha-buildings .quick {
                     min-width: 142px;
                     background: linear-gradient(135deg, rgba(15, 118, 110, .98), rgba(6, 182, 212, .96));
+                }
+                .control-group.attacks .quick {
+                    background: linear-gradient(135deg, rgba(185, 28, 28, .98), rgba(234, 88, 12, .96));
+                }
+                .control-group.expeditions-v2-attacks .quick {
+                    min-width: 224px;
+                    background: linear-gradient(135deg, rgba(14, 116, 144, .97), rgba(124, 58, 237, .96), rgba(220, 38, 38, .95));
                 }
                 .control-group.ghost .quick {
                     background: linear-gradient(135deg, rgba(71, 85, 105, .98), rgba(88, 28, 135, .96));
@@ -1229,6 +1258,10 @@
                                 <button type="button" class="quick quick-12" title="Lancer Bâtiments Mecha">Bâtiments Mecha</button>
                                 <button type="button" class="settings settings-12" title="Configurer Bâtiments Mecha" aria-label="Configurer Bâtiments Mecha">⚙</button>
                             </div>
+                            <div class="control-group attacks">
+                                <button type="button" class="quick quick-13" title="Lancer Attaques">Attaques</button>
+                                <button type="button" class="settings settings-13" title="Configurer Attaques" aria-label="Configurer Attaques">⚙</button>
+                            </div>
                         </div>
                     </div>
                     <div class="menu-group grouped-menu-group">
@@ -1241,6 +1274,10 @@
                             <div class="control-group expeditions-v2-lifeform">
                                 <button type="button" class="quick quick-10" title="Lancer Expédition V2 puis Forme de vie">Expédition V2 &amp; Forme de vie</button>
                                 <button type="button" class="settings settings-10" title="Configurer Expédition V2 et Forme de vie" aria-label="Configurer Expédition V2 et Forme de vie">⚙</button>
+                            </div>
+                            <div class="control-group expeditions-v2-attacks">
+                                <button type="button" class="quick quick-14" title="Lancer Expédition V2 puis Attaques">Expéditions V2 &amp; Attaques</button>
+                                <button type="button" class="settings settings-14" title="Configurer Expédition V2 et Attaques" aria-label="Configurer Expédition V2 et Attaques">⚙</button>
                             </div>
                         </div>
                     </div>
@@ -1255,9 +1292,9 @@
                         jamais dans le code du script.
                     </p>
                     <div class="start-url-group">
-                        <label for="secret-start-url-2">Lien de départ</label>
+                        <label class="start-url-label" for="secret-start-url-2">Lien de départ</label>
                         <input id="secret-start-url-2" class="start-url" type="url" spellcheck="false" autocomplete="off" placeholder="Lien chargé avant la première action">
-                        <p class="field-help">Chargé une seule fois avant le lien choisi aléatoirement.</p>
+                        <p class="field-help start-url-help">Chargé une seule fois avant le lien choisi aléatoirement.</p>
                     </div>
                     <div class="small-vehicle-group">
                         <label for="secret-small-vehicle-count">Nombre de petites voitures</label>
@@ -1370,6 +1407,8 @@
             quick10: shadow.querySelector('.quick-10'),
             quick11: shadow.querySelector('.quick-11'),
             quick12: shadow.querySelector('.quick-12'),
+            quick13: shadow.querySelector('.quick-13'),
+            quick14: shadow.querySelector('.quick-14'),
             simpleMenuToggle: shadow.querySelector('.simple-menu-toggle'),
             groupedMenuToggle: shadow.querySelector('.grouped-menu-toggle'),
             simpleMenu: shadow.querySelector('.simple-menu'),
@@ -1387,11 +1426,15 @@
             settings10: shadow.querySelector('.settings-10'),
             settings11: shadow.querySelector('.settings-11'),
             settings12: shadow.querySelector('.settings-12'),
+            settings13: shadow.querySelector('.settings-13'),
+            settings14: shadow.querySelector('.settings-14'),
             panel: shadow.querySelector('.panel'),
             panelTitle: shadow.querySelector('.panel-title'),
             help: shadow.querySelector('.help'),
             startUrlGroup: shadow.querySelector('.start-url-group'),
+            startUrlLabel: shadow.querySelector('.start-url-label'),
             startUrl: shadow.querySelector('.start-url'),
+            startUrlHelp: shadow.querySelector('.start-url-help'),
             smallVehicleGroup: shadow.querySelector('.small-vehicle-group'),
             smallVehicleCount: shadow.querySelector('.small-vehicle-count'),
             linksFieldGroup: shadow.querySelector('.links-field-group'),
@@ -1447,6 +1490,8 @@
         refs.settings10.addEventListener('click', () => togglePanel(10));
         refs.settings11.addEventListener('click', () => togglePanel(11));
         refs.settings12.addEventListener('click', () => togglePanel(12));
+        refs.settings13.addEventListener('click', () => togglePanel(13));
+        refs.settings14.addEventListener('click', () => togglePanel(14));
         refs.combinedResources.addEventListener('click', () => open(combinedTargetProfiles[0]));
         refs.combinedExpeditions.addEventListener('click', () => open(combinedTargetProfiles[1]));
         refs.close.addEventListener('click', () => closePanel());
@@ -1468,6 +1513,8 @@
         refs.quick10.addEventListener('click', () => quickExpeditionV2LifeformAction());
         refs.quick11.addEventListener('click', () => quickAction(11));
         refs.quick12.addEventListener('click', () => quickAction(12));
+        refs.quick13.addEventListener('click', () => quickAction(13));
+        refs.quick14.addEventListener('click', () => quickExpeditionV2AttacksAction());
         refs.constructionRunnerClose.addEventListener('click', closeConstructionRunner);
         refs.constructionRunnerCancel.addEventListener('click', closeConstructionRunner);
         refs.constructionRunnerStart.addEventListener('click', launchConstructionFromRunner);
@@ -1527,6 +1574,15 @@
                 void stopAutomation('Arrêt d’Expédition V2 & Forme de vie demandé avec le bouton flottant.');
             } else {
                 void startExpeditionV2LifeformAutomation();
+            }
+        }
+
+        function quickExpeditionV2AttacksAction() {
+            const run = getRunState();
+            if (run.status === 'running' && run.combinedKind === 'expedition-v2-attacks') {
+                void stopAutomation('Arrêt d’Expéditions V2 & Attaques demandé avec le bouton flottant.');
+            } else {
+                void startExpeditionV2AttacksAutomation();
             }
         }
 
@@ -1897,7 +1953,7 @@
         function loadProfileIntoPanel(profileId) {
             editingProfileId = normalizeEditorProfileId(profileId);
 
-            if ([3, 10].includes(editingProfileId)) {
+            if ([3, 10, 14].includes(editingProfileId)) {
                 const combinedDetails = editingProfileId === 3
                     ? {
                         targets: [9, 1],
@@ -1905,12 +1961,19 @@
                         help: 'Le mode combiné exécute Expédition V2, puis Ressources, et termine automatiquement par Forme de vie avec leurs réglages respectifs.',
                         startLabel: 'Lancer Expéditions V2 & Ressources',
                     }
-                    : {
+                    : editingProfileId === 10
+                      ? {
                           targets: [9, 4],
                           title: 'Configuration — Expédition V2 & Forme de vie',
                           help: 'Le mode combiné exécute Expédition V2 jusqu’au message d’arrêt, puis démarre automatiquement Forme de vie.',
                           startLabel: 'Lancer Expédition V2 & Forme de vie',
-                      };
+                        }
+                      : {
+                            targets: [9, 13],
+                            title: 'Configuration — Expéditions V2 & Attaques',
+                            help: 'Le mode combiné exécute Expédition V2 jusqu’au message d’arrêt, puis démarre automatiquement Attaques.',
+                            startLabel: 'Lancer Expéditions V2 & Attaques',
+                        };
                 combinedTargetProfiles = combinedDetails.targets;
                 const firstConfig = getStoredConfig(combinedTargetProfiles[0]);
                 const secondConfig = getStoredConfig(combinedTargetProfiles[1]);
@@ -1961,9 +2024,18 @@
                             ? 'Une URL unique. Rappatriement sélectionne la flotte, conserve les unités demandées, stationne sur la lune et transfère les ressources.'
                           : editingProfileId === 12
                             ? 'Configurez exactement 13 liens. Bâtiments Mecha les traite dans l’ordre pour le Secteur résidentiel, puis pour la Ferme biosphérique, pendant 10 boucles complètes.'
+                          : editingProfileId === 13
+                            ? 'Configurez une Page de départ fixe et jusqu’à 200 URL cibles. Les compteurs de sélection sont équilibrés et conservés dans Tampermonkey.'
                     : 'Un lien par ligne. Les adresses sont conservées dans le stockage privé de Tampermonkey, jamais dans le code du script.';
-            refs.startUrlGroup.style.display = editingProfileId === 2 ? 'block' : 'none';
-            refs.startUrl.value = editingProfileId === 2 ? config.startUrl : '';
+            const usesStartUrl = editingProfileId === 2 || editingProfileId === 13;
+            refs.startUrlGroup.style.display = usesStartUrl ? 'block' : 'none';
+            refs.startUrlLabel.textContent = editingProfileId === 13
+                ? 'Page de départ fixe'
+                : 'Lien de départ';
+            refs.startUrlHelp.textContent = editingProfileId === 13
+                ? 'Chargée une seule fois au lancement pour lire les slots de flotte.'
+                : 'Chargé une seule fois avant le lien choisi aléatoirement.';
+            refs.startUrl.value = usesStartUrl ? config.startUrl : '';
             refs.smallVehicleGroup.style.display = editingProfileId === 2 ? 'block' : 'none';
             refs.smallVehicleCount.value =
                 editingProfileId === 2 ? String(config.smallVehicleCount) : '6400';
@@ -1994,7 +2066,7 @@
         }
 
         function updateCounter() {
-            if ([3, 10].includes(editingProfileId)) return;
+            if ([3, 10, 14].includes(editingProfileId)) return;
             if (editingProfileId === 7) {
                 const count = refs.namedLinkNames.reduce((total, input, index) => {
                     return total + (input.value.trim() || refs.namedLinkUrls[index].value.trim() ? 1 : 0);
@@ -2022,13 +2094,15 @@
         }
 
         function saveFromPanel(shouldStart) {
-            if ([3, 10].includes(editingProfileId)) {
+            if ([3, 10, 14].includes(editingProfileId)) {
                 showError('');
                 if (shouldStart) {
                     if (editingProfileId === 3) {
                         void startExpeditionV2ResourcesAutomation();
-                    } else {
+                    } else if (editingProfileId === 10) {
                         void startExpeditionV2LifeformAutomation();
+                    } else {
+                        void startExpeditionV2AttacksAutomation();
                     }
                 }
                 return;
@@ -2078,11 +2152,24 @@
                 showError('Bâtiments Mecha nécessite exactement 13 liens valides.');
                 return;
             }
+            if (editingProfileId === 13 && new Set(parsed.links).size !== parsed.links.length) {
+                showError('Chaque URL cible d’Attaques doit être unique.');
+                return;
+            }
 
-            const startUrl = editingProfileId === 2 ? validateHttpUrl(refs.startUrl.value) : '';
-            if (editingProfileId === 2 && !startUrl) {
-                showError('Ajoutez un lien de départ valide commençant par http:// ou https://.');
+            const usesStartUrl = editingProfileId === 2 || editingProfileId === 13;
+            const startUrl = usesStartUrl ? validateHttpUrl(refs.startUrl.value) : '';
+            if (usesStartUrl && !startUrl) {
+                showError(
+                    editingProfileId === 13
+                        ? 'Ajoutez une Page de départ fixe valide commençant par http:// ou https://.'
+                        : 'Ajoutez un lien de départ valide commençant par http:// ou https://.'
+                );
                 refs.startUrl.focus();
+                return;
+            }
+            if (editingProfileId === 13 && parsed.links.includes(startUrl)) {
+                showError('La Page de départ fixe ne doit pas figurer parmi les URL cibles.');
                 return;
             }
 
@@ -2119,6 +2206,8 @@
                     void startRepatriationAutomation();
                 } else if (editingProfileId === 12) {
                     void startMechaAutomation();
+                } else if (editingProfileId === 13) {
+                    void startAttackAutomation();
                 } else {
                     void startAutomation(editingProfileId, parsed.links);
                 }
@@ -2127,13 +2216,15 @@
 
         function refresh() {
             const run = getRunState();
-            const isCombinedPanel = [3, 10].includes(editingProfileId);
+            const isCombinedPanel = [3, 10, 14].includes(editingProfileId);
             const config = isCombinedPanel ? null : getStoredConfig(editingProfileId);
             const expeditionV2ResourcesRunning =
                 run.status === 'running' &&
                 run.combinedKind === 'expedition-v2-resources-lifeform';
             const expeditionV2LifeformRunning =
                 run.status === 'running' && run.combinedKind === 'expedition-v2-lifeform';
+            const expeditionV2AttacksRunning =
+                run.status === 'running' && run.combinedKind === 'expedition-v2-attacks';
             const profile1Running =
                 run.status === 'running' && run.profileId === 1 && !run.combinedMode;
             const profile4Running =
@@ -2150,12 +2241,15 @@
                 run.status === 'running' && run.profileId === 11 && !run.combinedMode;
             const profile12Running =
                 run.status === 'running' && run.profileId === 12 && !run.combinedMode;
+            const profile13Running =
+                run.status === 'running' && run.profileId === 13 && !run.combinedMode;
             const simpleActionRunning =
                 profile1Running || profile4Running || profile6Running ||
                 profile7Running || profile8Running || profile9Running || profile11Running ||
-                profile12Running;
+                profile12Running || profile13Running;
             const groupedActionRunning =
-                expeditionV2ResourcesRunning || expeditionV2LifeformRunning;
+                expeditionV2ResourcesRunning || expeditionV2LifeformRunning ||
+                expeditionV2AttacksRunning;
 
             refs.quick1.classList.toggle('running', profile1Running);
             refs.quick3.classList.toggle('running', expeditionV2ResourcesRunning);
@@ -2167,6 +2261,8 @@
             refs.quick10.classList.toggle('running', expeditionV2LifeformRunning);
             refs.quick11.classList.toggle('running', profile11Running);
             refs.quick12.classList.toggle('running', profile12Running);
+            refs.quick13.classList.toggle('running', profile13Running);
+            refs.quick14.classList.toggle('running', expeditionV2AttacksRunning);
             refs.simpleMenuToggle.classList.toggle('running', simpleActionRunning);
             refs.groupedMenuToggle.classList.toggle('running', groupedActionRunning);
             refs.quick1.textContent = profile1Running ? '■ Arrêter' : 'Ressources';
@@ -2183,6 +2279,10 @@
                 : 'Expédition V2 & Forme de vie';
             refs.quick11.textContent = profile11Running ? '■ Arrêter' : 'Rappatriement';
             refs.quick12.textContent = profile12Running ? '■ Arrêter' : 'Bâtiments Mecha';
+            refs.quick13.textContent = profile13Running ? '■ Arrêter' : 'Attaques';
+            refs.quick14.textContent = expeditionV2AttacksRunning
+                ? '■ Arrêter le combiné'
+                : 'Expéditions V2 & Attaques';
             refs.quick1.title = profile1Running ? 'Arrêter Ressources' : 'Lancer Ressources';
             refs.quick3.title = expeditionV2ResourcesRunning
                 ? 'Arrêter Expéditions V2 & Ressources'
@@ -2201,6 +2301,10 @@
             refs.quick12.title = profile12Running
                 ? 'Arrêter Bâtiments Mecha'
                 : 'Lancer Bâtiments Mecha';
+            refs.quick13.title = profile13Running ? 'Arrêter Attaques' : 'Lancer Attaques';
+            refs.quick14.title = expeditionV2AttacksRunning
+                ? 'Arrêter Expéditions V2 & Attaques'
+                : 'Lancer Expédition V2 puis Attaques';
 
             const debugText = formatDebugProgress(run);
             const debugWasDismissed =
@@ -2275,6 +2379,13 @@
             ui.refresh();
             return;
         }
+        if (normalizedProfileId === 13 && !config.startUrl) {
+            const ui = await ensureUi();
+            ui.open(13);
+            ui.showError('Configurez la Page de départ fixe d’Attaques avant de lancer.');
+            ui.refresh();
+            return;
+        }
 
         if (normalizedProfileId === 4) {
             await startLifeformAutomation();
@@ -2304,6 +2415,10 @@
         }
         if (normalizedProfileId === 12) {
             await startMechaAutomation();
+            return;
+        }
+        if (normalizedProfileId === 13) {
+            await startAttackAutomation();
             return;
         }
 
@@ -2395,6 +2510,36 @@
             combinedMode: true,
             combinedKind: 'expedition-v2-lifeform',
             nextProfileId: 4,
+        });
+    }
+
+    async function startExpeditionV2AttacksAutomation() {
+        const expeditionV2Config = getStoredConfig(9);
+        const attacksConfig = getStoredConfig(13);
+        const errors = [];
+
+        if (expeditionV2Config.links.length !== 1) {
+            errors.push('Ajoutez l’URL unique dans Expédition V2.');
+        }
+        if (!attacksConfig.startUrl) {
+            errors.push('Ajoutez la Page de départ fixe dans Attaques.');
+        }
+        if (attacksConfig.links.length === 0) {
+            errors.push('Ajoutez au moins une URL cible dans Attaques.');
+        }
+
+        if (errors.length > 0) {
+            const ui = await ensureUi();
+            ui.open(14);
+            ui.showError(errors.join(' '));
+            ui.refresh();
+            return;
+        }
+
+        await startExpeditionV2Automation({
+            combinedMode: true,
+            combinedKind: 'expedition-v2-attacks',
+            nextProfileId: 13,
         });
     }
 
@@ -3446,6 +3591,356 @@
         });
         refreshUi();
         return true;
+    }
+
+    async function startAttackAutomation(options = {}) {
+        const config = getStoredConfig(13);
+        if (!config.startUrl || config.links.length === 0) {
+            const ui = await ensureUi();
+            ui.open(13);
+            ui.showError(
+                'Configurez la Page de départ fixe et au moins une URL cible pour Attaques.'
+            );
+            ui.refresh();
+            return;
+        }
+
+        const now = Date.now();
+        const runId = createRunId();
+        GM_setValue(RUN_KEY, {
+            runId,
+            profileId: 13,
+            status: 'running',
+            combinedMode: Boolean(options.combinedMode),
+            combinedKind: typeof options.combinedKind === 'string' ? options.combinedKind : '',
+            nextProfileId: null,
+            phase: 'attack-open-start',
+            currentLinkIndex: 0,
+            attackCurrentUrl: '',
+            attackCounterIncremented: false,
+            attackTargetExecutions: null,
+            attackCompletedExecutions: 0,
+            attackPendingDelayMs: 0,
+            attackPendingDelayLabel: '',
+            startedAt: now,
+            updatedAt: now,
+            message: 'Attaques — chargement de la Page de départ fixe…',
+        });
+        await setThisTabRunId(runId);
+        refreshUi();
+        navigateToUrl(config.startUrl, true);
+    }
+
+    async function resumeAttackAutomation(runId) {
+        try {
+            let run = getActiveRun(runId);
+            if (!run || run.profileId !== 13) return;
+
+            let config = getStoredConfig(13);
+            if (!config.startUrl || config.links.length === 0) {
+                throw new Error('La configuration Attaques est incomplète.');
+            }
+
+            while (true) {
+                run = getActiveRun(runId);
+                if (!run) return;
+                config = getStoredConfig(13);
+                if (!config.startUrl || config.links.length === 0) {
+                    throw new Error('La configuration Attaques est devenue incomplète.');
+                }
+
+                if (Number(run.attackPendingDelayMs) > 0) {
+                    const canContinue = await consumeAttackDelay(runId);
+                    if (!canContinue) return;
+                    continue;
+                }
+
+                const completedExecutions = Math.max(
+                    0,
+                    Math.floor(Number(run.attackCompletedExecutions) || 0)
+                );
+                const targetExecutions = Math.max(
+                    0,
+                    Math.floor(Number(run.attackTargetExecutions) || 0)
+                );
+
+                if (run.phase === 'attack-open-start') {
+                    if (!isConfiguredPage(config.startUrl, window.location.href)) {
+                        navigateToUrl(config.startUrl, false);
+                        return;
+                    }
+                    const renderResult = await waitUntilPageUsable(PAGE_TIMEOUT_MS);
+                    if (renderResult.timedOut) {
+                        throw new Error('La Page de départ fixe d’Attaques ne s’est pas chargée à temps.');
+                    }
+                    if (!getActiveRun(runId)) return;
+
+                    updateRun(runId, {
+                        phase: 'attack-read-slots',
+                        attackPendingDelayMs: getRandomDelayMs(
+                            ATTACK_DELAY_MIN_MS,
+                            ATTACK_DELAY_MAX_MS
+                        ),
+                        attackPendingDelayLabel: 'le chargement de la Page de départ fixe',
+                        message: 'Attaques — Page de départ chargée, préparation de la lecture des slots…',
+                    });
+                    refreshUi();
+                    continue;
+                }
+
+                if (run.phase === 'attack-read-slots') {
+                    updateRun(runId, {
+                        message: 'Attaques — lecture des slots de flotte utilisés / maximum…',
+                    });
+                    refreshUi();
+                    const slots = await readAttackFleetSlots(ELEMENT_TIMEOUT_MS);
+                    if (!getActiveRun(runId)) return;
+
+                    if (slots.remaining === 0) {
+                        await completeAttackAutomation(
+                            runId,
+                            `Attaques terminée sans envoi : ${slots.used}/${slots.maximum} slots de flotte utilisés.`
+                        );
+                        return;
+                    }
+
+                    updateRun(runId, {
+                        phase: 'attack-choose-target',
+                        attackTargetExecutions: slots.remaining,
+                        attackCompletedExecutions: 0,
+                        attackPendingDelayMs: getRandomDelayMs(
+                            ATTACK_DELAY_MIN_MS,
+                            ATTACK_DELAY_MAX_MS
+                        ),
+                        attackPendingDelayLabel: 'la lecture des slots de flotte',
+                        message:
+                            `Attaques — slots ${slots.used}/${slots.maximum} : ` +
+                            `${slots.remaining} tour(s) à exécuter, tour initial inclus.`,
+                    });
+                    refreshUi();
+                    continue;
+                }
+
+                if (run.phase === 'attack-choose-target') {
+                    if (completedExecutions >= targetExecutions) {
+                        await completeAttackAutomation(
+                            runId,
+                            `Attaques terminée : ${completedExecutions}/${targetExecutions} tour(s) exécuté(s).`
+                        );
+                        return;
+                    }
+
+                    const target = chooseLeastUsedAttackTarget(config);
+                    updateRun(runId, {
+                        phase: 'attack-open-target',
+                        currentLinkIndex: target.index,
+                        attackCurrentUrl: target.url,
+                        attackCounterIncremented: false,
+                        message:
+                            `Attaques — tour ${completedExecutions + 1}/${targetExecutions} : ` +
+                            `URL ${target.index + 1}/${config.links.length} choisie parmi les compteurs ` +
+                            `minimums (${target.count}).`,
+                    });
+                    refreshUi();
+                    navigateToUrl(target.url, true);
+                    return;
+                }
+
+                if (run.phase === 'attack-open-target') {
+                    const currentUrl = validateHttpUrl(run.attackCurrentUrl) || '';
+                    const currentIndex = config.links.indexOf(currentUrl);
+                    if (!currentUrl || currentIndex < 0) {
+                        throw new Error('L’URL cible Attaques du tour courant n’est plus configurée.');
+                    }
+                    if (!isConfiguredPage(currentUrl, window.location.href)) {
+                        navigateToUrl(currentUrl, false);
+                        return;
+                    }
+                    const renderResult = await waitUntilPageUsable(PAGE_TIMEOUT_MS);
+                    if (renderResult.timedOut) {
+                        throw new Error(
+                            `L’URL cible ${currentIndex + 1}/${config.links.length} ne s’est pas chargée à temps.`
+                        );
+                    }
+                    if (!getActiveRun(runId)) return;
+
+                    const nextCounter = run.attackCounterIncremented
+                        ? Number(config.attackCounters[currentUrl]) || 0
+                        : incrementAttackUrlCounter(currentUrl);
+                    updateRun(runId, {
+                        phase: 'attack-set-transporter',
+                        currentLinkIndex: currentIndex,
+                        attackCounterIncremented: true,
+                        attackPendingDelayMs: getRandomDelayMs(
+                            ATTACK_DELAY_MIN_MS,
+                            ATTACK_DELAY_MAX_MS
+                        ),
+                        attackPendingDelayLabel: `le chargement de l’URL ${currentIndex + 1}`,
+                        message:
+                            `Attaques — URL ${currentIndex + 1}/${config.links.length} chargée ; ` +
+                            `compteur porté à ${nextCounter}.`,
+                    });
+                    refreshUi();
+                    continue;
+                }
+
+                if (run.phase === 'attack-set-transporter') {
+                    const input = await waitForElement(ATTACK_TRANSPORTER_SELECTOR, {
+                        timeoutMs: ELEMENT_TIMEOUT_MS,
+                        clickable: false,
+                    });
+                    if (!getActiveRun(runId)) return;
+                    input.click();
+                    setFormControlValue(input, String(ATTACK_TRANSPORTER_COUNT));
+                    updateRun(runId, {
+                        phase: 'attack-continue',
+                        attackPendingDelayMs: getRandomDelayMs(
+                            ATTACK_DELAY_MIN_MS,
+                            ATTACK_DELAY_MAX_MS
+                        ),
+                        attackPendingDelayLabel: 'la saisie de 250 transporterLarge',
+                        message:
+                            `Attaques — tour ${completedExecutions + 1}/${targetExecutions} : ` +
+                            '250 transporterLarge saisis.',
+                    });
+                    refreshUi();
+                    continue;
+                }
+
+                if (run.phase === 'attack-continue') {
+                    const continueButton = await waitForElement(ATTACK_CONTINUE_SELECTOR, {
+                        timeoutMs: ELEMENT_TIMEOUT_MS,
+                        clickable: true,
+                    });
+                    if (!getActiveRun(runId)) return;
+                    const pageExitPromise = waitForPageExit(3000);
+                    updateRun(runId, {
+                        phase: 'attack-wait-page-2',
+                        message:
+                            `Attaques — tour ${completedExecutions + 1}/${targetExecutions} : ` +
+                            'Continuer cliqué, attente de la page suivante…',
+                    });
+                    refreshUi();
+                    continueButton.click();
+                    if (await pageExitPromise) return;
+                    continue;
+                }
+
+                if (run.phase === 'attack-wait-page-2') {
+                    const renderResult = await waitUntilPageUsable(PAGE_TIMEOUT_MS);
+                    if (renderResult.timedOut) {
+                        throw new Error('La page d’envoi d’Attaques ne s’est pas chargée à temps.');
+                    }
+                    if (!getActiveRun(runId)) return;
+                    updateRun(runId, {
+                        phase: 'attack-send',
+                        attackPendingDelayMs: getRandomDelayMs(
+                            ATTACK_DELAY_MIN_MS,
+                            ATTACK_DELAY_MAX_MS
+                        ),
+                        attackPendingDelayLabel: 'le chargement de la page d’envoi',
+                        message:
+                            `Attaques — tour ${completedExecutions + 1}/${targetExecutions} : ` +
+                            'page d’envoi chargée.',
+                    });
+                    refreshUi();
+                    continue;
+                }
+
+                if (run.phase === 'attack-send') {
+                    const sendButton = await waitForElement(ATTACK_SEND_SELECTOR, {
+                        timeoutMs: ELEMENT_TIMEOUT_MS,
+                        clickable: true,
+                    });
+                    if (!getActiveRun(runId)) return;
+                    const pageExitPromise = waitForPageExit(3000);
+                    updateRun(runId, {
+                        phase: 'attack-wait-after-send',
+                        message:
+                            `Attaques — tour ${completedExecutions + 1}/${targetExecutions} : ` +
+                            'envoi de la flotte…',
+                    });
+                    refreshUi();
+                    sendButton.click();
+                    if (await pageExitPromise) return;
+                    continue;
+                }
+
+                if (run.phase === 'attack-wait-after-send') {
+                    const renderResult = await waitUntilPageUsable(PAGE_TIMEOUT_MS);
+                    if (renderResult.timedOut) {
+                        throw new Error('La page suivant l’envoi d’Attaques ne s’est pas chargée à temps.');
+                    }
+                    if (!getActiveRun(runId)) return;
+                    const nextCompletedExecutions = completedExecutions + 1;
+                    if (nextCompletedExecutions >= targetExecutions) {
+                        updateRun(runId, {
+                            attackCompletedExecutions: nextCompletedExecutions,
+                        });
+                        await completeAttackAutomation(
+                            runId,
+                            `Attaques terminée : ${nextCompletedExecutions}/${targetExecutions} tour(s) exécuté(s).`
+                        );
+                        return;
+                    }
+                    updateRun(runId, {
+                        phase: 'attack-choose-target',
+                        attackCompletedExecutions: nextCompletedExecutions,
+                        attackCurrentUrl: '',
+                        attackCounterIncremented: false,
+                        attackPendingDelayMs: getRandomDelayMs(
+                            ATTACK_DELAY_MIN_MS,
+                            ATTACK_DELAY_MAX_MS
+                        ),
+                        attackPendingDelayLabel: `l’envoi du tour ${nextCompletedExecutions}`,
+                        message:
+                            `Attaques — tour ${nextCompletedExecutions}/${targetExecutions} terminé ; ` +
+                            'préparation du prochain choix équilibré…',
+                    });
+                    refreshUi();
+                    continue;
+                }
+
+                throw new Error(`Phase Attaques inconnue : ${run.phase}`);
+            }
+        } catch (error) {
+            await failRun(runId, error instanceof Error ? error.message : String(error), error);
+        }
+    }
+
+    async function consumeAttackDelay(runId) {
+        const run = getActiveRun(runId);
+        if (!run) return false;
+        const delayMs = Math.max(0, Math.floor(Number(run.attackPendingDelayMs) || 0));
+        if (delayMs === 0) return true;
+        const label = run.attackPendingDelayLabel || 'l’action précédente';
+        updateRun(runId, {
+            message:
+                `Attaques — attente aléatoire ${(delayMs / 1000).toFixed(2)} s après ${label}…`,
+        });
+        refreshUi();
+        await delay(delayMs);
+        if (!getActiveRun(runId)) return false;
+        updateRun(runId, {
+            attackPendingDelayMs: 0,
+            attackPendingDelayLabel: '',
+        });
+        refreshUi();
+        return true;
+    }
+
+    async function completeAttackAutomation(runId, message) {
+        const run = getActiveRun(runId);
+        if (!run) return;
+        GM_setValue(RUN_KEY, {
+            ...run,
+            status: 'completed',
+            phase: 'attack-completed',
+            updatedAt: Date.now(),
+            message,
+        });
+        await clearThisTabRunId(runId);
+        refreshUi();
     }
 
     async function startGhostAutomation(selectedDateTime = '') {
@@ -4543,7 +5038,8 @@
             combinedMode: Boolean(options.combinedMode),
             combinedKind: typeof options.combinedKind === 'string' ? options.combinedKind : '',
             nextProfileId:
-                Number(options.nextProfileId) === 1 || Number(options.nextProfileId) === 4
+                Number(options.nextProfileId) === 1 || Number(options.nextProfileId) === 4 ||
+                Number(options.nextProfileId) === 13
                     ? Number(options.nextProfileId)
                     : null,
             phase: 'expedition-v2-open-link',
@@ -4892,6 +5388,25 @@
             await startLifeformAutomation({
                 combinedMode: true,
                 combinedKind: 'expedition-v2-lifeform',
+            });
+            return;
+        }
+
+        if (
+            run.combinedKind === 'expedition-v2-attacks' &&
+            run.nextProfileId === 13
+        ) {
+            const attacksConfig = getStoredConfig(13);
+            if (!attacksConfig.startUrl || attacksConfig.links.length === 0) {
+                await failRun(
+                    runId,
+                    'La configuration Attaques est devenue incomplète avant son démarrage.'
+                );
+                return;
+            }
+            await startAttackAutomation({
+                combinedMode: true,
+                combinedKind: 'expedition-v2-attacks',
             });
             return;
         }
@@ -5438,6 +5953,10 @@
         }
         if (run.profileId === 12) {
             await resumeMechaAutomation(run.runId);
+            return;
+        }
+        if (run.profileId === 13) {
+            await resumeAttackAutomation(run.runId);
             return;
         }
         if (run.profileId === 2 && !config.startUrl) {
@@ -6017,14 +6536,14 @@
         const value = Number(profileId);
         if (
             value === 4 || value === 6 || value === 7 || value === 8 ||
-            value === 9 || value === 11 || value === 12
+            value === 9 || value === 11 || value === 12 || value === 13
         ) return value;
         return value === 2 ? 2 : 1;
     }
 
     function normalizeEditorProfileId(profileId) {
         const value = Number(profileId);
-        if (value === 3 || value === 10) return value;
+        if (value === 3 || value === 10 || value === 14) return value;
         return normalizeProfileId(value);
     }
 
@@ -6037,6 +6556,7 @@
         if (normalizedProfileId === 9) return 'Expédition V2';
         if (normalizedProfileId === 11) return 'Rappatriement';
         if (normalizedProfileId === 12) return 'Bâtiments Mecha';
+        if (normalizedProfileId === 13) return 'Attaques';
         return normalizedProfileId === 2 ? 'Expéditions' : 'Ressources';
     }
 
@@ -6054,7 +6574,8 @@
             normalizedProfileId === 8 ||
             normalizedProfileId === 9 ||
             normalizedProfileId === 11 ||
-            normalizedProfileId === 12
+            normalizedProfileId === 12 ||
+            normalizedProfileId === 13
         ) return [];
         return normalizedProfileId === 2 ? ACTION_STEPS_2 : ACTION_STEPS_1;
     }
@@ -6083,6 +6604,9 @@
         }
         if (profileId === 12) {
             return formatMechaDebugProgress(run);
+        }
+        if (profileId === 13) {
+            return formatAttackDebugProgress(run);
         }
         const config = getStoredConfig(profileId);
         const actionSteps = getActionSteps(profileId);
@@ -6205,6 +6729,8 @@
             ? 'Expéditions V2 & Ressources — étape Expédition V2'
             : run.combinedKind === 'expedition-v2-lifeform'
               ? 'Expédition V2 & Forme de vie — étape Expédition V2'
+            : run.combinedKind === 'expedition-v2-attacks'
+              ? 'Expéditions V2 & Attaques — étape Expédition V2'
             : 'Expédition V2';
         const message = typeof run.message === 'string' ? run.message : '';
         return (
@@ -6311,6 +6837,44 @@
             `${buildingLabel} — Lien ${linkIndex + 1}/${linkCount}\n${actionLabel}` +
             (message ? `\n${message}` : '')
         );
+    }
+
+    function formatAttackDebugProgress(run) {
+        const config = getStoredConfig(13);
+        const completed = Math.max(0, Math.floor(Number(run.attackCompletedExecutions) || 0));
+        const target = Math.max(0, Math.floor(Number(run.attackTargetExecutions) || 0));
+        const currentLink = Math.max(0, Number(run.currentLinkIndex) || 0) + 1;
+        let actionLabel;
+        if (run.status !== 'running') {
+            actionLabel = `État : ${run.status}`;
+        } else if (Number(run.attackPendingDelayMs) > 0) {
+            actionLabel =
+                `Pause après ${run.attackPendingDelayLabel || 'l’action précédente'} — ` +
+                `${(Number(run.attackPendingDelayMs) / 1000).toFixed(2)} s`;
+        } else {
+            const labels = {
+                'attack-open-start': 'Préparation — charger la Page de départ fixe',
+                'attack-read-slots': 'Préparation — lire les slots de flotte',
+                'attack-choose-target': 'Choisir aléatoirement une URL au compteur minimal',
+                'attack-open-target': `Charger l’URL cible ${currentLink}/${Math.max(1, config.links.length)}`,
+                'attack-set-transporter': 'Saisir 250 transporterLarge',
+                'attack-continue': 'Cliquer sur Continuer',
+                'attack-wait-page-2': 'Attendre la page d’envoi',
+                'attack-send': 'Cliquer sur Envoyer la flotte',
+                'attack-wait-after-send': 'Attendre la page suivant l’envoi',
+                'attack-completed': 'Attaques terminée',
+            };
+            actionLabel = labels[run.phase] || `Phase inconnue : ${run.phase}`;
+        }
+
+        const runLabel = run.combinedKind === 'expedition-v2-attacks'
+            ? 'Expéditions V2 & Attaques — étape Attaques'
+            : 'Attaques';
+        const loopLabel = target > 0
+            ? `${Math.min(completed + 1, target)}/${target}`
+            : 'préparation';
+        const message = typeof run.message === 'string' ? run.message : '';
+        return `${runLabel} — Tour ${loopLabel}\n${actionLabel}` + (message ? `\n${message}` : '');
     }
 
     function formatGhostDebugProgress(run) {
@@ -6429,6 +6993,7 @@
                 startUrl: '',
                 smallVehicleCount: 6400,
                 constructionLoadingUrl: '',
+                attackCounters: {},
             };
         }
 
@@ -6441,7 +7006,9 @@
             : Array.isArray(stored.links)
             ? stored.links.filter((value) => typeof value === 'string').slice(0, maximum)
             : [];
-        const startUrl = normalizedProfileId === 2 ? validateHttpUrl(stored.startUrl) || '' : '';
+        const startUrl = normalizedProfileId === 2 || normalizedProfileId === 13
+            ? validateHttpUrl(stored.startUrl) || ''
+            : '';
         const parsedSmallVehicleCount = parseSmallVehicleCount(stored.smallVehicleCount);
         const smallVehicleCount =
             normalizedProfileId === 2 && parsedSmallVehicleCount !== null
@@ -6450,6 +7017,9 @@
         const constructionLoadingUrl = normalizedProfileId === 7
             ? validateHttpUrl(stored.constructionLoadingUrl) || ''
             : '';
+        const attackCounters = normalizedProfileId === 13
+            ? normalizeAttackCounters(links, stored.attackCounters)
+            : {};
         return {
             links,
             namedLinks,
@@ -6457,6 +7027,7 @@
             startUrl,
             smallVehicleCount,
             constructionLoadingUrl,
+            attackCounters,
         };
     }
 
@@ -6473,6 +7044,23 @@
                 startUrl: '',
                 smallVehicleCount: 6400,
                 constructionLoadingUrl,
+            });
+            return;
+        }
+        if (normalizedProfileId === 13) {
+            const links = config.links.slice(0, getProfileLinkLimit(13));
+            const stored = GM_getValue(CONFIG_KEYS[13], null);
+            const sourceCounters = config.attackCounters && typeof config.attackCounters === 'object'
+                ? config.attackCounters
+                : stored && typeof stored === 'object'
+                  ? stored.attackCounters
+                  : {};
+            GM_setValue(CONFIG_KEYS[13], {
+                links,
+                repeat: false,
+                startUrl: validateHttpUrl(config.startUrl) || '',
+                smallVehicleCount: 6400,
+                attackCounters: normalizeAttackCounters(links, sourceCounters),
             });
             return;
         }
@@ -6505,6 +7093,46 @@
 
         const firstValid = possibleValues.find((value) => validateHttpUrl(value));
         return firstValid ? [validateHttpUrl(firstValid)] : [];
+    }
+
+    function normalizeAttackCounters(links, counters) {
+        const source = counters && typeof counters === 'object' ? counters : {};
+        return links.reduce((result, url) => {
+            const value = Math.floor(Number(source[url]));
+            result[url] = Number.isSafeInteger(value) && value >= 0 ? value : 0;
+            return result;
+        }, {});
+    }
+
+    function chooseLeastUsedAttackTarget(config) {
+        if (!config || !Array.isArray(config.links) || config.links.length === 0) {
+            throw new Error('Aucune URL cible Attaques n’est configurée.');
+        }
+        const counters = normalizeAttackCounters(config.links, config.attackCounters);
+        const minimum = Math.min(...config.links.map((url) => counters[url]));
+        const candidates = config.links
+            .map((url, index) => ({ url, index, count: counters[url] }))
+            .filter((entry) => entry.count === minimum);
+        return candidates[getSecureRandomIndex(candidates.length)];
+    }
+
+    function incrementAttackUrlCounter(url) {
+        const config = getStoredConfig(13);
+        if (!config.links.includes(url)) {
+            throw new Error('Impossible d’incrémenter le compteur d’une URL Attaques inconnue.');
+        }
+        const counters = normalizeAttackCounters(config.links, config.attackCounters);
+        const current = counters[url];
+        if (!Number.isSafeInteger(current) || current >= Number.MAX_SAFE_INTEGER) {
+            throw new Error('Le compteur de cette URL Attaques a atteint sa limite technique.');
+        }
+        counters[url] = current + 1;
+        saveConfig(13, {
+            links: config.links,
+            startUrl: config.startUrl,
+            attackCounters: counters,
+        });
+        return counters[url];
     }
 
     function parseLinks(text, maximumLinks) {
@@ -7016,6 +7644,32 @@
 
         throw new Error(
             `Impossible de lire les créneaux d’expédition dans ${EXPEDITION_SLOTS_SELECTOR} après ${timeoutMs} ms.`
+        );
+    }
+
+    async function readAttackFleetSlots(timeoutMs) {
+        const deadline = Date.now() + timeoutMs;
+        while (Date.now() < deadline) {
+            const element = document.querySelector(ATTACK_FLEET_SLOTS_SELECTOR);
+            const text = element ? String(element.innerText || element.textContent || '') : '';
+            const match = text.match(/(\d+)\s*\/\s*(\d+)/);
+            if (match) {
+                const used = Number(match[1]);
+                const maximum = Number(match[2]);
+                if (
+                    Number.isInteger(used) &&
+                    Number.isInteger(maximum) &&
+                    maximum > 0 &&
+                    used >= 0 &&
+                    used <= maximum
+                ) {
+                    return { used, maximum, remaining: maximum - used };
+                }
+            }
+            await delay(75);
+        }
+        throw new Error(
+            `Impossible de lire les slots de flotte dans ${ATTACK_FLEET_SLOTS_SELECTOR} après ${timeoutMs} ms.`
         );
     }
 
