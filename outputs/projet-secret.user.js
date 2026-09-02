@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Projet secret — boucle multi-liens
 // @namespace    local.projet-secret
-// @version      6.17.0
+// @version      6.18.0
 // @updateURL    https://raw.githubusercontent.com/raphaelrobert1104-sys/mysecretproject/main/outputs/projet-secret.user.js
 // @downloadURL  https://raw.githubusercontent.com/raphaelrobert1104-sys/mysecretproject/main/outputs/projet-secret.user.js
 // @description  Automatise Ressources, Expédition V2, Attaques, Forme de vie, Import, Constructions, Ghost, Rappatriement et Bâtiments Mecha avec configurations privées.
@@ -21,7 +21,7 @@
 (function () {
     'use strict';
 
-    const SCRIPT_VERSION = '6.17.0';
+    const SCRIPT_VERSION = '6.18.0';
     const CONFIG_KEYS = {
         1: 'secretMultiLinkConfig',
         2: 'secretMultiLinkConfig2',
@@ -37,6 +37,7 @@
     const RUN_KEY = 'secretMultiLinkRun';
     const TAB_RUN_ID_KEY = 'secretMultiLinkRunId';
     const DEBUG_DISMISSED_RUN_KEY = 'secretMultiLinkDebugDismissedRunId';
+    const MECHA_MODE_KEY = 'secretMechaBuildingsMode';
     const GHOST_TIME_KEY = 'secretMultiLinkGhostTime';
     const GHOST_DATETIME_KEY = 'secretMultiLinkGhostDateTime';
     const GHOST_JAPAN_DATETIME_KEY = 'secretMultiLinkGhostJapanDateTime';
@@ -75,8 +76,9 @@
     const EXPEDITION_V2_DELAY_MAX_MS = POST_ACTION_DELAY_MAX_MS;
     const REPATRIATION_DELAY_MIN_MS = POST_ACTION_DELAY_MIN_MS;
     const REPATRIATION_DELAY_MAX_MS = POST_ACTION_DELAY_MAX_MS;
-    const MECHA_DELAY_MIN_MS = POST_ACTION_DELAY_MIN_MS;
-    const MECHA_DELAY_MAX_MS = POST_ACTION_DELAY_MAX_MS;
+    // Allongement propre à Mecha, en conservant le facteur global des actions.
+    const MECHA_DELAY_MIN_MS = POST_ACTION_DELAY_MIN_MS * 1.3;
+    const MECHA_DELAY_MAX_MS = POST_ACTION_DELAY_MAX_MS * 1.3;
     const MECHA_MAX_CYCLES = 10;
     const ATTACK_DELAY_MIN_MS = POST_ACTION_DELAY_MIN_MS;
     const ATTACK_DELAY_MAX_MS = POST_ACTION_DELAY_MAX_MS;
@@ -159,6 +161,11 @@
             label: 'Ferme biosphérique',
             selector: 'button.upgrade[data-technology="11102"]',
         },
+    };
+    const MECHA_MODES = {
+        alternate: 'Alterné',
+        residential: 'Bouton 1 seulement — Secteur résidentiel',
+        biosphere: 'Bouton 2 seulement — Ferme biosphérique',
     };
     const ATTACK_TRANSPORTER_SELECTOR = 'input[name="transporterLarge"]';
     const ATTACK_CONTINUE_SELECTOR = '#continueToFleet2 > span';
@@ -1122,7 +1129,7 @@
                     font-size: 12px;
                 }
                 .construction-runner-error.visible { display: block; }
-                .ghost-runner {
+                .ghost-runner, .mecha-runner {
                     display: none;
                     position: absolute;
                     right: 0;
@@ -1139,7 +1146,22 @@
                     backdrop-filter: blur(24px) saturate(145%);
                     -webkit-backdrop-filter: blur(24px) saturate(145%);
                 }
-                .ghost-runner.open { display: block; animation: secret-enter .22s ease-out; }
+                .ghost-runner.open, .mecha-runner.open { display: block; animation: secret-enter .22s ease-out; }
+                .mecha-runner { border-color: rgba(45, 212, 191, .55); }
+                .mecha-mode {
+                    width: 100%;
+                    min-height: 46px;
+                    padding: 9px;
+                    border: 1px solid rgba(45, 212, 191, .55);
+                    border-radius: 11px;
+                    background: #0f172a;
+                    color: #f8fafc;
+                    font: inherit;
+                    font-size: 16px;
+                    color-scheme: dark;
+                }
+                .mecha-mode:focus-visible { outline: 2px solid #2dd4bf; outline-offset: 2px; }
+                .mecha-mode-summary { margin-top: 12px; line-height: 1.5; color: #ccfbf1; }
                 .ghost-kicker {
                     display: block;
                     margin-bottom: 3px;
@@ -1203,14 +1225,14 @@
                     .named-link-row { grid-template-columns: 22px minmax(82px, .7fr) minmax(145px, 1.3fr); }
                     .named-link-row input, .construction-loading-url,
                     .construction-runner input, .construction-runner select { font-size: 16px; }
-                    .construction-runner, .ghost-runner { padding: 14px; }
+                    .construction-runner, .ghost-runner, .mecha-runner { padding: 14px; }
                     .construction-order-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
                     .construction-order-field.vehicle,
                     .construction-order-field.destination { grid-column: 1 / -1; }
                     .construction-orders-list { max-height: min(48vh, 480px); }
                 }
                 @media (prefers-reduced-motion: reduce) {
-                    .dropdown-menu.open, .panel.open, .construction-runner.open, .ghost-runner.open { animation: none; }
+                    .dropdown-menu.open, .panel.open, .construction-runner.open, .ghost-runner.open, .mecha-runner.open { animation: none; }
                     *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; }
                 }
             </style>
@@ -1368,6 +1390,24 @@
                         <button type="button" class="start construction-runner-start">Démarrer</button>
                     </div>
                 </section>
+                <section class="mecha-runner" role="dialog" aria-label="Lancer Bâtiments Mecha">
+                    <div class="header">
+                        <h2>Bâtiments Mecha</h2>
+                        <button type="button" class="close mecha-runner-close" aria-label="Fermer">×</button>
+                    </div>
+                    <p class="help">Choisissez le mode avant de démarrer. Les 13 liens restent traités dans l’ordre.</p>
+                    <label for="secret-mecha-mode">Mode de construction</label>
+                    <select id="secret-mecha-mode" class="mecha-mode">
+                        <option value="alternate">Alterné (comme actuellement)</option>
+                        <option value="residential">Bouton 1 seulement — Secteur résidentiel</option>
+                        <option value="biosphere">Bouton 2 seulement — Ferme biosphérique</option>
+                    </select>
+                    <p class="mecha-mode-summary" aria-live="polite"></p>
+                    <div class="actions">
+                        <button type="button" class="save mecha-runner-cancel">Annuler</button>
+                        <button type="button" class="start mecha-runner-confirm">Démarrer</button>
+                    </div>
+                </section>
                 <section class="ghost-runner" role="dialog" aria-label="Configurer Ghost">
                     <div class="header">
                         <div>
@@ -1474,6 +1514,12 @@
             ghostJapanDateTime: shadow.querySelector('.ghost-japan-datetime'),
             ghostDateTime: shadow.querySelector('.ghost-datetime'),
             ghostTimeValue: shadow.querySelector('.ghost-time-value'),
+            mechaRunner: shadow.querySelector('.mecha-runner'),
+            mechaRunnerClose: shadow.querySelector('.mecha-runner-close'),
+            mechaRunnerCancel: shadow.querySelector('.mecha-runner-cancel'),
+            mechaRunnerConfirm: shadow.querySelector('.mecha-runner-confirm'),
+            mechaMode: shadow.querySelector('.mecha-mode'),
+            mechaModeSummary: shadow.querySelector('.mecha-mode-summary'),
         };
 
         let editingProfileId = 1;
@@ -1525,6 +1571,20 @@
         refs.ghostRunnerClose.addEventListener('click', closeGhostRunner);
         refs.ghostRunnerCancel.addEventListener('click', closeGhostRunner);
         refs.ghostRunnerConfirm.addEventListener('click', confirmGhostTime);
+        refs.mechaRunnerClose.addEventListener('click', closeMechaRunner);
+        refs.mechaRunnerCancel.addEventListener('click', closeMechaRunner);
+        refs.mechaMode.addEventListener('change', updateMechaModeSummary);
+        refs.mechaRunnerConfirm.addEventListener('click', () => {
+            const mode = normalizeMechaMode(refs.mechaMode.value);
+            closeMechaRunner();
+            void startMechaAutomation(mode);
+        });
+        refs.mechaRunner.addEventListener('keydown', (event) => {
+            if (event.key === 'Escape') {
+                event.stopPropagation();
+                closeMechaRunner();
+            }
+        });
         refs.ghostJapanDateTime.addEventListener('input', updateGhostTimePreview);
         refs.ghostJapanDateTime.addEventListener('change', updateGhostTimePreview);
         refs.debugProgressClose.addEventListener('click', () => {
@@ -1636,6 +1696,7 @@
         function open(profileId = 1) {
             closeConstructionRunner();
             closeGhostRunner();
+            closeMechaRunner();
             loadProfileIntoPanel(profileId);
             refs.panel.classList.add('open');
             refresh();
@@ -1643,6 +1704,28 @@
 
         function closePanel() {
             refs.panel.classList.remove('open');
+        }
+
+        function openMechaRunner() {
+            closeDropdowns();
+            closePanel();
+            closeConstructionRunner();
+            closeGhostRunner();
+            refs.mechaMode.value = normalizeMechaMode(GM_getValue(MECHA_MODE_KEY, 'alternate'));
+            updateMechaModeSummary();
+            refs.mechaRunner.classList.add('open');
+            refs.mechaMode.focus();
+        }
+
+        function closeMechaRunner() {
+            refs.mechaRunner.classList.remove('open');
+        }
+
+        function updateMechaModeSummary() {
+            const mode = normalizeMechaMode(refs.mechaMode.value);
+            refs.mechaModeSummary.textContent = mode === 'alternate'
+                ? '10 boucles : 13 liens avec le bouton 1, puis 13 liens avec le bouton 2. Soit 260 clics maximum.'
+                : '10 boucles des 13 liens avec le bouton choisi uniquement. Soit 130 clics maximum.';
         }
 
         function openGhostRunner() {
@@ -1656,6 +1739,7 @@
             closeDropdowns();
             closePanel();
             closeConstructionRunner();
+            closeMechaRunner();
             refs.ghostJapanDateTime.value = getStoredGhostJapanDateTimeValue();
             updateGhostTimePreview();
             refs.ghostRunner.classList.add('open');
@@ -1706,6 +1790,7 @@
             closeDropdowns();
             closePanel();
             closeGhostRunner();
+            closeMechaRunner();
             refs.constructionOrdersList.replaceChildren();
             addConstructionOrderRow();
             showConstructionRunnerError('');
@@ -2023,7 +2108,7 @@
                           : editingProfileId === 11
                             ? 'Une URL unique. Rappatriement sélectionne la flotte, conserve les unités demandées, stationne sur la lune et transfère les ressources.'
                           : editingProfileId === 12
-                            ? 'Configurez exactement 13 liens. Bâtiments Mecha les traite dans l’ordre pour le Secteur résidentiel, puis pour la Ferme biosphérique, pendant 10 boucles complètes.'
+                            ? 'Configurez exactement 13 liens. Avant chaque lancement, choisissez Alterné, Bouton 1 seulement ou Bouton 2 seulement. Les liens sont traités dans l’ordre pendant 10 boucles.'
                           : editingProfileId === 13
                             ? 'Configurez une Page de départ fixe et jusqu’à 200 URL cibles. Les compteurs de sélection sont équilibrés et conservés dans Tampermonkey.'
                     : 'Un lien par ligne. Les adresses sont conservées dans le stockage privé de Tampermonkey, jamais dans le code du script.';
@@ -2345,6 +2430,7 @@
             open,
             openConstructionRunner,
             openGhostRunner,
+            openMechaRunner,
             refresh,
             showError,
             showConstructionError: showConstructionRunnerError,
@@ -3379,7 +3465,28 @@
         return true;
     }
 
-    async function startMechaAutomation() {
+    function normalizeMechaMode(mode) {
+        return mode === 'residential' || mode === 'biosphere' ? mode : 'alternate';
+    }
+
+    function getNextMechaStep(mode, buildingType, linkIndex, cycleNumber, linkCount) {
+        const normalizedMode = normalizeMechaMode(mode);
+        const completedPass = linkIndex >= linkCount - 1;
+        const completedCycle = completedPass &&
+            (normalizedMode !== 'alternate' || buildingType === 'biosphere');
+        return {
+            completed: completedCycle && cycleNumber >= MECHA_MAX_CYCLES,
+            linkIndex: completedPass ? 0 : linkIndex + 1,
+            cycleNumber: completedCycle ? cycleNumber + 1 : cycleNumber,
+            buildingType: normalizedMode !== 'alternate'
+                ? normalizedMode
+                : completedPass
+                  ? (buildingType === 'residential' ? 'biosphere' : 'residential')
+                  : buildingType,
+        };
+    }
+
+    async function startMechaAutomation(selectedMode) {
         const config = getStoredConfig(12);
         if (config.links.length !== 13) {
             const ui = await ensureUi();
@@ -3388,6 +3495,15 @@
             ui.refresh();
             return;
         }
+
+        if (!Object.prototype.hasOwnProperty.call(MECHA_MODES, selectedMode)) {
+            const ui = await ensureUi();
+            ui.openMechaRunner();
+            return;
+        }
+        const mechaMode = normalizeMechaMode(selectedMode);
+        const buildingType = mechaMode === 'biosphere' ? 'biosphere' : 'residential';
+        GM_setValue(MECHA_MODE_KEY, mechaMode);
 
         const now = Date.now();
         const runId = createRunId();
@@ -3401,14 +3517,16 @@
             phase: 'mecha-open-link',
             currentLinkIndex: 0,
             mechaCycleNumber: 1,
-            mechaBuildingType: 'residential',
+            mechaMode,
+            mechaBuildingType: buildingType,
             mechaClickCount: 0,
             mechaPendingDelayMs: 0,
             mechaPendingDelayLabel: '',
             startedAt: now,
             updatedAt: now,
             message:
-                'Bâtiments Mecha — boucle 1/10, Secteur résidentiel : ouverture du lien 1/13…',
+                `Bâtiments Mecha — ${MECHA_MODES[mechaMode]} — boucle 1/10, ` +
+                `${MECHA_BUILDINGS[buildingType].label} : ouverture du lien 1/13…`,
         });
         await setThisTabRunId(runId);
         refreshUi();
@@ -3443,9 +3561,10 @@
                     1,
                     Math.min(MECHA_MAX_CYCLES, Number(run.mechaCycleNumber) || 1)
                 );
-                const buildingType = run.mechaBuildingType === 'biosphere'
-                    ? 'biosphere'
-                    : 'residential';
+                const mechaMode = normalizeMechaMode(run.mechaMode);
+                const buildingType = mechaMode !== 'alternate'
+                    ? mechaMode
+                    : run.mechaBuildingType === 'biosphere' ? 'biosphere' : 'residential';
                 const building = MECHA_BUILDINGS[buildingType];
                 const configuredUrl = config.links[linkIndex];
 
@@ -3505,12 +3624,11 @@
                     if (!activeRun) return;
 
                     const clickCount = Math.max(0, Number(activeRun.mechaClickCount) || 0) + 1;
-                    const completedPass = linkIndex >= config.links.length - 1;
-                    const completedAllCycles =
-                        completedPass && buildingType === 'biosphere' &&
-                        cycleNumber >= MECHA_MAX_CYCLES;
+                    const nextStep = getNextMechaStep(
+                        mechaMode, buildingType, linkIndex, cycleNumber, config.links.length
+                    );
 
-                    if (completedAllCycles) {
+                    if (nextStep.completed) {
                         GM_setValue(RUN_KEY, {
                             ...activeRun,
                             status: 'completed',
@@ -3520,7 +3638,8 @@
                             mechaPendingDelayLabel: '',
                             updatedAt: Date.now(),
                             message:
-                                `Bâtiments Mecha terminé : ${MECHA_MAX_CYCLES} boucles complètes, ` +
+                                `Bâtiments Mecha terminé — ${MECHA_MODES[mechaMode]} : ` +
+                                `${MECHA_MAX_CYCLES} boucles complètes, ` +
                                 `${clickCount} améliorations demandées.`,
                         });
                         upgradeButton.click();
@@ -3529,24 +3648,12 @@
                         return;
                     }
 
-                    let nextLinkIndex = linkIndex + 1;
-                    let nextBuildingType = buildingType;
-                    let nextCycleNumber = cycleNumber;
-                    if (completedPass) {
-                        nextLinkIndex = 0;
-                        if (buildingType === 'residential') {
-                            nextBuildingType = 'biosphere';
-                        } else {
-                            nextBuildingType = 'residential';
-                            nextCycleNumber = cycleNumber + 1;
-                        }
-                    }
-
                     updateRun(runId, {
                         phase: 'mecha-before-open-link',
-                        currentLinkIndex: nextLinkIndex,
-                        mechaCycleNumber: nextCycleNumber,
-                        mechaBuildingType: nextBuildingType,
+                        currentLinkIndex: nextStep.linkIndex,
+                        mechaCycleNumber: nextStep.cycleNumber,
+                        mechaMode,
+                        mechaBuildingType: nextStep.buildingType,
                         mechaClickCount: clickCount,
                         mechaPendingDelayMs: getRandomDelayMs(
                             MECHA_DELAY_MIN_MS,
@@ -6801,6 +6908,7 @@
 
     function formatMechaDebugProgress(run) {
         const config = getStoredConfig(12);
+        const mechaMode = normalizeMechaMode(run.mechaMode);
         const linkCount = Math.max(1, config.links.length);
         const linkIndex = Math.max(
             0,
@@ -6810,9 +6918,9 @@
             1,
             Math.min(MECHA_MAX_CYCLES, Number(run.mechaCycleNumber) || 1)
         );
-        const buildingType = run.mechaBuildingType === 'biosphere'
-            ? 'biosphere'
-            : 'residential';
+        const buildingType = mechaMode !== 'alternate'
+            ? mechaMode
+            : run.mechaBuildingType === 'biosphere' ? 'biosphere' : 'residential';
         const buildingLabel = MECHA_BUILDINGS[buildingType].label;
         let actionLabel;
         if (run.status !== 'running') {
@@ -6833,7 +6941,7 @@
 
         const message = typeof run.message === 'string' ? run.message : '';
         return (
-            `Bâtiments Mecha — Boucle ${cycleNumber}/${MECHA_MAX_CYCLES} — ` +
+            `Bâtiments Mecha — ${MECHA_MODES[mechaMode]}\nBoucle ${cycleNumber}/${MECHA_MAX_CYCLES} — ` +
             `${buildingLabel} — Lien ${linkIndex + 1}/${linkCount}\n${actionLabel}` +
             (message ? `\n${message}` : '')
         );
