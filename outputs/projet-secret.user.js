@@ -1,10 +1,10 @@
 // ==UserScript==
 // @name         Projet secret — boucle multi-liens
 // @namespace    local.projet-secret
-// @version      6.15.0
+// @version      6.16.0
 // @updateURL    https://raw.githubusercontent.com/raphaelrobert1104-sys/mysecretproject/main/outputs/projet-secret.user.js
 // @downloadURL  https://raw.githubusercontent.com/raphaelrobert1104-sys/mysecretproject/main/outputs/projet-secret.user.js
-// @description  Automatise Ressources, Expédition V2, Forme de vie, Import, Constructions, Ghost et Rappatriement avec configurations privées.
+// @description  Automatise Ressources, Expédition V2, Forme de vie, Import, Constructions, Ghost, Rappatriement et Bâtiments Mecha avec configurations privées.
 // @author       Vous
 // @match        http://*/*
 // @match        https://*/*
@@ -21,7 +21,7 @@
 (function () {
     'use strict';
 
-    const SCRIPT_VERSION = '6.15.0';
+    const SCRIPT_VERSION = '6.16.0';
     const CONFIG_KEYS = {
         1: 'secretMultiLinkConfig',
         2: 'secretMultiLinkConfig2',
@@ -31,6 +31,7 @@
         8: 'secretGhostConfig',
         9: 'secretExpeditionV2Config',
         11: 'secretRepatriationConfig',
+        12: 'secretMechaBuildingsConfig',
     };
     const RUN_KEY = 'secretMultiLinkRun';
     const TAB_RUN_ID_KEY = 'secretMultiLinkRunId';
@@ -49,6 +50,7 @@
         8: 1,
         9: 1,
         11: 1,
+        12: 13,
     };
     const PAGE_TIMEOUT_MS = 45000;
     const ELEMENT_TIMEOUT_MS = 7000;
@@ -71,6 +73,9 @@
     const EXPEDITION_V2_DELAY_MAX_MS = POST_ACTION_DELAY_MAX_MS;
     const REPATRIATION_DELAY_MIN_MS = POST_ACTION_DELAY_MIN_MS;
     const REPATRIATION_DELAY_MAX_MS = POST_ACTION_DELAY_MAX_MS;
+    const MECHA_DELAY_MIN_MS = POST_ACTION_DELAY_MIN_MS;
+    const MECHA_DELAY_MAX_MS = POST_ACTION_DELAY_MAX_MS;
+    const MECHA_MAX_CYCLES = 10;
     const EXPEDITION_V2_LAUNCH_DELAY_MIN_MS = 800;
     const EXPEDITION_V2_LAUNCH_DELAY_MAX_MS = 1400;
     const EXPEDITION_SLOTS_SELECTOR = '#slots > div:nth-child(2) > span';
@@ -139,6 +144,16 @@
         { name: 'recycler', deduction: 1, label: 'recycler' },
         { name: 'espionageProbe', deduction: 1, label: 'espionageProbe' },
     ];
+    const MECHA_BUILDINGS = {
+        residential: {
+            label: 'Secteur résidentiel',
+            selector: 'button.upgrade[data-technology="11101"]',
+        },
+        biosphere: {
+            label: 'Ferme biosphérique',
+            selector: 'button.upgrade[data-technology="11102"]',
+        },
+    };
 
     class ElementNotFoundError extends Error {
         constructor(selector, timeoutMs) {
@@ -283,6 +298,12 @@
     });
     registerMenuCommandSafely('Démarrer Rappatriement', () => {
         void startFromStoredConfiguration(11);
+    });
+    registerMenuCommandSafely('Configurer Bâtiments Mecha', () => {
+        void openControlPanel(12);
+    });
+    registerMenuCommandSafely('Démarrer Bâtiments Mecha', () => {
+        void startFromStoredConfiguration(12);
     });
     registerMenuCommandSafely('Configurer Expédition V2 & Forme de vie', () => {
         void openControlPanel(10);
@@ -560,6 +581,10 @@
                 }
                 .control-group.constructions .quick {
                     background: linear-gradient(135deg, rgba(180, 83, 9, .97), rgba(202, 138, 4, .96));
+                }
+                .control-group.mecha-buildings .quick {
+                    min-width: 142px;
+                    background: linear-gradient(135deg, rgba(15, 118, 110, .98), rgba(6, 182, 212, .96));
                 }
                 .control-group.ghost .quick {
                     background: linear-gradient(135deg, rgba(71, 85, 105, .98), rgba(88, 28, 135, .96));
@@ -1200,6 +1225,10 @@
                                 <button type="button" class="quick quick-11" title="Lancer Rappatriement">Rappatriement</button>
                                 <button type="button" class="settings settings-11" title="Configurer Rappatriement" aria-label="Configurer Rappatriement">⚙</button>
                             </div>
+                            <div class="control-group mecha-buildings">
+                                <button type="button" class="quick quick-12" title="Lancer Bâtiments Mecha">Bâtiments Mecha</button>
+                                <button type="button" class="settings settings-12" title="Configurer Bâtiments Mecha" aria-label="Configurer Bâtiments Mecha">⚙</button>
+                            </div>
                         </div>
                     </div>
                     <div class="menu-group grouped-menu-group">
@@ -1340,6 +1369,7 @@
             quick9: shadow.querySelector('.quick-9'),
             quick10: shadow.querySelector('.quick-10'),
             quick11: shadow.querySelector('.quick-11'),
+            quick12: shadow.querySelector('.quick-12'),
             simpleMenuToggle: shadow.querySelector('.simple-menu-toggle'),
             groupedMenuToggle: shadow.querySelector('.grouped-menu-toggle'),
             simpleMenu: shadow.querySelector('.simple-menu'),
@@ -1356,6 +1386,7 @@
             settings9: shadow.querySelector('.settings-9'),
             settings10: shadow.querySelector('.settings-10'),
             settings11: shadow.querySelector('.settings-11'),
+            settings12: shadow.querySelector('.settings-12'),
             panel: shadow.querySelector('.panel'),
             panelTitle: shadow.querySelector('.panel-title'),
             help: shadow.querySelector('.help'),
@@ -1415,6 +1446,7 @@
         refs.settings9.addEventListener('click', () => togglePanel(9));
         refs.settings10.addEventListener('click', () => togglePanel(10));
         refs.settings11.addEventListener('click', () => togglePanel(11));
+        refs.settings12.addEventListener('click', () => togglePanel(12));
         refs.combinedResources.addEventListener('click', () => open(combinedTargetProfiles[0]));
         refs.combinedExpeditions.addEventListener('click', () => open(combinedTargetProfiles[1]));
         refs.close.addEventListener('click', () => closePanel());
@@ -1435,6 +1467,7 @@
         refs.quick9.addEventListener('click', () => quickAction(9));
         refs.quick10.addEventListener('click', () => quickExpeditionV2LifeformAction());
         refs.quick11.addEventListener('click', () => quickAction(11));
+        refs.quick12.addEventListener('click', () => quickAction(12));
         refs.constructionRunnerClose.addEventListener('click', closeConstructionRunner);
         refs.constructionRunnerCancel.addEventListener('click', closeConstructionRunner);
         refs.constructionRunnerStart.addEventListener('click', launchConstructionFromRunner);
@@ -1926,6 +1959,8 @@
                             ? 'Une URL unique. Expédition V2 choisit une direction et 0 à 6 déplacements, sélectionne EXPE, puis lance les expéditions jusqu’au message d’arrêt.'
                           : editingProfileId === 11
                             ? 'Une URL unique. Rappatriement sélectionne la flotte, conserve les unités demandées, stationne sur la lune et transfère les ressources.'
+                          : editingProfileId === 12
+                            ? 'Configurez exactement 13 liens. Bâtiments Mecha les traite dans l’ordre pour le Secteur résidentiel, puis pour la Ferme biosphérique, pendant 10 boucles complètes.'
                     : 'Un lien par ligne. Les adresses sont conservées dans le stockage privé de Tampermonkey, jamais dans le code du script.';
             refs.startUrlGroup.style.display = editingProfileId === 2 ? 'block' : 'none';
             refs.startUrl.value = editingProfileId === 2 ? config.startUrl : '';
@@ -1970,9 +2005,15 @@
             }
             const count = refs.textarea.value.split(/\r?\n/).map((line) => line.trim()).filter(Boolean).length;
             const maximum = getProfileLinkLimit(editingProfileId);
-            refs.limitLabel.textContent = `Minimum 1, maximum ${maximum}`;
+            refs.limitLabel.textContent = editingProfileId === 12
+                ? 'Exactement 13 liens'
+                : `Minimum 1, maximum ${maximum}`;
             refs.counter.textContent = `${count} / ${maximum}`;
-            refs.counter.style.color = count > maximum ? '#fecaca' : '#94a3b8';
+            refs.counter.style.color = editingProfileId === 12 && count !== 13
+                ? '#fcd34d'
+                : count > maximum
+                  ? '#fecaca'
+                  : '#94a3b8';
         }
 
         function showError(message) {
@@ -2033,6 +2074,10 @@
                 showError(parsed.error);
                 return;
             }
+            if (editingProfileId === 12 && parsed.links.length !== 13) {
+                showError('Bâtiments Mecha nécessite exactement 13 liens valides.');
+                return;
+            }
 
             const startUrl = editingProfileId === 2 ? validateHttpUrl(refs.startUrl.value) : '';
             if (editingProfileId === 2 && !startUrl) {
@@ -2072,6 +2117,8 @@
                     void startExpeditionV2Automation();
                 } else if (editingProfileId === 11) {
                     void startRepatriationAutomation();
+                } else if (editingProfileId === 12) {
+                    void startMechaAutomation();
                 } else {
                     void startAutomation(editingProfileId, parsed.links);
                 }
@@ -2101,9 +2148,12 @@
                 run.status === 'running' && run.profileId === 9 && !run.combinedMode;
             const profile11Running =
                 run.status === 'running' && run.profileId === 11 && !run.combinedMode;
+            const profile12Running =
+                run.status === 'running' && run.profileId === 12 && !run.combinedMode;
             const simpleActionRunning =
                 profile1Running || profile4Running || profile6Running ||
-                profile7Running || profile8Running || profile9Running || profile11Running;
+                profile7Running || profile8Running || profile9Running || profile11Running ||
+                profile12Running;
             const groupedActionRunning =
                 expeditionV2ResourcesRunning || expeditionV2LifeformRunning;
 
@@ -2116,6 +2166,7 @@
             refs.quick9.classList.toggle('running', profile9Running);
             refs.quick10.classList.toggle('running', expeditionV2LifeformRunning);
             refs.quick11.classList.toggle('running', profile11Running);
+            refs.quick12.classList.toggle('running', profile12Running);
             refs.simpleMenuToggle.classList.toggle('running', simpleActionRunning);
             refs.groupedMenuToggle.classList.toggle('running', groupedActionRunning);
             refs.quick1.textContent = profile1Running ? '■ Arrêter' : 'Ressources';
@@ -2131,6 +2182,7 @@
                 ? '■ Arrêter le combiné'
                 : 'Expédition V2 & Forme de vie';
             refs.quick11.textContent = profile11Running ? '■ Arrêter' : 'Rappatriement';
+            refs.quick12.textContent = profile12Running ? '■ Arrêter' : 'Bâtiments Mecha';
             refs.quick1.title = profile1Running ? 'Arrêter Ressources' : 'Lancer Ressources';
             refs.quick3.title = expeditionV2ResourcesRunning
                 ? 'Arrêter Expéditions V2 & Ressources'
@@ -2146,6 +2198,9 @@
             refs.quick11.title = profile11Running
                 ? 'Arrêter Rappatriement'
                 : 'Lancer Rappatriement';
+            refs.quick12.title = profile12Running
+                ? 'Arrêter Bâtiments Mecha'
+                : 'Lancer Bâtiments Mecha';
 
             const debugText = formatDebugProgress(run);
             const debugWasDismissed =
@@ -2213,6 +2268,13 @@
             ui.refresh();
             return;
         }
+        if (normalizedProfileId === 12 && config.links.length !== 13) {
+            const ui = await ensureUi();
+            ui.open(12);
+            ui.showError('Configurez exactement 13 liens pour Bâtiments Mecha avant de lancer.');
+            ui.refresh();
+            return;
+        }
 
         if (normalizedProfileId === 4) {
             await startLifeformAutomation();
@@ -2238,6 +2300,10 @@
         }
         if (normalizedProfileId === 11) {
             await startRepatriationAutomation();
+            return;
+        }
+        if (normalizedProfileId === 12) {
+            await startMechaAutomation();
             return;
         }
 
@@ -3163,6 +3229,220 @@
         updateRun(runId, {
             repatriationPendingDelayMs: 0,
             repatriationPendingDelayLabel: '',
+        });
+        refreshUi();
+        return true;
+    }
+
+    async function startMechaAutomation() {
+        const config = getStoredConfig(12);
+        if (config.links.length !== 13) {
+            const ui = await ensureUi();
+            ui.open(12);
+            ui.showError('Configurez exactement 13 liens pour Bâtiments Mecha avant de lancer.');
+            ui.refresh();
+            return;
+        }
+
+        const now = Date.now();
+        const runId = createRunId();
+        GM_setValue(RUN_KEY, {
+            runId,
+            profileId: 12,
+            status: 'running',
+            combinedMode: false,
+            combinedKind: '',
+            nextProfileId: null,
+            phase: 'mecha-open-link',
+            currentLinkIndex: 0,
+            mechaCycleNumber: 1,
+            mechaBuildingType: 'residential',
+            mechaClickCount: 0,
+            mechaPendingDelayMs: 0,
+            mechaPendingDelayLabel: '',
+            startedAt: now,
+            updatedAt: now,
+            message:
+                'Bâtiments Mecha — boucle 1/10, Secteur résidentiel : ouverture du lien 1/13…',
+        });
+        await setThisTabRunId(runId);
+        refreshUi();
+        navigateToUrl(config.links[0], true);
+    }
+
+    async function resumeMechaAutomation(runId) {
+        try {
+            let run = getActiveRun(runId);
+            if (!run || run.profileId !== 12) return;
+
+            const config = getStoredConfig(12);
+            if (config.links.length !== 13) {
+                throw new Error('La configuration Bâtiments Mecha doit contenir exactement 13 liens.');
+            }
+
+            while (true) {
+                run = getActiveRun(runId);
+                if (!run) return;
+
+                if (Number(run.mechaPendingDelayMs) > 0) {
+                    const canContinue = await consumeMechaDelay(runId);
+                    if (!canContinue) return;
+                    continue;
+                }
+
+                const linkIndex = Math.max(
+                    0,
+                    Math.min(config.links.length - 1, Number(run.currentLinkIndex) || 0)
+                );
+                const cycleNumber = Math.max(
+                    1,
+                    Math.min(MECHA_MAX_CYCLES, Number(run.mechaCycleNumber) || 1)
+                );
+                const buildingType = run.mechaBuildingType === 'biosphere'
+                    ? 'biosphere'
+                    : 'residential';
+                const building = MECHA_BUILDINGS[buildingType];
+                const configuredUrl = config.links[linkIndex];
+
+                if (run.phase === 'mecha-before-open-link') {
+                    updateRun(runId, {
+                        phase: 'mecha-open-link',
+                        message:
+                            `Bâtiments Mecha — boucle ${cycleNumber}/${MECHA_MAX_CYCLES}, ` +
+                            `${building.label} : ouverture du lien ${linkIndex + 1}/13…`,
+                    });
+                    refreshUi();
+                    navigateToUrl(configuredUrl, true);
+                    return;
+                }
+
+                if (run.phase === 'mecha-open-link') {
+                    if (!isConfiguredPage(configuredUrl, window.location.href)) {
+                        navigateToUrl(configuredUrl, false);
+                        return;
+                    }
+
+                    const renderResult = await waitUntilPageUsable(PAGE_TIMEOUT_MS);
+                    if (renderResult.timedOut) {
+                        throw new Error(
+                            `Le lien ${linkIndex + 1}/13 ne s’est pas chargé à temps pour ${building.label}.`
+                        );
+                    }
+                    if (!getActiveRun(runId)) return;
+
+                    updateRun(runId, {
+                        phase: 'mecha-click-upgrade',
+                        mechaPendingDelayMs: getRandomDelayMs(
+                            MECHA_DELAY_MIN_MS,
+                            MECHA_DELAY_MAX_MS
+                        ),
+                        mechaPendingDelayLabel: `le chargement du lien ${linkIndex + 1}/13`,
+                        message:
+                            `Bâtiments Mecha — boucle ${cycleNumber}/${MECHA_MAX_CYCLES}, ` +
+                            `${building.label} : lien ${linkIndex + 1}/13 chargé.`,
+                    });
+                    refreshUi();
+                    continue;
+                }
+
+                if (run.phase === 'mecha-click-upgrade') {
+                    updateRun(runId, {
+                        message:
+                            `Bâtiments Mecha — boucle ${cycleNumber}/${MECHA_MAX_CYCLES}, ` +
+                            `${building.label} : clic sur le lien ${linkIndex + 1}/13…`,
+                    });
+                    refreshUi();
+                    const upgradeButton = await waitForElement(building.selector, {
+                        timeoutMs: ELEMENT_TIMEOUT_MS,
+                        clickable: true,
+                    });
+                    const activeRun = getActiveRun(runId);
+                    if (!activeRun) return;
+
+                    const clickCount = Math.max(0, Number(activeRun.mechaClickCount) || 0) + 1;
+                    const completedPass = linkIndex >= config.links.length - 1;
+                    const completedAllCycles =
+                        completedPass && buildingType === 'biosphere' &&
+                        cycleNumber >= MECHA_MAX_CYCLES;
+
+                    if (completedAllCycles) {
+                        GM_setValue(RUN_KEY, {
+                            ...activeRun,
+                            status: 'completed',
+                            phase: 'mecha-completed',
+                            mechaClickCount: clickCount,
+                            mechaPendingDelayMs: 0,
+                            mechaPendingDelayLabel: '',
+                            updatedAt: Date.now(),
+                            message:
+                                `Bâtiments Mecha terminé : ${MECHA_MAX_CYCLES} boucles complètes, ` +
+                                `${clickCount} améliorations demandées.`,
+                        });
+                        upgradeButton.click();
+                        void clearThisTabRunId(runId);
+                        refreshUi();
+                        return;
+                    }
+
+                    let nextLinkIndex = linkIndex + 1;
+                    let nextBuildingType = buildingType;
+                    let nextCycleNumber = cycleNumber;
+                    if (completedPass) {
+                        nextLinkIndex = 0;
+                        if (buildingType === 'residential') {
+                            nextBuildingType = 'biosphere';
+                        } else {
+                            nextBuildingType = 'residential';
+                            nextCycleNumber = cycleNumber + 1;
+                        }
+                    }
+
+                    updateRun(runId, {
+                        phase: 'mecha-before-open-link',
+                        currentLinkIndex: nextLinkIndex,
+                        mechaCycleNumber: nextCycleNumber,
+                        mechaBuildingType: nextBuildingType,
+                        mechaClickCount: clickCount,
+                        mechaPendingDelayMs: getRandomDelayMs(
+                            MECHA_DELAY_MIN_MS,
+                            MECHA_DELAY_MAX_MS
+                        ),
+                        mechaPendingDelayLabel:
+                            `le clic ${building.label} sur le lien ${linkIndex + 1}/13`,
+                        message:
+                            `Bâtiments Mecha — ${building.label}, lien ${linkIndex + 1}/13 terminé.`,
+                    });
+                    refreshUi();
+                    upgradeButton.click();
+                    continue;
+                }
+
+                throw new Error(`Phase Bâtiments Mecha inconnue : ${run.phase}`);
+            }
+        } catch (error) {
+            await failRun(runId, error instanceof Error ? error.message : String(error), error);
+        }
+    }
+
+    async function consumeMechaDelay(runId) {
+        const run = getActiveRun(runId);
+        if (!run) return false;
+        const delayMs = Math.max(0, Math.floor(Number(run.mechaPendingDelayMs) || 0));
+        if (delayMs === 0) return true;
+
+        const label = run.mechaPendingDelayLabel || 'l’action précédente';
+        updateRun(runId, {
+            message:
+                `Bâtiments Mecha — attente aléatoire ${(delayMs / 1000).toFixed(2)} s ` +
+                `après ${label}…`,
+        });
+        refreshUi();
+        await delay(delayMs);
+        if (!getActiveRun(runId)) return false;
+
+        updateRun(runId, {
+            mechaPendingDelayMs: 0,
+            mechaPendingDelayLabel: '',
         });
         refreshUi();
         return true;
@@ -5156,6 +5436,10 @@
             await resumeRepatriationAutomation(run.runId);
             return;
         }
+        if (run.profileId === 12) {
+            await resumeMechaAutomation(run.runId);
+            return;
+        }
         if (run.profileId === 2 && !config.startUrl) {
             await failRun(run.runId, 'Lien de départ de la série 2 absent ou invalide.');
             return;
@@ -5733,7 +6017,7 @@
         const value = Number(profileId);
         if (
             value === 4 || value === 6 || value === 7 || value === 8 ||
-            value === 9 || value === 11
+            value === 9 || value === 11 || value === 12
         ) return value;
         return value === 2 ? 2 : 1;
     }
@@ -5752,6 +6036,7 @@
         if (normalizedProfileId === 8) return 'Ghost';
         if (normalizedProfileId === 9) return 'Expédition V2';
         if (normalizedProfileId === 11) return 'Rappatriement';
+        if (normalizedProfileId === 12) return 'Bâtiments Mecha';
         return normalizedProfileId === 2 ? 'Expéditions' : 'Ressources';
     }
 
@@ -5768,7 +6053,8 @@
             normalizedProfileId === 7 ||
             normalizedProfileId === 8 ||
             normalizedProfileId === 9 ||
-            normalizedProfileId === 11
+            normalizedProfileId === 11 ||
+            normalizedProfileId === 12
         ) return [];
         return normalizedProfileId === 2 ? ACTION_STEPS_2 : ACTION_STEPS_1;
     }
@@ -5794,6 +6080,9 @@
         }
         if (profileId === 11) {
             return formatRepatriationDebugProgress(run);
+        }
+        if (profileId === 12) {
+            return formatMechaDebugProgress(run);
         }
         const config = getStoredConfig(profileId);
         const actionSteps = getActionSteps(profileId);
@@ -5982,6 +6271,46 @@
 
         const message = typeof run.message === 'string' ? run.message : '';
         return `Rappatriement\n${actionLabel}` + (message ? `\n${message}` : '');
+    }
+
+    function formatMechaDebugProgress(run) {
+        const config = getStoredConfig(12);
+        const linkCount = Math.max(1, config.links.length);
+        const linkIndex = Math.max(
+            0,
+            Math.min(linkCount - 1, Number(run.currentLinkIndex) || 0)
+        );
+        const cycleNumber = Math.max(
+            1,
+            Math.min(MECHA_MAX_CYCLES, Number(run.mechaCycleNumber) || 1)
+        );
+        const buildingType = run.mechaBuildingType === 'biosphere'
+            ? 'biosphere'
+            : 'residential';
+        const buildingLabel = MECHA_BUILDINGS[buildingType].label;
+        let actionLabel;
+        if (run.status !== 'running') {
+            actionLabel = `État : ${run.status}`;
+        } else if (Number(run.mechaPendingDelayMs) > 0) {
+            actionLabel =
+                `Pause après ${run.mechaPendingDelayLabel || 'l’action précédente'} — ` +
+                `${(Number(run.mechaPendingDelayMs) / 1000).toFixed(2)} s`;
+        } else {
+            const labels = {
+                'mecha-before-open-link': `Préparer le lien ${linkIndex + 1}/${linkCount}`,
+                'mecha-open-link': `Charger le lien ${linkIndex + 1}/${linkCount}`,
+                'mecha-click-upgrade': `Cliquer sur ${buildingLabel}`,
+                'mecha-completed': 'Bâtiments Mecha terminé',
+            };
+            actionLabel = labels[run.phase] || `Phase inconnue : ${run.phase}`;
+        }
+
+        const message = typeof run.message === 'string' ? run.message : '';
+        return (
+            `Bâtiments Mecha — Boucle ${cycleNumber}/${MECHA_MAX_CYCLES} — ` +
+            `${buildingLabel} — Lien ${linkIndex + 1}/${linkCount}\n${actionLabel}` +
+            (message ? `\n${message}` : '')
+        );
     }
 
     function formatGhostDebugProgress(run) {
