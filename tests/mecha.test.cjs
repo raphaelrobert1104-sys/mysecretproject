@@ -8,11 +8,11 @@ const { webcrypto } = require('node:crypto');
 const source = readFileSync(path.join(__dirname, '../outputs/projet-secret.user.js'), 'utf8');
 const bootstrap = 'void boot().catch(showStartupError);';
 assert.equal(source.split(bootstrap).length, 2);
-// Expose the real implementation in an isolated VM, without booting a browser UI.
+// Exercise the real runner and selector logic without opening private target pages.
 const testSource = source.replace(bootstrap, `
     globalThis.mechaApi = {
         startMechaAutomation, resumeMechaAutomation, formatMechaDebugProgress,
-        getRandomDelayMs, normalizeMechaMode,
+        getRandomDelayMs,
         delayBounds: [MECHA_DELAY_MIN_MS, MECHA_DELAY_MAX_MS],
         otherDelayBounds: [POST_ACTION_DELAY_MIN_MS, POST_ACTION_DELAY_MAX_MS],
         hooks(hooks) {
@@ -22,26 +22,43 @@ const testSource = source.replace(bootstrap, `
             clearThisTabRunId = hooks.clearThisTabRunId;
             refreshUi = hooks.refreshUi;
             waitUntilPageUsable = hooks.waitUntilPageUsable;
-            waitForElement = hooks.waitForElement;
             delay = hooks.delay;
         },
     };
     return;
 `);
-
 const links = Array.from({ length: 13 }, (_, i) => `https://example.test/buildings?link=${i + 1}`);
+const priorities = ['11101', '11102', '11103', '11104', '11105', '11107', '11109', '11110', '11111'];
 
-function harness() {
+function harness(available = () => priorities, options = {}) {
     const storage = new Map([['secretMechaBuildingsConfig', { links }]]);
-    const navigations = [];
-    const clicks = [];
-    const pauses = [];
-    const errors = [];
-    let prompts = 0;
-    let pageWaits = 0;
+    const navigations = [], clicks = [], pauses = [], errors = [], queried = [];
+    let pageWaits = 0, uiOpens = 0;
     const sandbox = {
-        URL, console, crypto: webcrypto,
-        window: { location: { href: 'https://example.test/home' } },
+        URL, crypto: webcrypto,
+        console: { error: (...args) => errors.push(args) },
+        window: {
+            location: { href: 'https://example.test/home' },
+            getComputedStyle: (element) => ({
+                display: element.hidden ? 'none' : 'block',
+                visibility: 'visible', opacity: '1', pointerEvents: 'auto',
+            }),
+        },
+        document: {
+            querySelectorAll: (selector) => {
+                const technology = selector.match(/data-technology="(\d+)"/)[1];
+                queried.push(technology);
+                const index = links.indexOf(sandbox.window.location.href);
+                return available(index).map((item) => typeof item === 'string'
+                    ? { technology: item } : item
+                ).filter((item) => item.technology === technology).map((item) => ({
+                    ...item,
+                    getBoundingClientRect: () => ({ width: 30, height: 30 }),
+                    getAttribute: () => null,
+                    click: () => clicks.push({ technology, url: sandbox.window.location.href }),
+                }));
+            },
+        },
         GM_getValue: (key, fallback) => storage.has(key) ? structuredClone(storage.get(key)) : fallback,
         GM_setValue: (key, value) => storage.set(key, structuredClone(value)),
     };
@@ -49,98 +66,157 @@ function harness() {
     vm.runInContext(testSource, sandbox);
     const api = sandbox.mechaApi;
     api.hooks({
-        ensureUi: async () => ({
-            openMechaRunner: () => { prompts++; },
-            open: () => {}, showError: (message) => errors.push(message), refresh: () => {},
-        }),
+        ensureUi: async () => {
+            uiOpens++;
+            return { open: () => {}, showError: (message) => errors.push(message), refresh: () => {} };
+        },
         navigateToUrl: (url) => {
             navigations.push(url);
             sandbox.window.location.href = url;
         },
         setThisTabRunId: async () => {}, clearThisTabRunId: async () => {}, refreshUi: () => {},
-        waitUntilPageUsable: async () => { pageWaits++; return { timedOut: false }; },
-        waitForElement: async (selector) => ({
-            click: () => clicks.push({ selector, url: sandbox.window.location.href }),
-        }),
-        delay: async (ms) => pauses.push(ms),
+        waitUntilPageUsable: async () => {
+            pageWaits++;
+            return { timedOut: Boolean(options.pageTimeout) };
+        },
+        delay: async (ms) => {
+            pauses.push(ms);
+            if (options.stopDuringPause) storage.get('secretMultiLinkRun').status = 'stopped';
+        },
     });
     return {
-        api, storage, navigations, clicks, pauses, errors,
-        get prompts() { return prompts; },
+        api, storage, navigations, clicks, pauses, errors, queried,
+        get uiOpens() { return uiOpens; },
         get pageWaits() { return pageWaits; },
         get run() { return storage.get('secretMultiLinkRun'); },
     };
 }
 
 async function finish(h) {
-    for (let navigation = 0; navigation < 300 && h.run.status === 'running'; navigation++) {
+    for (let navigation = 0; navigation < 20 && h.run.status === 'running'; navigation++) {
         await h.api.resumeMechaAutomation(h.run.runId);
     }
     assert.equal(h.run.status, 'completed', h.run.message);
-    assert.equal(h.run.mechaCycleNumber, 10);
+    assert.deepEqual(h.navigations, links);
+    assert.equal(h.pageWaits, 13);
+    assert.equal(h.run.currentLinkIndex, 12);
+    assert.equal(h.pauses.length, 26);
+    assert.ok(h.pauses.every((ms) => ms >= 637 && ms <= 1547));
+    assert.match(h.api.formatMechaDebugProgress(h.run), /passage unique — Lien 13\/13/);
 }
 
-test('every launch without an explicit choice opens the chooser before navigating', async () => {
+test('launch immediately navigates to link 1, ignoring the previously saved mode', async () => {
     const h = harness();
     h.storage.set('secretMechaBuildingsMode', 'biosphere');
     await h.api.startMechaAutomation();
-    assert.equal(h.prompts, 1);
-    assert.equal(h.navigations.length, 0);
-    assert.equal(h.run, undefined);
-    await h.api.startMechaAutomation();
-    assert.equal(h.prompts, 2);
+    assert.equal(h.uiOpens, 0);
+    assert.deepEqual(h.navigations, [links[0]]);
+    assert.equal(h.run.phase, 'mecha-open-link');
 });
 
-test('the chooser does not bypass the 13-link validation', async () => {
+test('launch still requires 13 configured links', async () => {
     const h = harness();
     h.storage.set('secretMechaBuildingsConfig', { links: links.slice(0, 12) });
-    await h.api.startMechaAutomation('residential');
+    await h.api.startMechaAutomation();
     assert.equal(h.errors.length, 1);
     assert.equal(h.navigations.length, 0);
     assert.equal(h.run, undefined);
 });
 
-for (const mode of ['alternate', 'residential', 'biosphere']) {
-    test(`${mode}: real runner preserves link order, building choice, waits and termination`, async () => {
-        const h = harness();
-        await h.api.startMechaAutomation(mode);
-        assert.equal(h.run.mechaMode, mode);
-        assert.equal(h.storage.get('secretMechaBuildingsMode'), mode);
-        await finish(h);
-        const expectedClicks = mode === 'alternate' ? 260 : 130;
-        assert.equal(h.clicks.length, expectedClicks);
-        assert.equal(h.run.mechaClickCount, expectedClicks);
-        assert.equal(h.navigations.length, expectedClicks);
-        assert.equal(h.pageWaits, expectedClicks);
-        assert.equal(h.pauses.length, expectedClicks * 2 - 1);
-        for (let i = 0; i < expectedClicks; i++) {
-            const building = mode === 'alternate'
-                ? (Math.floor(i / 13) % 2 === 0 ? '11101' : '11102')
-                : mode === 'residential' ? '11101' : '11102';
-            assert.equal(h.clicks[i].selector, `button.upgrade[data-technology="${building}"]`);
-            assert.equal(h.clicks[i].url, links[i % 13]);
-            assert.equal(h.navigations[i], links[i % 13]);
-        }
-        assert.ok(h.pauses.every((ms) => ms >= 637 && ms <= 1547));
-        assert.match(h.api.formatMechaDebugProgress(h.run), /Boucle 10\/10/);
-        assert.match(h.run.message, /10 boucles complètes/);
-    });
-}
-
-test('a persisted legacy run without a mode keeps alternating', async () => {
-    const h = harness();
-    await h.api.startMechaAutomation('alternate');
-    delete h.run.mechaMode;
+test('when all buttons exist, only priority 1 is clicked once per page, for one pass', async () => {
+    const h = harness(() => [...priorities].reverse());
+    await h.api.startMechaAutomation();
     await finish(h);
-    assert.equal(h.clicks.length, 260);
+    assert.equal(h.clicks.length, 13);
+    assert.ok(h.clicks.every((click) => click.technology === '11101'));
+    assert.deepEqual(h.clicks.map((click) => click.url), links);
+    assert.equal(h.queried.length, 13);
+    assert.equal(h.run.mechaClickCount, 13);
+    assert.equal(h.run.mechaSkippedCount, 0);
 });
 
-test('only Mecha random delay bounds are increased by 30 percent', () => {
+test('each of the nine fallback priorities is used in order, including the gap after 11105', async () => {
+    const h = harness((index) => priorities.slice(index % 9).reverse());
+    await h.api.startMechaAutomation();
+    await finish(h);
+    assert.deepEqual(h.clicks.map((click) => click.technology),
+        links.map((_, index) => priorities[index % 9]));
+});
+
+test('an empty page is skipped and subsequent pages are still processed', async () => {
+    const h = harness((index) => index === 0 || index === 12 ? [] : ['11111']);
+    await h.api.startMechaAutomation();
+    await finish(h);
+    assert.equal(h.clicks.length, 11);
+    assert.equal(h.run.mechaSkippedCount, 2);
+    assert.equal(h.errors.length, 0);
+});
+
+test('all pages without buttons complete successfully after 13 visits', async () => {
+    const h = harness(() => []);
+    await h.api.startMechaAutomation();
+    await finish(h);
+    assert.equal(h.clicks.length, 0);
+    assert.equal(h.run.mechaSkippedCount, 13);
+    assert.equal(h.queried.length, 13 * 9);
+    assert.equal(h.errors.length, 0);
+});
+
+test('hidden and disabled buttons are skipped; duplicate selectors pick the usable element', async () => {
+    const h = harness(() => [
+        { technology: '11101', hidden: true },
+        { technology: '11102', disabled: true },
+        { technology: '11103', hidden: true },
+        { technology: '11103' },
+        { technology: '11104' },
+    ]);
+    await h.api.startMechaAutomation();
+    await finish(h);
+    assert.ok(h.clicks.every((click) => click.technology === '11103'));
+    assert.equal(h.clicks.length, 13);
+});
+
+test('resuming after a click does not click the same page again', async () => {
+    const h = harness();
+    await h.api.startMechaAutomation();
+    Object.assign(h.run, {
+        phase: 'mecha-after-upgrade', mechaClickCount: 1,
+        mechaPendingDelayMs: 700, mechaPendingDelayLabel: 'le clic',
+    });
+    await h.api.resumeMechaAutomation(h.run.runId);
+    assert.equal(h.clicks.length, 0);
+    assert.deepEqual(h.navigations, links.slice(0, 2));
+    assert.equal(h.run.currentLinkIndex, 1);
+});
+
+test('an old alternating run completes the current remaining links without another cycle', async () => {
+    const h = harness();
+    await h.api.startMechaAutomation();
+    Object.assign(h.run, { mechaMode: 'alternate', mechaCycleNumber: 4, mechaBuildingType: 'biosphere' });
+    await finish(h);
+    assert.equal(h.clicks.length, 13);
+    assert.ok(h.clicks.every((click) => click.technology === '11101'));
+});
+
+test('stopping during a delay prevents further clicks and navigation', async () => {
+    const h = harness(undefined, { stopDuringPause: true });
+    await h.api.startMechaAutomation();
+    await h.api.resumeMechaAutomation(h.run.runId);
+    assert.equal(h.run.status, 'stopped');
+    assert.equal(h.clicks.length, 0);
+    assert.equal(h.navigations.length, 1);
+});
+
+test('a page loading timeout remains an error and never triggers a click', async () => {
+    const h = harness(undefined, { pageTimeout: true });
+    await h.api.startMechaAutomation();
+    await h.api.resumeMechaAutomation(h.run.runId);
+    assert.equal(h.run.status, 'error');
+    assert.equal(h.clicks.length, 0);
+});
+
+test('random delay bounds retain the previous Mecha increase', () => {
     const h = harness();
     assert.deepEqual(Array.from(h.api.otherDelayBounds), [700, 1700]);
     assert.deepEqual(Array.from(h.api.delayBounds), [910, 2210]);
-    for (let i = 0; i < 100; i++) {
-        const normal = h.api.getRandomDelayMs(...h.api.otherDelayBounds);
-        assert.ok(normal >= 490 && normal <= 1190);
-    }
 });
