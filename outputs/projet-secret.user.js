@@ -1,10 +1,10 @@
 // ==UserScript==
 // @name         Projet secret — boucle multi-liens
 // @namespace    local.projet-secret
-// @version      6.20.0
+// @version      6.21.0
 // @updateURL    https://raw.githubusercontent.com/raphaelrobert1104-sys/mysecretproject/main/outputs/projet-secret.user.js
 // @downloadURL  https://raw.githubusercontent.com/raphaelrobert1104-sys/mysecretproject/main/outputs/projet-secret.user.js
-// @description  Automatise Ressources, Expédition V2, Attaques, Forme de vie, Import, Constructions, Ghost, Rappatriement et Bâtiments Mecha avec configurations privées.
+// @description  Automatise Ressources, Expédition V2, Attaques, Forme de vie, Import, Constructions, Ghost, Rappatriement, Bâtiments Mecha et Switch FDV avec configurations privées.
 // @author       Vous
 // @match        http://*/*
 // @match        https://*/*
@@ -21,7 +21,7 @@
 (function () {
     'use strict';
 
-    const SCRIPT_VERSION = '6.20.0';
+    const SCRIPT_VERSION = '6.21.0';
     const CONFIG_KEYS = {
         1: 'secretMultiLinkConfig',
         2: 'secretMultiLinkConfig2',
@@ -33,6 +33,7 @@
         11: 'secretRepatriationConfig',
         12: 'secretMechaBuildingsConfig',
         13: 'secretAttacksConfig',
+        15: 'secretSwitchFdvConfig',
     };
     const RUN_KEY = 'secretMultiLinkRun';
     const TAB_RUN_ID_KEY = 'secretMultiLinkRunId';
@@ -53,6 +54,7 @@
         11: 1,
         12: 13,
         13: 200,
+        15: 13,
     };
     const PAGE_TIMEOUT_MS = 45000;
     const ELEMENT_TIMEOUT_MS = 7000;
@@ -326,6 +328,12 @@
     });
     registerMenuCommandSafely('Démarrer Attaques', () => {
         void startFromStoredConfiguration(13);
+    });
+    registerMenuCommandSafely('Configurer Switch FDV', () => {
+        void openControlPanel(15);
+    });
+    registerMenuCommandSafely('Démarrer Switch FDV', () => {
+        void startFromStoredConfiguration(15);
     });
     registerMenuCommandSafely('Configurer Expéditions V2 & Attaques', () => {
         void openControlPanel(14);
@@ -1129,7 +1137,7 @@
                     font-size: 12px;
                 }
                 .construction-runner-error.visible { display: block; }
-                .ghost-runner {
+                .ghost-runner, .switch-fdv-runner {
                     display: none;
                     position: absolute;
                     right: 0;
@@ -1146,7 +1154,10 @@
                     backdrop-filter: blur(24px) saturate(145%);
                     -webkit-backdrop-filter: blur(24px) saturate(145%);
                 }
-                .ghost-runner.open { display: block; animation: secret-enter .22s ease-out; }
+                .ghost-runner.open, .switch-fdv-runner.open { display: block; animation: secret-enter .22s ease-out; }
+                .switch-fdv-choices { display: grid; gap: 12px; margin-top: 18px; }
+                .switch-fdv-choices button { padding: 14px; border-radius: 12px; }
+                .switch-fdv-choices button:disabled { opacity: .4; cursor: not-allowed; filter: grayscale(1); }
                 .ghost-kicker {
                     display: block;
                     margin-bottom: 3px;
@@ -1210,14 +1221,14 @@
                     .named-link-row { grid-template-columns: 22px minmax(82px, .7fr) minmax(145px, 1.3fr); }
                     .named-link-row input, .construction-loading-url,
                     .construction-runner input, .construction-runner select { font-size: 16px; }
-                    .construction-runner, .ghost-runner { padding: 14px; }
+                    .construction-runner, .ghost-runner, .switch-fdv-runner { padding: 14px; }
                     .construction-order-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
                     .construction-order-field.vehicle,
                     .construction-order-field.destination { grid-column: 1 / -1; }
                     .construction-orders-list { max-height: min(48vh, 480px); }
                 }
                 @media (prefers-reduced-motion: reduce) {
-                    .dropdown-menu.open, .panel.open, .construction-runner.open, .ghost-runner.open { animation: none; }
+                    .dropdown-menu.open, .panel.open, .construction-runner.open, .ghost-runner.open, .switch-fdv-runner.open { animation: none; }
                     *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; }
                 }
             </style>
@@ -1268,6 +1279,10 @@
                             <div class="control-group attacks">
                                 <button type="button" class="quick quick-13" title="Lancer Attaques">Attaques</button>
                                 <button type="button" class="settings settings-13" title="Configurer Attaques" aria-label="Configurer Attaques">⚙</button>
+                            </div>
+                            <div class="control-group lifeform">
+                                <button type="button" class="quick quick-15" title="Lancer Switch FDV">Switch FDV</button>
+                                <button type="button" class="settings settings-15" title="Configurer Switch FDV" aria-label="Configurer Switch FDV">⚙</button>
                             </div>
                         </div>
                     </div>
@@ -1384,6 +1399,17 @@
                         <button type="button" class="start construction-runner-start">Démarrer</button>
                     </div>
                 </section>
+                <section class="switch-fdv-runner" role="dialog" aria-label="Choisir Switch FDV">
+                    <div class="header">
+                        <div><span class="ghost-kicker">FORMES DE VIE</span><h2>Switch FDV</h2></div>
+                        <button type="button" class="close switch-fdv-close" aria-label="Fermer">×</button>
+                    </div>
+                    <p class="help">Les 13 liens seront traités dans l’ordre : désactiver la forme de vie actuelle, puis sélectionner Roctas.</p>
+                    <div class="switch-fdv-choices">
+                        <button type="button" class="save" disabled title="Bientôt disponible">Switch vers humains</button>
+                        <button type="button" class="start switch-fdv-roctas">Switch vers Roctas</button>
+                    </div>
+                </section>
                 <section class="ghost-runner" role="dialog" aria-label="Configurer Ghost">
                     <div class="header">
                         <div>
@@ -1424,6 +1450,7 @@
             quick11: shadow.querySelector('.quick-11'),
             quick12: shadow.querySelector('.quick-12'),
             quick13: shadow.querySelector('.quick-13'),
+            quick15: shadow.querySelector('.quick-15'),
             quick14: shadow.querySelector('.quick-14'),
             simpleMenuToggle: shadow.querySelector('.simple-menu-toggle'),
             groupedMenuToggle: shadow.querySelector('.grouped-menu-toggle'),
@@ -1443,6 +1470,10 @@
             settings11: shadow.querySelector('.settings-11'),
             settings12: shadow.querySelector('.settings-12'),
             settings13: shadow.querySelector('.settings-13'),
+            settings15: shadow.querySelector('.settings-15'),
+            switchFdvRunner: shadow.querySelector('.switch-fdv-runner'),
+            switchFdvClose: shadow.querySelector('.switch-fdv-close'),
+            switchFdvRoctas: shadow.querySelector('.switch-fdv-roctas'),
             settings14: shadow.querySelector('.settings-14'),
             panel: shadow.querySelector('.panel'),
             panelTitle: shadow.querySelector('.panel-title'),
@@ -1510,6 +1541,12 @@
         refs.settings11.addEventListener('click', () => togglePanel(11));
         refs.settings12.addEventListener('click', () => togglePanel(12));
         refs.settings13.addEventListener('click', () => togglePanel(13));
+        refs.settings15.addEventListener('click', () => togglePanel(15));
+        refs.switchFdvClose.addEventListener('click', closeSwitchFdvRunner);
+        refs.switchFdvRoctas.addEventListener('click', () => {
+            closeSwitchFdvRunner();
+            void startSwitchFdvAutomation('roctas');
+        });
         refs.settings14.addEventListener('click', () => togglePanel(14));
         refs.combinedResources.addEventListener('click', () => open(combinedTargetProfiles[0]));
         refs.combinedExpeditions.addEventListener('click', () => open(combinedTargetProfiles[1]));
@@ -1534,6 +1571,7 @@
         refs.quick11.addEventListener('click', () => quickAction(11));
         refs.quick12.addEventListener('click', () => quickAction(12));
         refs.quick13.addEventListener('click', () => quickAction(13));
+        refs.quick15.addEventListener('click', () => quickAction(15));
         refs.quick14.addEventListener('click', () => quickExpeditionV2AttacksAction());
         refs.constructionRunnerClose.addEventListener('click', closeConstructionRunner);
         refs.constructionRunnerCancel.addEventListener('click', closeConstructionRunner);
@@ -1620,6 +1658,7 @@
             const opensGrouped = menuName === 'grouped' && !refs.groupedMenu.classList.contains('open');
             closeDropdowns();
             if (opensSimple || opensGrouped) {
+                closeSwitchFdvRunner();
                 closePanel();
                 closeConstructionRunner();
                 closeGhostRunner();
@@ -1654,6 +1693,7 @@
         }
 
         function open(profileId = 1) {
+            closeSwitchFdvRunner();
             closeConstructionRunner();
             closeGhostRunner();
             loadProfileIntoPanel(profileId);
@@ -1666,6 +1706,7 @@
         }
 
         function openGhostRunner() {
+            closeSwitchFdvRunner();
             const config = getStoredConfig(8);
             if (config.links.length !== 1) {
                 open(8);
@@ -1710,6 +1751,7 @@
         }
 
         function openConstructionRunner() {
+            closeSwitchFdvRunner();
             const config = getStoredConfig(7);
             if (!config.constructionLoadingUrl) {
                 open(7);
@@ -1970,6 +2012,19 @@
             void startConstructionAutomation({ orders });
         }
 
+        function openSwitchFdvRunner() {
+            closeDropdowns();
+            closePanel();
+            closeConstructionRunner();
+            closeGhostRunner();
+            refs.switchFdvRunner.classList.add('open');
+            refs.switchFdvRoctas.focus();
+        }
+
+        function closeSwitchFdvRunner() {
+            refs.switchFdvRunner.classList.remove('open');
+        }
+
         function loadProfileIntoPanel(profileId) {
             editingProfileId = normalizeEditorProfileId(profileId);
             refs.mechaLinks2Group.style.display = editingProfileId === 12 ? 'block' : 'none';
@@ -2047,6 +2102,8 @@
                             ? 'Configurez deux listes de 13 liens. Premier passage : les 9 bâtiments prioritaires. Second passage : les 3 technologies de Liens à traiter 2. Un seul clic par page ; sans bouton disponible, le lien est passé.'
                           : editingProfileId === 13
                             ? 'Configurez une Page de départ fixe et jusqu’à 200 URL cibles. Les compteurs de sélection sont équilibrés et conservés dans Tampermonkey.'
+                          : editingProfileId === 15
+                            ? '13 URL, une par ligne, conservées uniquement dans Tampermonkey. Switch vers Roctas désactive puis sélectionne Roctas sur chaque page, dans l’ordre. Le choix humains est indisponible.'
                     : 'Un lien par ligne. Les adresses sont conservées dans le stockage privé de Tampermonkey, jamais dans le code du script.';
             const usesStartUrl = editingProfileId === 2 || editingProfileId === 13;
             refs.startUrlGroup.style.display = usesStartUrl ? 'block' : 'none';
@@ -2104,11 +2161,11 @@
             }
             const count = refs.textarea.value.split(/\r?\n/).map((line) => line.trim()).filter(Boolean).length;
             const maximum = getProfileLinkLimit(editingProfileId);
-            refs.limitLabel.textContent = editingProfileId === 12
+            refs.limitLabel.textContent = [12, 15].includes(editingProfileId)
                 ? 'Exactement 13 liens'
                 : `Minimum 1, maximum ${maximum}`;
             refs.counter.textContent = `${count} / ${maximum}`;
-            refs.counter.style.color = editingProfileId === 12 && count !== 13
+            refs.counter.style.color = [12, 15].includes(editingProfileId) && count !== 13
                 ? '#fcd34d'
                 : count > maximum
                   ? '#fecaca'
@@ -2175,8 +2232,8 @@
                 showError(parsed.error);
                 return;
             }
-            if (editingProfileId === 12 && parsed.links.length !== 13) {
-                showError('Bâtiments Mecha nécessite exactement 13 liens valides.');
+            if ([12, 15].includes(editingProfileId) && parsed.links.length !== 13) {
+                showError(`${getProfileLabel(editingProfileId)} nécessite exactement 13 liens valides.`);
                 return;
             }
             let mechaLinks2 = [];
@@ -2247,6 +2304,8 @@
                     void startMechaAutomation();
                 } else if (editingProfileId === 13) {
                     void startAttackAutomation();
+                } else if (editingProfileId === 15) {
+                    void startSwitchFdvAutomation();
                 } else {
                     void startAutomation(editingProfileId, parsed.links);
                 }
@@ -2282,10 +2341,12 @@
                 run.status === 'running' && run.profileId === 12 && !run.combinedMode;
             const profile13Running =
                 run.status === 'running' && run.profileId === 13 && !run.combinedMode;
+            const profile15Running =
+                run.status === 'running' && run.profileId === 15 && !run.combinedMode;
             const simpleActionRunning =
                 profile1Running || profile4Running || profile6Running ||
                 profile7Running || profile8Running || profile9Running || profile11Running ||
-                profile12Running || profile13Running;
+                profile12Running || profile13Running || profile15Running;
             const groupedActionRunning =
                 expeditionV2ResourcesRunning || expeditionV2LifeformRunning ||
                 expeditionV2AttacksRunning;
@@ -2301,6 +2362,7 @@
             refs.quick11.classList.toggle('running', profile11Running);
             refs.quick12.classList.toggle('running', profile12Running);
             refs.quick13.classList.toggle('running', profile13Running);
+            refs.quick15.classList.toggle('running', profile15Running);
             refs.quick14.classList.toggle('running', expeditionV2AttacksRunning);
             refs.simpleMenuToggle.classList.toggle('running', simpleActionRunning);
             refs.groupedMenuToggle.classList.toggle('running', groupedActionRunning);
@@ -2319,6 +2381,7 @@
             refs.quick11.textContent = profile11Running ? '■ Arrêter' : 'Rappatriement';
             refs.quick12.textContent = profile12Running ? '■ Arrêter' : 'Bâtiments Mecha';
             refs.quick13.textContent = profile13Running ? '■ Arrêter' : 'Attaques';
+            refs.quick15.textContent = profile15Running ? '■ Arrêter' : 'Switch FDV';
             refs.quick14.textContent = expeditionV2AttacksRunning
                 ? '■ Arrêter le combiné'
                 : 'Expéditions V2 & Attaques';
@@ -2341,6 +2404,7 @@
                 ? 'Arrêter Bâtiments Mecha'
                 : 'Lancer Bâtiments Mecha';
             refs.quick13.title = profile13Running ? 'Arrêter Attaques' : 'Lancer Attaques';
+            refs.quick15.title = profile15Running ? 'Arrêter Switch FDV' : 'Lancer Switch FDV';
             refs.quick14.title = expeditionV2AttacksRunning
                 ? 'Arrêter Expéditions V2 & Attaques'
                 : 'Lancer Expédition V2 puis Attaques';
@@ -2387,6 +2451,7 @@
             open,
             openConstructionRunner,
             openGhostRunner,
+            openSwitchFdvRunner,
             refresh,
             showError,
             showConstructionError: showConstructionRunnerError,
@@ -2461,6 +2526,10 @@
         }
         if (normalizedProfileId === 13) {
             await startAttackAutomation();
+            return;
+        }
+        if (normalizedProfileId === 15) {
+            await startSwitchFdvAutomation();
             return;
         }
 
@@ -3604,6 +3673,139 @@
         });
         refreshUi();
         return true;
+    }
+
+    async function startSwitchFdvAutomation(choice) {
+        const config = getStoredConfig(15);
+        if (config.links.length !== 13) {
+            const ui = await ensureUi();
+            ui.open(15);
+            ui.showError('Configurez exactement 13 liens pour Switch FDV avant de lancer.');
+            ui.refresh();
+            return;
+        }
+        // Only the explicit Roctas choice starts a run. Humans is not implemented.
+        if (choice !== 'roctas') {
+            const ui = await ensureUi();
+            ui.openSwitchFdvRunner();
+            return;
+        }
+
+        const runId = createRunId();
+        const now = Date.now();
+        GM_setValue(RUN_KEY, {
+            runId, profileId: 15, status: 'running', combinedMode: false,
+            phase: 'switch-fdv-open', currentLinkIndex: 0,
+            switchFdvTarget: 'roctas', switchFdvPendingDelayMs: 0,
+            startedAt: now, updatedAt: now,
+            message: 'Action 1/3 : ouverture du lien 1/13…',
+        });
+        await setThisTabRunId(runId);
+        refreshUi();
+        navigateToUrl(config.links[0], true);
+    }
+
+    async function resumeSwitchFdvAutomation(runId) {
+        try {
+            let run = getActiveRun(runId);
+            if (!run || run.profileId !== 15) return;
+            const config = getStoredConfig(15);
+            if (config.links.length !== 13 || run.switchFdvTarget !== 'roctas') {
+                throw new Error('Switch FDV : configuration ou choix de forme de vie invalide.');
+            }
+
+            while ((run = getActiveRun(runId))) {
+                const index = Number(run.currentLinkIndex);
+                if (!Number.isInteger(index) || index < 0 || index >= 13) {
+                    throw new Error('Switch FDV : numéro de lien invalide.');
+                }
+                if (run.switchFdvPendingDelayMs > 0) {
+                    await delay(run.switchFdvPendingDelayMs);
+                    if (!getActiveRun(runId)) return;
+                    updateRun(runId, { switchFdvPendingDelayMs: 0 });
+                    continue;
+                }
+
+                const waitPhases = {
+                    'switch-fdv-open': ['switch-fdv-remove', 'Action 2/3 : désactiver la forme de vie actuelle'],
+                    'switch-fdv-after-remove': ['switch-fdv-select', 'Action 3/3 : sélectionner Roctas'],
+                    'switch-fdv-after-select': ['switch-fdv-next', 'Sélection de Roctas effectuée : attendre avant le lien suivant'],
+                };
+                if (waitPhases[run.phase]) {
+                    if (run.phase === 'switch-fdv-open' &&
+                        !isConfiguredPage(config.links[index], window.location.href)) {
+                        navigateToUrl(config.links[index], false);
+                        return;
+                    }
+                    const deadline = Date.now() + PAGE_TIMEOUT_MS;
+                    await waitForWindowLoad(deadline);
+                    const loaded = await waitUntilPageUsable(Math.max(0, deadline - Date.now()));
+                    if (!getActiveRun(runId)) return;
+                    if (loaded.timedOut || Date.now() >= deadline) {
+                        throw new Error(`Switch FDV — lien ${index + 1}/13 : chargement trop long.`);
+                    }
+                    const pause = getRandomDelayMs(POST_ACTION_DELAY_MIN_MS, POST_ACTION_DELAY_MAX_MS);
+                    const [phase, label] = waitPhases[run.phase];
+                    updateRun(runId, {
+                        phase, switchFdvPendingDelayMs: pause,
+                        message: `${label} — pause aléatoire ${(pause / 1000).toFixed(2)} s…`,
+                    });
+                    refreshUi();
+                    continue;
+                }
+
+                if (run.phase === 'switch-fdv-remove' || run.phase === 'switch-fdv-select') {
+                    const removing = run.phase === 'switch-fdv-remove';
+                    const selector = removing
+                        ? '#removeLifeform:not(.disabled)'
+                        : '#selectLifeform2[data-lifeformid="2"]:not(.disabled)';
+                    updateRun(runId, {
+                        message: removing
+                            ? 'Action 2/3 : attente du bouton Désactiver…'
+                            : 'Action 3/3 : attente du bouton Sélectionner Roctas activé…',
+                    });
+                    refreshUi();
+                    const button = await waitForElement(selector, {
+                        timeoutMs: ELEMENT_TIMEOUT_MS, visible: true, clickable: true,
+                    });
+                    if (!getActiveRun(runId)) return;
+                    // Save the next phase before the click: reloads must not repeat it.
+                    updateRun(runId, {
+                        phase: removing ? 'switch-fdv-after-remove' : 'switch-fdv-after-select',
+                        message: removing
+                            ? 'Action 2/3 : clic Désactiver effectué, attente du chargement…'
+                            : 'Action 3/3 : clic Sélectionner Roctas effectué, attente du chargement…',
+                    });
+                    const pageExit = waitForPageExit(3000);
+                    button.click();
+                    refreshUi();
+                    if (await pageExit) return;
+                    continue;
+                }
+
+                if (run.phase === 'switch-fdv-next') {
+                    if (index === 12) {
+                        updateRun(runId, {
+                            status: 'completed', phase: 'switch-fdv-completed',
+                            message: 'Switch FDV terminé : les clics Désactiver puis Sélectionner Roctas ont été effectués sur les 13 liens.',
+                        });
+                        await clearThisTabRunId(runId);
+                        refreshUi();
+                        return;
+                    }
+                    updateRun(runId, {
+                        phase: 'switch-fdv-open', currentLinkIndex: index + 1,
+                        message: `Action 1/3 : ouverture du lien ${index + 2}/13…`,
+                    });
+                    refreshUi();
+                    navigateToUrl(config.links[index + 1], true);
+                    return;
+                }
+                throw new Error(`Phase Switch FDV inconnue : ${run.phase}`);
+            }
+        } catch (error) {
+            await failRun(runId, error instanceof Error ? error.message : String(error), error);
+        }
     }
 
     async function startAttackAutomation(options = {}) {
@@ -5972,6 +6174,10 @@
             await resumeAttackAutomation(run.runId);
             return;
         }
+        if (run.profileId === 15) {
+            await resumeSwitchFdvAutomation(run.runId);
+            return;
+        }
         if (run.profileId === 2 && !config.startUrl) {
             await failRun(run.runId, 'Lien de départ de la série 2 absent ou invalide.');
             return;
@@ -6549,7 +6755,7 @@
         const value = Number(profileId);
         if (
             value === 4 || value === 6 || value === 7 || value === 8 ||
-            value === 9 || value === 11 || value === 12 || value === 13
+            value === 9 || value === 11 || value === 12 || value === 13 || value === 15
         ) return value;
         return value === 2 ? 2 : 1;
     }
@@ -6570,6 +6776,7 @@
         if (normalizedProfileId === 11) return 'Rappatriement';
         if (normalizedProfileId === 12) return 'Bâtiments Mecha';
         if (normalizedProfileId === 13) return 'Attaques';
+        if (normalizedProfileId === 15) return 'Switch FDV';
         return normalizedProfileId === 2 ? 'Expéditions' : 'Ressources';
     }
 
@@ -6588,7 +6795,8 @@
             normalizedProfileId === 9 ||
             normalizedProfileId === 11 ||
             normalizedProfileId === 12 ||
-            normalizedProfileId === 13
+            normalizedProfileId === 13 ||
+            normalizedProfileId === 15
         ) return [];
         return normalizedProfileId === 2 ? ACTION_STEPS_2 : ACTION_STEPS_1;
     }
@@ -6620,6 +6828,10 @@
         }
         if (profileId === 13) {
             return formatAttackDebugProgress(run);
+        }
+        if (profileId === 15) {
+            return `Switch FDV → Roctas — Lien ${Number(run.currentLinkIndex) + 1}/13\n` +
+                `État : ${run.status}\n${run.message || ''}`;
         }
         const config = getStoredConfig(profileId);
         const actionSteps = getActionSteps(profileId);
