@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Projet secret — boucle multi-liens
 // @namespace    local.projet-secret
-// @version      6.21.0
+// @version      6.21.1
 // @updateURL    https://raw.githubusercontent.com/raphaelrobert1104-sys/mysecretproject/main/outputs/projet-secret.user.js
 // @downloadURL  https://raw.githubusercontent.com/raphaelrobert1104-sys/mysecretproject/main/outputs/projet-secret.user.js
 // @description  Automatise Ressources, Expédition V2, Attaques, Forme de vie, Import, Constructions, Ghost, Rappatriement, Bâtiments Mecha et Switch FDV avec configurations privées.
@@ -21,7 +21,7 @@
 (function () {
     'use strict';
 
-    const SCRIPT_VERSION = '6.21.0';
+    const SCRIPT_VERSION = '6.21.1';
     const CONFIG_KEYS = {
         1: 'secretMultiLinkConfig',
         2: 'secretMultiLinkConfig2',
@@ -148,7 +148,7 @@
         { name: 'deathstar', deduction: 1, label: 'deathstar' },
         { name: 'reaper', deduction: 1, label: 'reaper' },
         { name: 'explorer', deduction: 1, label: 'explorer' },
-        { name: 'transporterSmall', deduction: 11000, label: 'transporterSmall' },
+        { name: 'transporterSmall', deduction: 25000, label: 'transporterSmall' },
         { name: 'recycler', deduction: 1, label: 'recycler' },
         { name: 'espionageProbe', deduction: 1, label: 'espionageProbe' },
     ];
