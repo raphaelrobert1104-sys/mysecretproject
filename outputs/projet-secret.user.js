@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Projet secret — boucle multi-liens
 // @namespace    local.projet-secret
-// @version      6.21.1
+// @version      6.21.2
 // @updateURL    https://raw.githubusercontent.com/raphaelrobert1104-sys/mysecretproject/main/outputs/projet-secret.user.js
 // @downloadURL  https://raw.githubusercontent.com/raphaelrobert1104-sys/mysecretproject/main/outputs/projet-secret.user.js
 // @description  Automatise Ressources, Expédition V2, Attaques, Forme de vie, Import, Constructions, Ghost, Rappatriement, Bâtiments Mecha et Switch FDV avec configurations privées.
@@ -21,7 +21,7 @@
 (function () {
     'use strict';
 
-    const SCRIPT_VERSION = '6.21.1';
+    const SCRIPT_VERSION = '6.21.2';
     const CONFIG_KEYS = {
         1: 'secretMultiLinkConfig',
         2: 'secretMultiLinkConfig2',
@@ -168,10 +168,10 @@
         { technology: '14207', label: 'Neuro-interface' },
         { technology: '11211', label: 'Technologie de laboratoire améliorée' },
     ];
-    const ATTACK_TRANSPORTER_SELECTOR = 'input[name="transporterLarge"]';
+    const ATTACK_TRANSPORTER_SELECTOR = 'input[name="transporterSmall"]';
     const ATTACK_CONTINUE_SELECTOR = '#continueToFleet2 > span';
     const ATTACK_SEND_SELECTOR = '#sendFleet > span';
-    const ATTACK_TRANSPORTER_COUNT = 250;
+    const ATTACK_TRANSPORTER_COUNT = 1135;
 
     class ElementNotFoundError extends Error {
         constructor(selector, timeoutMs) {
@@ -4013,10 +4013,10 @@
                             ATTACK_DELAY_MIN_MS,
                             ATTACK_DELAY_MAX_MS
                         ),
-                        attackPendingDelayLabel: 'la saisie de 250 transporterLarge',
+                        attackPendingDelayLabel: `la saisie de ${ATTACK_TRANSPORTER_COUNT} petits transporteurs`,
                         message:
                             `Attaques — tour ${completedExecutions + 1}/${targetExecutions} : ` +
-                            '250 transporterLarge saisis.',
+                            `${ATTACK_TRANSPORTER_COUNT} petits transporteurs saisis.`,
                     });
                     refreshUi();
                     continue;
@@ -7068,7 +7068,7 @@
                 'attack-read-slots': 'Préparation — lire les slots de flotte',
                 'attack-choose-target': 'Choisir aléatoirement une URL au compteur minimal',
                 'attack-open-target': `Charger l’URL cible ${currentLink}/${Math.max(1, config.links.length)}`,
-                'attack-set-transporter': 'Saisir 250 transporterLarge',
+                'attack-set-transporter': `Saisir ${ATTACK_TRANSPORTER_COUNT} petits transporteurs`,
                 'attack-continue': 'Cliquer sur Continuer',
                 'attack-wait-page-2': 'Attendre la page d’envoi',
                 'attack-send': 'Cliquer sur Envoyer la flotte',
