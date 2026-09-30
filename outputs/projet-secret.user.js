@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Projet secret — boucle multi-liens
 // @namespace    local.projet-secret
-// @version      6.21.2
+// @version      6.21.3
 // @updateURL    https://raw.githubusercontent.com/raphaelrobert1104-sys/mysecretproject/main/outputs/projet-secret.user.js
 // @downloadURL  https://raw.githubusercontent.com/raphaelrobert1104-sys/mysecretproject/main/outputs/projet-secret.user.js
 // @description  Automatise Ressources, Expédition V2, Attaques, Forme de vie, Import, Constructions, Ghost, Rappatriement, Bâtiments Mecha et Switch FDV avec configurations privées.
@@ -21,7 +21,7 @@
 (function () {
     'use strict';
 
-    const SCRIPT_VERSION = '6.21.2';
+    const SCRIPT_VERSION = '6.21.3';
     const CONFIG_KEYS = {
         1: 'secretMultiLinkConfig',
         2: 'secretMultiLinkConfig2',
@@ -172,6 +172,8 @@
     const ATTACK_CONTINUE_SELECTOR = '#continueToFleet2 > span';
     const ATTACK_SEND_SELECTOR = '#sendFleet > span';
     const ATTACK_TRANSPORTER_COUNT = 1135;
+    const ATTACK_SEND_RETRY_MS = 5000;
+    const ATTACK_SEND_CHECK_MS = 3000;
 
     class ElementNotFoundError extends Error {
         constructor(selector, timeoutMs) {
@@ -3835,6 +3837,8 @@
             attackCounterIncremented: false,
             attackTargetExecutions: null,
             attackCompletedExecutions: 0,
+            attackSkippedExecutions: 0,
+            attackSendAttempts: 0,
             attackPendingDelayMs: 0,
             attackPendingDelayLabel: '',
             startedAt: now,
@@ -3945,12 +3949,17 @@
                         return;
                     }
 
-                    const target = chooseLeastUsedAttackTarget(config);
+                    const target = chooseLeastUsedAttackTarget(config, run.attackSkipUrl);
                     updateRun(runId, {
                         phase: 'attack-open-target',
                         currentLinkIndex: target.index,
                         attackCurrentUrl: target.url,
                         attackCounterIncremented: false,
+                        attackSendAttempts: 0,
+                        attackSendClicked: false,
+                        attackSendCheckUntil: 0,
+                        attackRetryAt: 0,
+                        attackSkipUrl: '',
                         message:
                             `Attaques — tour ${completedExecutions + 1}/${targetExecutions} : ` +
                             `URL ${target.index + 1}/${config.links.length} choisie parmi les compteurs ` +
@@ -4063,56 +4072,85 @@
                 }
 
                 if (run.phase === 'attack-send') {
-                    const sendButton = await waitForElement(ATTACK_SEND_SELECTOR, {
-                        timeoutMs: ELEMENT_TIMEOUT_MS,
-                        clickable: true,
-                    });
-                    if (!getActiveRun(runId)) return;
-                    const pageExitPromise = waitForPageExit(3000);
+                    // Recheck before retrying: a slow first send may have finished meanwhile.
+                    if (hasAttackSendTransition(run)) {
+                        await advanceAttackAfterSend(runId, false);
+                        continue;
+                    }
+                    const attempts = (Number(run.attackSendAttempts) || 0) + 1;
+                    if (attempts > 2) {
+                        await advanceAttackAfterSend(runId, true);
+                        continue;
+                    }
                     updateRun(runId, {
-                        phase: 'attack-wait-after-send',
-                        message:
-                            `Attaques — tour ${completedExecutions + 1}/${targetExecutions} : ` +
-                            'envoi de la flotte…',
+                        attackSendAttempts: attempts,
+                        message: `Attaques — envoi, tentative ${attempts}/2 : recherche du bouton…`,
                     });
                     refreshUi();
-                    sendButton.click();
-                    if (await pageExitPromise) return;
+                    try {
+                        const sendButton = await waitForElement(ATTACK_SEND_SELECTOR, {
+                            timeoutMs: ELEMENT_TIMEOUT_MS,
+                            clickable: true,
+                        });
+                        if (!getActiveRun(runId)) return;
+                        if (hasAttackSendTransition(getActiveRun(runId))) {
+                            await advanceAttackAfterSend(runId, false);
+                            continue;
+                        }
+                        // Persist before clicking so a reload resumes the check, not the click.
+                        updateRun(runId, {
+                            phase: 'attack-wait-after-send',
+                            attackSendClicked: true,
+                            attackSendCheckUntil: Date.now() + ATTACK_SEND_CHECK_MS,
+                            message: `Attaques — envoi, tentative ${attempts}/2 : vérification du changement de page…`,
+                        });
+                        const pageExitPromise = waitForPageExit(ATTACK_SEND_CHECK_MS);
+                        sendButton.click();
+                        refreshUi();
+                        if (await pageExitPromise) return;
+                    } catch (error) {
+                        if (!getActiveRun(runId)) return;
+                        if (hasAttackSendTransition(getActiveRun(runId))) {
+                            await advanceAttackAfterSend(runId, false);
+                        } else {
+                            await handleAttackSendFailure(runId, error instanceof Error ? error.message : String(error));
+                        }
+                    }
                     continue;
                 }
 
                 if (run.phase === 'attack-wait-after-send') {
                     const renderResult = await waitUntilPageUsable(PAGE_TIMEOUT_MS);
+                    if (!getActiveRun(runId)) return;
                     if (renderResult.timedOut) {
-                        throw new Error('La page suivant l’envoi d’Attaques ne s’est pas chargée à temps.');
+                        await handleAttackSendFailure(runId, 'La page suivant l’envoi ne s’est pas chargée à temps.');
+                        continue;
+                    }
+                    while (getActiveRun(runId) && !hasAttackSendTransition(getActiveRun(runId)) &&
+                        Date.now() < Number(run.attackSendCheckUntil)) {
+                        await delay(100);
                     }
                     if (!getActiveRun(runId)) return;
-                    const nextCompletedExecutions = completedExecutions + 1;
-                    if (nextCompletedExecutions >= targetExecutions) {
-                        updateRun(runId, {
-                            attackCompletedExecutions: nextCompletedExecutions,
-                        });
-                        await completeAttackAutomation(
-                            runId,
-                            `Attaques terminée : ${nextCompletedExecutions}/${targetExecutions} tour(s) exécuté(s).`
-                        );
-                        return;
+                    if (hasAttackSendTransition(getActiveRun(runId))) {
+                        await advanceAttackAfterSend(runId, false);
+                    } else {
+                        await handleAttackSendFailure(runId, 'Aucun retour à la page de sélection des vaisseaux détecté après le clic.');
                     }
-                    updateRun(runId, {
-                        phase: 'attack-choose-target',
-                        attackCompletedExecutions: nextCompletedExecutions,
-                        attackCurrentUrl: '',
-                        attackCounterIncremented: false,
-                        attackPendingDelayMs: getRandomDelayMs(
-                            ATTACK_DELAY_MIN_MS,
-                            ATTACK_DELAY_MAX_MS
-                        ),
-                        attackPendingDelayLabel: `l’envoi du tour ${nextCompletedExecutions}`,
-                        message:
-                            `Attaques — tour ${nextCompletedExecutions}/${targetExecutions} terminé ; ` +
-                            'préparation du prochain choix équilibré…',
-                    });
-                    refreshUi();
+                    continue;
+                }
+
+                if (run.phase === 'attack-retry-send') {
+                    // This fixed delay is not affected by the global 30% acceleration.
+                    while (getActiveRun(runId) && Date.now() < Number(run.attackRetryAt)) {
+                        if (hasAttackSendTransition(getActiveRun(runId))) break;
+                        await delay(Math.min(100, Number(run.attackRetryAt) - Date.now()));
+                    }
+                    if (!getActiveRun(runId)) return;
+                    if (hasAttackSendTransition(getActiveRun(runId))) {
+                        await advanceAttackAfterSend(runId, false);
+                    } else {
+                        updateRun(runId, { phase: 'attack-send', attackRetryAt: 0 });
+                    }
                     continue;
                 }
 
@@ -4121,6 +4159,65 @@
         } catch (error) {
             await failRun(runId, error instanceof Error ? error.message : String(error), error);
         }
+    }
+
+    function hasAttackSendTransition(run) {
+        if (!run?.attackSendClicked) return false;
+        const sendForm = document.querySelector('#sendFleet');
+        const fleetSelection = document.querySelector('#sendall');
+        // A click or a reload alone is not proof of progress. Use the return to
+        // the known fleet-selection screen; this is not a server acknowledgement.
+        return (!sendForm || !isElementVisible(sendForm)) &&
+            Boolean(fleetSelection && isElementVisible(fleetSelection));
+    }
+
+    async function handleAttackSendFailure(runId, reason) {
+        const run = getActiveRun(runId);
+        if (!run) return;
+        if (Number(run.attackSendAttempts) >= 2) {
+            await advanceAttackAfterSend(runId, true);
+            return;
+        }
+        updateRun(runId, {
+            phase: 'attack-retry-send',
+            attackRetryAt: Date.now() + ATTACK_SEND_RETRY_MS,
+            message: `Attaques — envoi non abouti : ${reason} Nouvelle tentative dans 5 secondes (2/2).`,
+        });
+        refreshUi();
+    }
+
+    async function advanceAttackAfterSend(runId, skipped) {
+        const run = getActiveRun(runId);
+        if (!run) return;
+        const completed = (Number(run.attackCompletedExecutions) || 0) + 1;
+        const skippedCount = (Number(run.attackSkippedExecutions) || 0) + (skipped ? 1 : 0);
+        // Failed targets consume a planned tour too, keeping the run bounded.
+        updateRun(runId, {
+            attackCompletedExecutions: completed,
+            attackSkippedExecutions: skippedCount,
+            attackSkipUrl: skipped ? run.attackCurrentUrl : '',
+            attackCurrentUrl: '',
+            attackCounterIncremented: false,
+            attackSendClicked: false,
+            attackSendAttempts: 0,
+            attackRetryAt: 0,
+            attackSendCheckUntil: 0,
+        });
+        if (completed >= Number(run.attackTargetExecutions)) {
+            await completeAttackAutomation(runId,
+                `Attaques terminée : ${completed}/${run.attackTargetExecutions} tour(s) traité(s), ` +
+                `${skippedCount} URL ignorée(s) après deux tentatives d’envoi non abouties.`);
+            return;
+        }
+        updateRun(runId, {
+            phase: 'attack-choose-target',
+            attackPendingDelayMs: getRandomDelayMs(ATTACK_DELAY_MIN_MS, ATTACK_DELAY_MAX_MS),
+            attackPendingDelayLabel: `le tour ${completed}${skipped ? ' ignoré après deux tentatives' : ''}`,
+            message: skipped
+                ? `Attaques — tour ${completed} : deux tentatives non abouties, passage à une autre URL.`
+                : `Attaques — tour ${completed} terminé, retour à la sélection des vaisseaux détecté.`,
+        });
+        refreshUi();
     }
 
     async function consumeAttackDelay(runId) {
@@ -7073,6 +7170,7 @@
                 'attack-wait-page-2': 'Attendre la page d’envoi',
                 'attack-send': 'Cliquer sur Envoyer la flotte',
                 'attack-wait-after-send': 'Attendre la page suivant l’envoi',
+                'attack-retry-send': 'Envoi non abouti — attente de 5 secondes avant la seconde tentative',
                 'attack-completed': 'Attaques terminée',
             };
             actionLabel = labels[run.phase] || `Phase inconnue : ${run.phase}`;
@@ -7085,7 +7183,9 @@
             ? `${Math.min(completed + 1, target)}/${target}`
             : 'préparation';
         const message = typeof run.message === 'string' ? run.message : '';
-        return `${runLabel} — Tour ${loopLabel}\n${actionLabel}` + (message ? `\n${message}` : '');
+        return `${runLabel} — Tour ${loopLabel}\n${actionLabel}` +
+            `\nURL ignorées après deux tentatives : ${Number(run.attackSkippedExecutions) || 0}` +
+            (message ? `\n${message}` : '');
     }
 
     function formatGhostDebugProgress(run) {
@@ -7328,15 +7428,16 @@
         }, {});
     }
 
-    function chooseLeastUsedAttackTarget(config) {
+    function chooseLeastUsedAttackTarget(config, excludedUrl = '') {
         if (!config || !Array.isArray(config.links) || config.links.length === 0) {
             throw new Error('Aucune URL cible Attaques n’est configurée.');
         }
         const counters = normalizeAttackCounters(config.links, config.attackCounters);
-        const minimum = Math.min(...config.links.map((url) => counters[url]));
-        const candidates = config.links
+        const eligible = config.links
             .map((url, index) => ({ url, index, count: counters[url] }))
-            .filter((entry) => entry.count === minimum);
+            .filter((entry) => config.links.length === 1 || entry.url !== excludedUrl);
+        const minimum = Math.min(...eligible.map((entry) => entry.count));
+        const candidates = eligible.filter((entry) => entry.count === minimum);
         return candidates[getSecureRandomIndex(candidates.length)];
     }
 
