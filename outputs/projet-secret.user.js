@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Projet secret — boucle multi-liens
 // @namespace    local.projet-secret
-// @version      6.22.1
+// @version      6.22.2
 // @updateURL    https://raw.githubusercontent.com/raphaelrobert1104-sys/mysecretproject/main/outputs/projet-secret.user.js
 // @downloadURL  https://raw.githubusercontent.com/raphaelrobert1104-sys/mysecretproject/main/outputs/projet-secret.user.js
 // @description  Automatise Ressources, Expédition V2, Attaques, Forme de vie, Import, Constructions, Ghost, Rappatriement, Bâtiments Mecha et Switch FDV avec configurations privées.
@@ -21,7 +21,7 @@
 (function () {
     'use strict';
 
-    const SCRIPT_VERSION = '6.22.1';
+    const SCRIPT_VERSION = '6.22.2';
     const CONFIG_KEYS = {
         1: 'secretMultiLinkConfig',
         2: 'secretMultiLinkConfig2',
@@ -1870,12 +1870,22 @@
                 refs.ghostSlowestSpeed.focus();
                 return;
             }
+            const suggestedCoordinate = calculateGhostCoordinateSuggestion(
+                franceDateTime,
+                slowestShipSpeed
+            );
+            if (!suggestedCoordinate) {
+                refs.ghostCoordinate100.textContent =
+                    'Impossible de proposer une coordonnée pour cette date/heure.';
+                refs.ghostJapanDateTime.focus();
+                return;
+            }
             GM_setValue(GHOST_JAPAN_DATETIME_KEY, japanDateTime);
             GM_setValue(GHOST_DATETIME_KEY, franceDateTime);
             GM_setValue(GHOST_TIME_KEY, franceDateTime.slice(11, 16));
             GM_setValue(GHOST_SLOWEST_SPEED_KEY, slowestShipSpeed);
             closeGhostRunner();
-            void startGhostAutomation(franceDateTime);
+            void startGhostAutomation(franceDateTime, suggestedCoordinate);
         }
 
         function openConstructionRunner() {
@@ -4319,7 +4329,7 @@
         refreshUi();
     }
 
-    async function startGhostAutomation(selectedDateTime = '') {
+    async function startGhostAutomation(selectedDateTime = '', suggestedCoordinate = null) {
         const config = getStoredConfig(8);
         if (config.links.length !== 1) {
             const ui = await ensureUi();
@@ -4331,6 +4341,9 @@
 
         const ghostTargetDateTime = normalizeGhostDateTime(selectedDateTime) ||
             getStoredGhostDateTimeValue();
+        if (!suggestedCoordinate || !Number.isSafeInteger(suggestedCoordinate.system)) {
+            throw new Error('La coordonnée système proposée pour Ghost est invalide.');
+        }
         const ghostTime = ghostTargetDateTime.slice(11, 16);
         const now = Date.now();
         const runId = createRunId();
@@ -4345,7 +4358,13 @@
             currentLinkIndex: 0,
             ghostTime,
             ghostTargetDateTime,
-            ghostReturnTime: '',
+            ghostSuggestedCoordinate: {
+                galaxy: suggestedCoordinate.galaxy,
+                system: suggestedCoordinate.system,
+                position: suggestedCoordinate.position,
+                returnTimestamp: suggestedCoordinate.returnTimestamp,
+                withinTolerance: Boolean(suggestedCoordinate.withinTolerance),
+            },
             ghostPendingDelayMs: 0,
             ghostPendingDelayLabel: '',
             startedAt: now,
@@ -4499,7 +4518,7 @@
 
                 if (run.phase === 'ghost-set-position') {
                     updateRun(runId, {
-                        message: 'Ghost — action 4/6 (1/4) : renseigner la position 16…',
+                        message: 'Ghost — action 4/6 (1/2) : renseigner la position 16…',
                     });
                     refreshUi();
                     const positionInput = await waitForElement(GHOST_POSITION_SELECTOR, {
@@ -4524,7 +4543,7 @@
 
                 if (run.phase === 'ghost-select-mission') {
                     updateRun(runId, {
-                        message: 'Ghost — action 4/6 (2/3) : sélectionner la mission Espionner…',
+                        message: 'Ghost — action 4/6 (2/2) : sélectionner la mission Espionner…',
                     });
                     refreshUi();
                     const missionButton = await waitForElement(GHOST_MISSION_SELECTOR, {
@@ -4534,7 +4553,7 @@
                     if (!getActiveRun(runId)) return;
 
                     updateRun(runId, {
-                        phase: 'ghost-read-return-time',
+                        phase: 'ghost-set-system',
                         ghostPendingDelayMs: getRandomDelayMs(
                             GHOST_DELAY_MIN_MS,
                             GHOST_DELAY_MAX_MS
@@ -4547,17 +4566,74 @@
                     continue;
                 }
 
-                if (run.phase === 'ghost-select-duration') {
-                    // Migrate runs saved by older versions without changing the
-                    // game's default 100% speed setting.
+                if ([
+                    'ghost-select-duration',
+                    'ghost-read-return-time',
+                    'ghost-search-system',
+                    'ghost-read-system-return',
+                ].includes(run.phase)) {
+                    // Migrate runs saved by older versions to the direct system
+                    // entry; no speed control or return-time triangulation.
+                    const suggestedCoordinate = calculateGhostCoordinateSuggestion(
+                        run.ghostTargetDateTime,
+                        getStoredGhostSlowestSpeed()
+                    );
+                    if (!suggestedCoordinate) {
+                        throw new Error('Impossible de calculer la coordonnée système pour reprendre Ghost.');
+                    }
                     updateRun(runId, {
-                        phase: 'ghost-read-return-time',
-                        ghostPendingDelayMs: getRandomDelayMs(
-                            GHOST_DELAY_MIN_MS,
-                            GHOST_DELAY_MAX_MS
+                        phase: 'ghost-set-system',
+                        ghostSuggestedCoordinate: suggestedCoordinate,
+                        ghostPendingDelayMs: 0,
+                        ghostPendingDelayLabel: '',
+                        message: 'Ghost — ancienne triangulation remplacée par la saisie directe du système calculé.',
+                    });
+                    refreshUi();
+                    continue;
+                }
+
+                if (run.phase === 'ghost-set-system') {
+                    const coordinate = run.ghostSuggestedCoordinate;
+                    const galaxy = Number(coordinate?.galaxy);
+                    const system = Number(coordinate?.system);
+                    const position = Number(coordinate?.position);
+                    if (!Number.isSafeInteger(galaxy) || galaxy < 1 || galaxy > 6 ||
+                        !Number.isSafeInteger(system) || system < 1 || system > 499 ||
+                        position !== GHOST_TARGET_POSITION) {
+                        throw new Error('La coordonnée Ghost proposée est invalide. Relancez Ghost depuis ses paramètres.');
+                    }
+
+                    updateRun(runId, {
+                        message:
+                            `Ghost — action 5/6 : coordonnée ${galaxy}.${system}.${position} ` +
+                            `calculée à 100 % ; saisie directe du système ${system}…`,
+                    });
+                    refreshUi();
+                    const systemInput = await waitForElement(GHOST_SYSTEM_SELECTOR, {
+                        timeoutMs: ELEMENT_TIMEOUT_MS,
+                        clickable: false,
+                    });
+                    if (!getActiveRun(runId)) return;
+                    setFormControlValue(systemInput, String(system));
+                    const estimatedReturnTime = formatGhostDateTime(
+                        formatGhostTimestampInTimeZone(
+                            Number(coordinate.returnTimestamp),
+                            GHOST_FRANCE_TIME_ZONE
+                        )
+                    );
+                    updateRun(runId, {
+                        phase: 'ghost-load-all-resources',
+                        ghostMatchedSystem: system,
+                        ghostEstimatedReturnTime: estimatedReturnTime,
+                        ghostPendingDelayMs: getExactRandomDelayMs(
+                            GHOST_FINAL_DELAY_MIN_MS,
+                            GHOST_FINAL_DELAY_MAX_MS
                         ),
-                        ghostPendingDelayLabel: 'la sélection de la mission Espionner',
-                        message: 'Ghost — vitesse par défaut conservée à 100 %, lecture de l’heure de retour…',
+                        ghostPendingDelayLabel: `la saisie directe du système ${system}`,
+                        message:
+                            `Ghost — action 5/6 terminée : système ${system} saisi depuis ` +
+                            `la coordonnée ${galaxy}.${system}.${position} ; retour estimé ` +
+                            `${estimatedReturnTime}. Aucune triangulation effectuée.`,
                     });
                     refreshUi();
                     continue;
@@ -4794,7 +4870,9 @@
                         updatedAt: Date.now(),
                         message:
                             `Ghost terminé : système ${activeRun.ghostMatchedSystem} retenu, ` +
-                            `retour ${activeRun.ghostReturnTime}, ressources chargées et flotte envoyée.`,
+                            `coordonnée calculée ${activeRun.ghostSuggestedCoordinate.galaxy}.` +
+                            `${activeRun.ghostSuggestedCoordinate.system}.` +
+                            `${activeRun.ghostSuggestedCoordinate.position}, ressources chargées et flotte envoyée.`,
                     });
                     void clearThisTabRunId(runId);
                     refreshUi();
@@ -7353,13 +7431,8 @@
                 'ghost-wait-destination-page': 'Action 4/6 — attendre la page de destination',
                 'ghost-set-position': 'Action 4/6 — renseigner la position 16',
                 'ghost-select-mission': 'Action 4/6 — sélectionner Espionner',
-                'ghost-read-return-time': 'Action 4/6 — lire l’heure de retour initiale',
-                'ghost-search-system':
-                    `Action 5/6 — trianguler le système ` +
-                    `(${Math.max(0, Number(run.ghostSystemSearchIteration) || 0)} essai(s))`,
-                'ghost-read-system-return':
-                    `Action 5/6 — lire le retour du système ` +
-                    `${run.ghostSystemCandidate ?? 'en cours'}`,
+                'ghost-set-system':
+                    `Action 5/6 — saisir le système ${run.ghostSuggestedCoordinate?.system ?? 'calculé'}`,
                 'ghost-load-all-resources': 'Action 6/6 (1/2) — charger toutes les ressources',
                 'ghost-send-fleet': 'Action 6/6 (2/2) — envoyer la flotte',
                 'ghost-completed': 'Ghost terminé',
@@ -7370,13 +7443,16 @@
         const targetDateTime = formatGhostDateTime(
             run.ghostTargetDateTime || getStoredGhostDateTimeValue()
         );
-        const returnTime = String(run.ghostReturnTime || '').trim();
-        const matchedSystem = Number.isSafeInteger(Number(run.ghostMatchedSystem))
-            ? ` — système ${Number(run.ghostMatchedSystem)}`
+        const suggested = run.ghostSuggestedCoordinate;
+        const suggestedCoordinate = suggested &&
+            Number.isSafeInteger(Number(suggested.galaxy)) &&
+            Number.isSafeInteger(Number(suggested.system)) &&
+            Number.isSafeInteger(Number(suggested.position))
+            ? `Coordonnée proposée : ${suggested.galaxy}.${suggested.system}.${suggested.position}`
             : '';
         const message = typeof run.message === 'string' ? run.message : '';
         return `Ghost — cible France ${targetDateTime}\n${actionLabel}` +
-            (returnTime ? `\nRetour lu : ${returnTime}${matchedSystem}` : '') +
+            (suggestedCoordinate ? `\n${suggestedCoordinate}` : '') +
             (message ? `\n${message}` : '');
     }
 
