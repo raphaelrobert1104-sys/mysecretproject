@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Projet secret — boucle multi-liens
 // @namespace    local.projet-secret
-// @version      6.22.4
+// @version      6.22.5
 // @updateURL    https://raw.githubusercontent.com/raphaelrobert1104-sys/mysecretproject/main/outputs/projet-secret.user.js
 // @downloadURL  https://raw.githubusercontent.com/raphaelrobert1104-sys/mysecretproject/main/outputs/projet-secret.user.js
 // @description  Automatise Ressources, Expédition V2, Attaques, Forme de vie, Import, Constructions, Ghost, Rappatriement, Bâtiments Mecha et Switch FDV avec configurations privées.
@@ -22,7 +22,7 @@
 (function () {
     'use strict';
 
-    const SCRIPT_VERSION = '6.22.4';
+    const SCRIPT_VERSION = '6.22.5';
     const CONFIG_KEYS = {
         1: 'secretMultiLinkConfig',
         2: 'secretMultiLinkConfig2',
@@ -131,6 +131,7 @@
     const GHOST_POSITION_SELECTOR = '#position';
     const GHOST_SYSTEM_SELECTOR = '#system';
     const GHOST_MISSION_SELECTOR = '#missionButton6';
+    const GHOST_SPEED_SELECTOR = '#speedPercentage';
     const GHOST_RETURN_TIME_SELECTOR = '#returnTime';
     const GHOST_LOAD_ALL_RESOURCES_SELECTOR =
         '#allresources > img[data-ipi-highlight-step="ipiFleetCargoLoadAll"], ' +
@@ -534,6 +535,7 @@
             // Déclenche le même clic que le sélecteur OGame, avec le correctif
             // mobile qui recalcule tous les champs de trajet et de consommation.
             host.dataset.speedClickSucceeded = 'false';
+            gameSlider.dataset.secretFleetSpeedLastApplied = '';
             nativeStep.click();
             if (
                 host.dataset.speedClickSucceeded !== 'true' ||
@@ -569,9 +571,9 @@
 
             dispatcher.speedPercent = speed;
             dispatcher.realSpeedPercent = speed;
-            dispatcher.refresh();
-            dispatcher.realSpeedPercent = dispatcher.speedPercent;
             dispatcher.setFleetPercent(dispatcher.speedPercent);
+            gameSlider.percentageBarInstance?.setValue(dispatcher.realSpeedPercent);
+            dispatcher.refresh();
 
             if (
                 typeof dispatcher.getConsumption === 'function' &&
@@ -586,7 +588,7 @@
             }
 
             dispatcher.focusSendFleet?.();
-            gameSlider.percentageBarInstance?.setValue(speed);
+            gameSlider.dataset.secretFleetSpeedLastApplied = String(speed);
             if (host) host.dataset.speedClickSucceeded = 'true';
             syncMobileFleetSpeedSelector(host, speed);
             updateMobileFleetSpeedStatus(host, `Vitesse appliquée : ${speed * 10} % · calcul de vol actualisé.`);
@@ -606,7 +608,8 @@
         );
         if (!Number.isFinite(value) || value < 1 || value > 10) return;
 
-        const shadow = host.shadowRoot;
+        const shadow = host?.shadowRoot;
+        if (!shadow) return;
         shadow.querySelector('.current').textContent = `${value * 10} %`;
         shadow.querySelectorAll('button[data-speed-step]').forEach((button) => {
             button.setAttribute('aria-pressed', String(Number(button.dataset.speedStep) === value));
@@ -614,10 +617,46 @@
     }
 
     function updateMobileFleetSpeedStatus(host, message, isError = false) {
-        const status = host.shadowRoot?.querySelector('.status');
+        const status = host?.shadowRoot?.querySelector('.status');
         if (!status) return;
         status.textContent = message;
         status.classList.toggle('error', Boolean(isError));
+    }
+
+    async function setOgameFleetSpeedPercent(speedPercent) {
+        const percent = Number(speedPercent);
+        if (!Number.isInteger(percent) || percent < 10 || percent > 100 || percent % 10 !== 0) {
+            throw new Error(`Vitesse OGame invalide pour Ghost : ${speedPercent} %.`);
+        }
+        const speedStep = percent / 10;
+        const gameSlider = await waitForElement(GHOST_SPEED_SELECTOR, {
+            timeoutMs: PAGE_TIMEOUT_MS,
+            clickable: false,
+        });
+        const nativeStep = gameSlider.querySelector(
+            `.steps .step[data-step="${speedStep}"]`
+        );
+        if (!nativeStep) {
+            throw new Error(`Le palier ${percent} % est absent du sélecteur de vitesse OGame.`);
+        }
+
+        const deadline = Date.now() + ELEMENT_TIMEOUT_MS;
+        while (!unsafeWindow?.fleetDispatcher && Date.now() < deadline) {
+            await delay(75);
+        }
+        if (!unsafeWindow?.fleetDispatcher) {
+            throw new Error('Le contrôleur de flotte OGame n’est pas prêt pour régler la vitesse Ghost.');
+        }
+
+        const host = document.getElementById('secret-mobile-fleet-speed-selector');
+        gameSlider.dataset.secretFleetSpeedLastApplied = '';
+        nativeStep.click();
+        if (gameSlider.dataset.secretFleetSpeedLastApplied !== String(speedStep)) {
+            handleOgameFleetSpeedClick(gameSlider, nativeStep, host);
+        }
+        if (gameSlider.dataset.secretFleetSpeedLastApplied !== String(speedStep)) {
+            throw new Error(`OGame n’a pas recalculé la flotte à ${percent} % pour Ghost.`);
+        }
     }
 
     async function ensureUi() {
@@ -1702,9 +1741,9 @@
                         </div>
                     </div>
                     <div class="ghost-time-preview">Conversion automatique : <span class="ghost-time-value">—</span></div>
-                    <div class="ghost-origin-note">Départ fixe : <strong>5:109:15 (lune)</strong> · destination en position 16 · calcul Hercules x2 au départ estimé maintenant. Les coordonnées sont des estimations ; Ghost conserve la vitesse par défaut de 100 % et vérifie le retour affiché par le jeu avant l’envoi.</div>
+                    <div class="ghost-origin-note">Départ fixe : <strong>5:109:15 (lune)</strong> · retour à cette lune · destination en position 16 · calcul Hercules x2. Ghost choisit la vitesse de flotte la plus basse permettant un retour à ±30 min de la cible, puis vérifie l’heure affichée par le jeu avant l’envoi.</div>
                     <div class="ghost-coordinate-suggestions" aria-live="polite">
-                        <div class="ghost-coordinate-suggestion"><strong>100 %</strong><span class="ghost-coordinate-100">Saisissez la vitesse et l’horaire pour calculer.</span></div>
+                        <div class="ghost-coordinate-suggestion"><strong>Vitesse minimale</strong><span class="ghost-coordinate-100">Saisissez la vitesse du vaisseau et l’horaire pour calculer.</span></div>
                     </div>
                     <div class="actions">
                         <button type="button" class="save ghost-runner-cancel">Annuler</button>
@@ -4564,6 +4603,7 @@
                 galaxy: suggestedCoordinate.galaxy,
                 system: suggestedCoordinate.system,
                 position: suggestedCoordinate.position,
+                speedPercent: suggestedCoordinate.speedPercent,
                 returnTimestamp: suggestedCoordinate.returnTimestamp,
                 withinTolerance: Boolean(suggestedCoordinate.withinTolerance),
             },
@@ -4761,7 +4801,7 @@
                             GHOST_DELAY_MAX_MS
                         ),
                         ghostPendingDelayLabel: 'la sélection de la mission Espionner',
-                        message: 'Ghost — mission Espionner sélectionnée ; vitesse par défaut conservée à 100 %.',
+                        message: 'Ghost — mission Espionner sélectionnée ; préparation de la vitesse minimale calculée.',
                     });
                     refreshUi();
                     missionButton.click();
@@ -4805,10 +4845,11 @@
                         throw new Error('La coordonnée Ghost proposée est invalide. Relancez Ghost depuis ses paramètres.');
                     }
 
+                    const speedPercent = Number(coordinate.speedPercent) || 100;
                     updateRun(runId, {
                         message:
-                            `Ghost — action 5/6 : coordonnée ${galaxy}.${system}.${position} ` +
-                            `calculée à 100 % ; saisie directe du système ${system}…`,
+                            `Ghost — action 5/6 : saisie de ${galaxy}.${system}.${position}, ` +
+                            `calculée à ${speedPercent} % pour le retour visé…`,
                     });
                     refreshUi();
                     const systemInput = await waitForElement(GHOST_SYSTEM_SELECTOR, {
@@ -4824,18 +4865,73 @@
                         )
                     );
                     updateRun(runId, {
-                        phase: 'ghost-load-all-resources',
+                        phase: 'ghost-set-speed',
                         ghostMatchedSystem: system,
                         ghostEstimatedReturnTime: estimatedReturnTime,
+                        ghostSpeedPercent: speedPercent,
                         ghostPendingDelayMs: getExactRandomDelayMs(
                             GHOST_FINAL_DELAY_MIN_MS,
                             GHOST_FINAL_DELAY_MAX_MS
                         ),
                         ghostPendingDelayLabel: `la saisie directe du système ${system}`,
                         message:
-                            `Ghost — action 5/6 terminée : système ${system} saisi depuis ` +
-                            `la coordonnée ${galaxy}.${system}.${position} ; retour estimé ` +
-                            `${estimatedReturnTime}. Aucune triangulation effectuée.`,
+                            `Ghost — système ${system} saisi ; réglage de la vitesse à ` +
+                            `${speedPercent} % pour viser le retour ${estimatedReturnTime}.`,
+                    });
+                    refreshUi();
+                    continue;
+                }
+
+                if (run.phase === 'ghost-set-speed') {
+                    const speedPercent = Number(run.ghostSpeedPercent) ||
+                        Number(run.ghostSuggestedCoordinate?.speedPercent) || 100;
+                    updateRun(runId, {
+                        message: `Ghost — action 5/6 : régler la vitesse de flotte à ${speedPercent} %…`,
+                    });
+                    refreshUi();
+                    await setOgameFleetSpeedPercent(speedPercent);
+                    if (!getActiveRun(runId)) return;
+
+                    updateRun(runId, {
+                        phase: 'ghost-verify-return',
+                        ghostPendingDelayMs: getRandomDelayMs(
+                            GHOST_DELAY_MIN_MS,
+                            GHOST_DELAY_MAX_MS
+                        ),
+                        ghostPendingDelayLabel: `le réglage de la vitesse à ${speedPercent} %`,
+                        message: `Ghost — vitesse ${speedPercent} % appliquée ; vérification du retour calculé par OGame…`,
+                    });
+                    refreshUi();
+                    continue;
+                }
+
+                if (run.phase === 'ghost-verify-return') {
+                    const returnTime = await readGhostReturnTime(ELEMENT_TIMEOUT_MS);
+                    const returnMs = parseGhostReturnTimeMs(returnTime);
+                    const targetMs = parseGhostTargetDateTimeMs(run.ghostTargetDateTime);
+                    if (!Number.isFinite(returnMs) || !Number.isFinite(targetMs)) {
+                        throw new Error(`Ghost ne peut pas lire l’heure de retour calculée par OGame : « ${returnTime} ».`);
+                    }
+                    const differenceMs = returnMs - targetMs;
+                    if (Math.abs(differenceMs) > GHOST_COORDINATE_TOLERANCE_MS) {
+                        throw new Error(
+                            `Ghost s’arrête avant l’envoi : à ${run.ghostSpeedPercent} %, OGame affiche ` +
+                            `un retour ${returnTime}, hors de la tolérance de ±30 minutes autour de ` +
+                            `${formatGhostDateTime(run.ghostTargetDateTime)}.`
+                        );
+                    }
+                    updateRun(runId, {
+                        phase: 'ghost-load-all-resources',
+                        ghostEstimatedReturnTime: returnTime,
+                        ghostReturnTime: returnTime,
+                        ghostPendingDelayMs: getRandomDelayMs(
+                            GHOST_DELAY_MIN_MS,
+                            GHOST_DELAY_MAX_MS
+                        ),
+                        ghostPendingDelayLabel: `la vérification du retour affiché par OGame (${returnTime})`,
+                        message:
+                            `Ghost — OGame confirme un retour à ${returnTime} ` +
+                            `(${run.ghostSpeedPercent} %, cible ${formatGhostDateTime(run.ghostTargetDateTime)}).`,
                     });
                     refreshUi();
                     continue;
@@ -5131,33 +5227,42 @@
             return null;
         }
 
-        let best = null;
-        for (let galaxy = 1; galaxy <= 6; galaxy += 1) {
+        let bestOverall = null;
+        for (let speedPercent = 10; speedPercent <= 100; speedPercent += 10) {
+            let bestAtSpeed = null;
             for (let system = 1; system <= 499; system += 1) {
+                const galaxy = GHOST_ORIGIN_COORDINATES.galaxy;
                 const distance = getGhostFlightDistanceInternal({
                     ...GHOST_ORIGIN_COORDINATES,
                 }, { galaxy, system, position: GHOST_TARGET_POSITION });
                 const oneWaySeconds = calculateGhostFlightSeconds(
                     distance,
                     slowestShipSpeed,
-                    100
+                    speedPercent
                 );
                 const returnTimestamp = now + oneWaySeconds * 2 * 1000;
                 const differenceMs = Math.abs(returnTimestamp - targetTimestamp);
-                if (!best || differenceMs < best.differenceMs) {
-                    best = {
+                if (!bestAtSpeed || differenceMs < bestAtSpeed.differenceMs) {
+                    bestAtSpeed = {
                         galaxy,
                         system,
                         position: GHOST_TARGET_POSITION,
+                        speedPercent,
                         returnTimestamp,
                         differenceMs,
                         withinTolerance: differenceMs <= GHOST_COORDINATE_TOLERANCE_MS,
                     };
                 }
             }
+            if (!bestOverall || bestAtSpeed.differenceMs < bestOverall.differenceMs) {
+                bestOverall = bestAtSpeed;
+            }
+            // Les vitesses sont testées de la plus lente à la plus rapide :
+            // le premier palier ayant un système dans la tolérance est le minimum.
+            if (bestAtSpeed?.withinTolerance) return bestAtSpeed;
         }
 
-        return best;
+        return bestOverall;
     }
 
     function getGhostFlightDistanceInternal(origin, destination) {
@@ -5196,9 +5301,12 @@
             )) / 60_000
         );
         const delta = `${signedMinutes >= 0 ? '+' : ''}${signedMinutes} min`;
+        const speed = Number.isFinite(Number(suggestion.speedPercent))
+            ? `${suggestion.speedPercent} %`
+            : 'vitesse inconnue';
         return suggestion.withinTolerance
-            ? `${coordinate} · retour estimé ${returnTime} (${delta}, dans ±30 min)`
-            : `Aucune coordonnée dans ±30 min. Meilleure : ${coordinate} · retour ${returnTime} (${delta}).`;
+            ? `${coordinate} · vitesse ${speed} · retour estimé ${returnTime} (${delta}, dans ±30 min)`
+            : `Aucune solution dans ±30 min. Meilleure : ${coordinate} · vitesse ${speed} · retour ${returnTime} (${delta}).`;
     }
 
     function getStoredGhostJapanDateTimeValue() {
