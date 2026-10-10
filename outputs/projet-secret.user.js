@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Projet secret — boucle multi-liens
 // @namespace    local.projet-secret
-// @version      6.22.2
+// @version      6.22.3
 // @updateURL    https://raw.githubusercontent.com/raphaelrobert1104-sys/mysecretproject/main/outputs/projet-secret.user.js
 // @downloadURL  https://raw.githubusercontent.com/raphaelrobert1104-sys/mysecretproject/main/outputs/projet-secret.user.js
 // @description  Automatise Ressources, Expédition V2, Attaques, Forme de vie, Import, Constructions, Ghost, Rappatriement, Bâtiments Mecha et Switch FDV avec configurations privées.
@@ -16,12 +16,13 @@
 // @grant        GM_registerMenuCommand
 // @grant        GM_getTab
 // @grant        GM_saveTab
+// @grant        unsafeWindow
 // ==/UserScript==
 
 (function () {
     'use strict';
 
-    const SCRIPT_VERSION = '6.22.2';
+    const SCRIPT_VERSION = '6.22.3';
     const CONFIG_KEYS = {
         1: 'secretMultiLinkConfig',
         2: 'secretMultiLinkConfig2',
@@ -412,10 +413,166 @@
 
     async function boot() {
         await waitForDocumentReady();
+        installMobileFleetSpeedSelector();
         const ui = await ensureUi();
         ui.refresh();
         startUiWatchdog();
         await resumeAutomationForThisTab();
+    }
+
+    function installMobileFleetSpeedSelector() {
+        const hostId = 'secret-mobile-fleet-speed-selector';
+        const mount = () => {
+            const gameSlider = document.querySelector('#speedPercentage');
+            const nativeSteps = gameSlider?.querySelector('.steps');
+            if (!gameSlider || !nativeSteps) return;
+
+            let host = document.getElementById(hostId);
+            if (host?.isConnected && host.previousElementSibling === gameSlider) return;
+            if (!host) {
+                host = document.createElement('div');
+                host.id = hostId;
+                host.style.cssText = [
+                    'display:block',
+                    'position:relative',
+                    'z-index:1000',
+                    'width:min(100%,420px)',
+                    'margin:10px auto',
+                ].join(';');
+                const shadow = host.attachShadow({ mode: 'open' });
+                shadow.innerHTML = `
+                    <style>
+                        :host { display:block; color-scheme:dark; }
+                        * { box-sizing:border-box; }
+                        .panel {
+                            padding:10px 12px;
+                            border:1px solid rgba(125,211,252,.38);
+                            border-radius:12px;
+                            background:linear-gradient(145deg,rgba(15,23,42,.97),rgba(30,41,59,.96));
+                            color:#f8fafc;
+                            box-shadow:0 8px 22px rgba(0,0,0,.28);
+                            font:13px/1.35 system-ui,-apple-system,"Segoe UI",sans-serif;
+                        }
+                        .heading { display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:8px; }
+                        .title { font-weight:750; }
+                        .current { color:#7dd3fc; font-weight:800; font-variant-numeric:tabular-nums; }
+                        .choices { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:6px; }
+                        button {
+                            min-width:0; min-height:42px; padding:6px 3px;
+                            border:1px solid rgba(148,163,184,.35); border-radius:8px;
+                            background:rgba(51,65,85,.86); color:#e2e8f0;
+                            font:700 12px/1 system-ui,-apple-system,"Segoe UI",sans-serif;
+                            touch-action:manipulation; -webkit-tap-highlight-color:transparent;
+                        }
+                        button[aria-pressed="true"] {
+                            border-color:#38bdf8; background:linear-gradient(135deg,#0369a1,#2563eb);
+                            color:#fff; box-shadow:0 0 0 1px rgba(56,189,248,.25);
+                        }
+                        button:focus-visible { outline:2px solid #bae6fd; outline-offset:2px; }
+                        .status { min-height:17px; margin-top:7px; color:#cbd5e1; font-size:11px; }
+                        .status.error { color:#fca5a5; }
+                        @media (min-width:520px) { .choices { grid-template-columns:repeat(10,minmax(0,1fr)); } }
+                    </style>
+                    <section class="panel" aria-label="Sélecteur de vitesse de flotte">
+                        <div class="heading"><span class="title">Vitesse de flotte</span><span class="current" aria-live="polite">—</span></div>
+                        <div class="choices" role="group" aria-label="Choisir une vitesse de flotte"></div>
+                        <div class="status" aria-live="polite">Touchez une vitesse pour l’appliquer.</div>
+                    </section>
+                `;
+                const choices = shadow.querySelector('.choices');
+                for (let step = 1; step <= 10; step += 1) {
+                    const button = document.createElement('button');
+                    button.type = 'button';
+                    button.dataset.speedStep = String(step);
+                    button.textContent = `${step * 10}%`;
+                    button.setAttribute('aria-label', `Vitesse ${step * 10} %`);
+                    button.setAttribute('aria-pressed', 'false');
+                    choices.appendChild(button);
+                }
+                shadow.addEventListener('click', (event) => {
+                    const button = event.target.closest('button[data-speed-step]');
+                    if (!button) return;
+                    applyMobileFleetSpeed(Number(button.dataset.speedStep), host);
+                });
+                gameSlider.insertAdjacentElement('afterend', host);
+                gameSlider.addEventListener('click', () => {
+                    window.setTimeout(() => syncMobileFleetSpeedSelector(host), 0);
+                });
+            } else if (host.previousElementSibling !== gameSlider) {
+                gameSlider.insertAdjacentElement('afterend', host);
+            }
+
+            syncMobileFleetSpeedSelector(host);
+        };
+
+        mount();
+        const observer = new MutationObserver(mount);
+        observer.observe(document.documentElement, { childList: true, subtree: true });
+        window.addEventListener('pagehide', () => observer.disconnect(), { once: true });
+    }
+
+    function applyMobileFleetSpeed(step, host) {
+        const normalizedStep = Math.min(10, Math.max(1, Math.round(Number(step))));
+        const gameSlider = document.querySelector('#speedPercentage');
+        const nativeStep = gameSlider?.querySelector(`.steps .step[data-step="${normalizedStep}"]`);
+        const dispatcher = unsafeWindow?.fleetDispatcher;
+
+        if (!gameSlider || !nativeStep || !dispatcher) {
+            updateMobileFleetSpeedStatus(host, 'Le sélecteur OGame n’est pas prêt. Réessayez dans un instant.', true);
+            return;
+        }
+
+        try {
+            // Reproduit le correctif utilisé par les extensions OGame : mise à jour
+            // de l’état métier, du curseur visuel, puis recalcul de la flotte.
+            gameSlider.querySelectorAll('.steps .step.selected').forEach((element) => {
+                element.classList.remove('selected');
+            });
+            nativeStep.classList.add('selected');
+            const bar = gameSlider.querySelector('.bar');
+            if (bar) bar.style.width = `${nativeStep.offsetLeft + nativeStep.offsetWidth}px`;
+
+            dispatcher.speedPercent = normalizedStep;
+            dispatcher.realSpeedPercent = normalizedStep;
+            dispatcher.setFleetPercent(normalizedStep);
+            dispatcher.refresh();
+            gameSlider.percentageBarInstance?.setValue(normalizedStep);
+
+            const nativeEvent = new Event('change', { bubbles: true });
+            gameSlider.dispatchEvent(nativeEvent);
+            syncMobileFleetSpeedSelector(host, normalizedStep);
+            updateMobileFleetSpeedStatus(host, `Vitesse appliquée : ${normalizedStep * 10} %.`);
+        } catch (error) {
+            updateMobileFleetSpeedStatus(
+                host,
+                `OGame n’a pas confirmé ${normalizedStep * 10} %. Réessayez ou utilisez son curseur.`,
+                true
+            );
+            console.warn('[Projet secret] Impossible de régler la vitesse de flotte.', error);
+        }
+    }
+
+    function syncMobileFleetSpeedSelector(host, forcedStep = null) {
+        const gameSlider = document.querySelector('#speedPercentage');
+        const dispatcher = unsafeWindow?.fleetDispatcher;
+        const selectedNativeStep = gameSlider?.querySelector('.steps .step.selected')?.dataset.step;
+        const value = Number(
+            forcedStep || dispatcher?.realSpeedPercent || dispatcher?.speedPercent || selectedNativeStep || 10
+        );
+        if (!Number.isFinite(value) || value < 1 || value > 10) return;
+
+        const shadow = host.shadowRoot;
+        shadow.querySelector('.current').textContent = `${value * 10} %`;
+        shadow.querySelectorAll('button[data-speed-step]').forEach((button) => {
+            button.setAttribute('aria-pressed', String(Number(button.dataset.speedStep) === value));
+        });
+    }
+
+    function updateMobileFleetSpeedStatus(host, message, isError = false) {
+        const status = host.shadowRoot?.querySelector('.status');
+        if (!status) return;
+        status.textContent = message;
+        status.classList.toggle('error', Boolean(isError));
     }
 
     async function ensureUi() {
