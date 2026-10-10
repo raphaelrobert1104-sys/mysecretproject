@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Projet secret — boucle multi-liens
 // @namespace    local.projet-secret
-// @version      6.22.3
+// @version      6.22.4
 // @updateURL    https://raw.githubusercontent.com/raphaelrobert1104-sys/mysecretproject/main/outputs/projet-secret.user.js
 // @downloadURL  https://raw.githubusercontent.com/raphaelrobert1104-sys/mysecretproject/main/outputs/projet-secret.user.js
 // @description  Automatise Ressources, Expédition V2, Attaques, Forme de vie, Import, Constructions, Ghost, Rappatriement, Bâtiments Mecha et Switch FDV avec configurations privées.
@@ -22,7 +22,7 @@
 (function () {
     'use strict';
 
-    const SCRIPT_VERSION = '6.22.3';
+    const SCRIPT_VERSION = '6.22.4';
     const CONFIG_KEYS = {
         1: 'secretMultiLinkConfig',
         2: 'secretMultiLinkConfig2',
@@ -429,6 +429,14 @@
 
             let host = document.getElementById(hostId);
             if (host?.isConnected && host.previousElementSibling === gameSlider) return;
+            if (!gameSlider.dataset.secretFleetSpeedClickHandler) {
+                gameSlider.addEventListener('click', (event) => {
+                    const clickedStep = event.target.closest('.steps .step[data-step]');
+                    if (!clickedStep || !gameSlider.contains(clickedStep)) return;
+                    handleOgameFleetSpeedClick(gameSlider, clickedStep, host);
+                }, true);
+                gameSlider.dataset.secretFleetSpeedClickHandler = 'true';
+            }
             if (!host) {
                 host = document.createElement('div');
                 host.id = hostId;
@@ -523,32 +531,69 @@
         }
 
         try {
-            // Reproduit le correctif utilisé par les extensions OGame : mise à jour
-            // de l’état métier, du curseur visuel, puis recalcul de la flotte.
-            gameSlider.querySelectorAll('.steps .step.selected').forEach((element) => {
-                element.classList.remove('selected');
-            });
-            nativeStep.classList.add('selected');
-            const bar = gameSlider.querySelector('.bar');
-            if (bar) bar.style.width = `${nativeStep.offsetLeft + nativeStep.offsetWidth}px`;
-
-            dispatcher.speedPercent = normalizedStep;
-            dispatcher.realSpeedPercent = normalizedStep;
-            dispatcher.setFleetPercent(normalizedStep);
-            dispatcher.refresh();
-            gameSlider.percentageBarInstance?.setValue(normalizedStep);
-
-            const nativeEvent = new Event('change', { bubbles: true });
-            gameSlider.dispatchEvent(nativeEvent);
+            // Déclenche le même clic que le sélecteur OGame, avec le correctif
+            // mobile qui recalcule tous les champs de trajet et de consommation.
+            host.dataset.speedClickSucceeded = 'false';
+            nativeStep.click();
+            if (
+                host.dataset.speedClickSucceeded !== 'true' ||
+                Number(dispatcher.realSpeedPercent) !== normalizedStep ||
+                Number(dispatcher.speedPercent) !== normalizedStep
+            ) {
+                throw new Error('Le contrôleur de flotte n’a pas confirmé la vitesse choisie.');
+            }
             syncMobileFleetSpeedSelector(host, normalizedStep);
-            updateMobileFleetSpeedStatus(host, `Vitesse appliquée : ${normalizedStep * 10} %.`);
+            updateMobileFleetSpeedStatus(host, `Vitesse appliquée : ${normalizedStep * 10} % · calcul de vol actualisé.`);
         } catch (error) {
             updateMobileFleetSpeedStatus(
                 host,
-                `OGame n’a pas confirmé ${normalizedStep * 10} %. Réessayez ou utilisez son curseur.`,
+                `OGame n’a pas recalculé la flotte à ${normalizedStep * 10} %. Réessayez ou utilisez son curseur.`,
                 true
             );
             console.warn('[Projet secret] Impossible de régler la vitesse de flotte.', error);
+        }
+    }
+
+    function handleOgameFleetSpeedClick(gameSlider, clickedStep, host) {
+        const speed = Number(clickedStep.dataset.step);
+        const dispatcher = unsafeWindow?.fleetDispatcher;
+        if (!Number.isInteger(speed) || speed < 1 || speed > 10 || !dispatcher) return;
+
+        try {
+            const bar = gameSlider.querySelector('.bar');
+            if (bar) bar.style.width = `${clickedStep.offsetLeft + clickedStep.offsetWidth}px`;
+            gameSlider.querySelectorAll('.steps .step.selected').forEach((element) => {
+                element.classList.remove('selected');
+            });
+            clickedStep.classList.add('selected');
+
+            dispatcher.speedPercent = speed;
+            dispatcher.realSpeedPercent = speed;
+            dispatcher.refresh();
+            dispatcher.realSpeedPercent = dispatcher.speedPercent;
+            dispatcher.setFleetPercent(dispatcher.speedPercent);
+
+            if (
+                typeof dispatcher.getConsumption === 'function' &&
+                typeof dispatcher.getDeuteriumOnPlanetWithoutConsumption === 'function' &&
+                typeof dispatcher.selectMaxDeuterium === 'function' &&
+                dispatcher.cargoDeuterium + dispatcher.getConsumption() >=
+                    dispatcher.getDeuteriumOnPlanetWithoutConsumption()
+            ) {
+                dispatcher.cargoDeuterium = 0;
+                dispatcher.selectMaxDeuterium();
+                dispatcher.refresh();
+            }
+
+            dispatcher.focusSendFleet?.();
+            gameSlider.percentageBarInstance?.setValue(speed);
+            if (host) host.dataset.speedClickSucceeded = 'true';
+            syncMobileFleetSpeedSelector(host, speed);
+            updateMobileFleetSpeedStatus(host, `Vitesse appliquée : ${speed * 10} % · calcul de vol actualisé.`);
+        } catch (error) {
+            if (host) host.dataset.speedClickSucceeded = 'false';
+            updateMobileFleetSpeedStatus(host, 'Échec du recalcul OGame. Vérifiez les champs avant l’envoi.', true);
+            console.warn('[Projet secret] OGame n’a pas recalculé les données de vol.', error);
         }
     }
 
