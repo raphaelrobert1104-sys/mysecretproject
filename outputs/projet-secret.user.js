@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Projet secret — boucle multi-liens
 // @namespace    local.projet-secret
-// @version      6.22.0
+// @version      6.22.1
 // @updateURL    https://raw.githubusercontent.com/raphaelrobert1104-sys/mysecretproject/main/outputs/projet-secret.user.js
 // @downloadURL  https://raw.githubusercontent.com/raphaelrobert1104-sys/mysecretproject/main/outputs/projet-secret.user.js
 // @description  Automatise Ressources, Expédition V2, Attaques, Forme de vie, Import, Constructions, Ghost, Rappatriement, Bâtiments Mecha et Switch FDV avec configurations privées.
@@ -21,7 +21,7 @@
 (function () {
     'use strict';
 
-    const SCRIPT_VERSION = '6.22.0';
+    const SCRIPT_VERSION = '6.22.1';
     const CONFIG_KEYS = {
         1: 'secretMultiLinkConfig',
         2: 'secretMultiLinkConfig2',
@@ -130,8 +130,6 @@
     const GHOST_POSITION_SELECTOR = '#position';
     const GHOST_SYSTEM_SELECTOR = '#system';
     const GHOST_MISSION_SELECTOR = '#missionButton6';
-    const GHOST_DURATION_SELECTOR =
-        '#speedPercentage > div.steps > div.step.step2[data-step="2"]';
     const GHOST_RETURN_TIME_SELECTOR = '#returnTime';
     const GHOST_LOAD_ALL_RESOURCES_SELECTOR =
         '#allresources > img[data-ipi-highlight-step="ipiFleetCargoLoadAll"], ' +
@@ -1502,10 +1500,9 @@
                         </div>
                     </div>
                     <div class="ghost-time-preview">Conversion automatique : <span class="ghost-time-value">—</span></div>
-                    <div class="ghost-origin-note">Départ fixe : <strong>5:109:15 (lune)</strong> · destination en position 16 · calcul Hercules x2 au départ estimé maintenant. Les coordonnées sont des estimations ; Ghost vérifie toujours le retour affiché par le jeu à 20 % avant l’envoi.</div>
+                    <div class="ghost-origin-note">Départ fixe : <strong>5:109:15 (lune)</strong> · destination en position 16 · calcul Hercules x2 au départ estimé maintenant. Les coordonnées sont des estimations ; Ghost conserve la vitesse par défaut de 100 % et vérifie le retour affiché par le jeu avant l’envoi.</div>
                     <div class="ghost-coordinate-suggestions" aria-live="polite">
                         <div class="ghost-coordinate-suggestion"><strong>100 %</strong><span class="ghost-coordinate-100">Saisissez la vitesse et l’horaire pour calculer.</span></div>
-                        <div class="ghost-coordinate-suggestion"><strong>20 %</strong><span class="ghost-coordinate-20">Saisissez la vitesse et l’horaire pour calculer.</span></div>
                     </div>
                     <div class="actions">
                         <button type="button" class="save ghost-runner-cancel">Annuler</button>
@@ -1606,7 +1603,6 @@
             ghostDateTime: shadow.querySelector('.ghost-datetime'),
             ghostTimeValue: shadow.querySelector('.ghost-time-value'),
             ghostCoordinate100: shadow.querySelector('.ghost-coordinate-100'),
-            ghostCoordinate20: shadow.querySelector('.ghost-coordinate-20'),
         };
 
         let editingProfileId = 1;
@@ -1853,15 +1849,11 @@
                 : 'sélectionnez une date et une heure japonaises';
 
             const speed = Number(refs.ghostSlowestSpeed.value);
-            const suggestions = Number.isFinite(speed) && speed > 0 && franceDateTime
-                ? calculateGhostCoordinateSuggestions(franceDateTime, speed)
+            const suggestion = Number.isFinite(speed) && speed > 0 && franceDateTime
+                ? calculateGhostCoordinateSuggestion(franceDateTime, speed)
                 : null;
             refs.ghostCoordinate100.textContent = formatGhostCoordinateSuggestion(
-                suggestions?.percent100,
-                franceDateTime
-            );
-            refs.ghostCoordinate20.textContent = formatGhostCoordinateSuggestion(
-                suggestions?.percent20,
+                suggestion,
                 franceDateTime
             );
         }
@@ -1878,10 +1870,6 @@
                 refs.ghostSlowestSpeed.focus();
                 return;
             }
-            const suggestions = calculateGhostCoordinateSuggestions(
-                franceDateTime,
-                slowestShipSpeed
-            );
             GM_setValue(GHOST_JAPAN_DATETIME_KEY, japanDateTime);
             GM_setValue(GHOST_DATETIME_KEY, franceDateTime);
             GM_setValue(GHOST_TIME_KEY, franceDateTime.slice(11, 16));
@@ -4536,7 +4524,7 @@
 
                 if (run.phase === 'ghost-select-mission') {
                     updateRun(runId, {
-                        message: 'Ghost — action 4/6 (2/4) : sélectionner la mission Espionner…',
+                        message: 'Ghost — action 4/6 (2/3) : sélectionner la mission Espionner…',
                     });
                     refreshUi();
                     const missionButton = await waitForElement(GHOST_MISSION_SELECTOR, {
@@ -4546,13 +4534,13 @@
                     if (!getActiveRun(runId)) return;
 
                     updateRun(runId, {
-                        phase: 'ghost-select-duration',
+                        phase: 'ghost-read-return-time',
                         ghostPendingDelayMs: getRandomDelayMs(
                             GHOST_DELAY_MIN_MS,
                             GHOST_DELAY_MAX_MS
                         ),
                         ghostPendingDelayLabel: 'la sélection de la mission Espionner',
-                        message: 'Ghost — mission Espionner sélectionnée.',
+                        message: 'Ghost — mission Espionner sélectionnée ; vitesse par défaut conservée à 100 %.',
                     });
                     refreshUi();
                     missionButton.click();
@@ -4560,25 +4548,16 @@
                 }
 
                 if (run.phase === 'ghost-select-duration') {
-                    updateRun(runId, {
-                        message: 'Ghost — action 4/6 (3/4) : sélectionner la durée 20…',
-                    });
-                    refreshUi();
-                    const durationButton = await waitForGhostDuration(ELEMENT_TIMEOUT_MS);
-                    if (!getActiveRun(runId)) return;
-
-                    clickGhostDuration20(durationButton);
-                    await waitForGhostDurationSelection(ELEMENT_TIMEOUT_MS);
-                    if (!getActiveRun(runId)) return;
-
+                    // Migrate runs saved by older versions without changing the
+                    // game's default 100% speed setting.
                     updateRun(runId, {
                         phase: 'ghost-read-return-time',
                         ghostPendingDelayMs: getRandomDelayMs(
                             GHOST_DELAY_MIN_MS,
                             GHOST_DELAY_MAX_MS
                         ),
-                        ghostPendingDelayLabel: 'la sélection de la durée 20',
-                        message: 'Ghost — clic confirmé sur la durée 20 sélectionnée.',
+                        ghostPendingDelayLabel: 'la sélection de la mission Espionner',
+                        message: 'Ghost — vitesse par défaut conservée à 100 %, lecture de l’heure de retour…',
                     });
                     refreshUi();
                     continue;
@@ -4586,7 +4565,7 @@
 
                 if (run.phase === 'ghost-read-return-time') {
                     updateRun(runId, {
-                        message: 'Ghost — action 4/6 (4/4) : lire l’heure de retour initiale…',
+                        message: 'Ghost — action 4/6 (3/3) : lire l’heure de retour initiale…',
                     });
                     refreshUi();
                     const returnTime = await readGhostReturnTime(ELEMENT_TIMEOUT_MS);
@@ -4861,7 +4840,7 @@
             : GHOST_SLOWEST_SPEED_DEFAULT;
     }
 
-    function calculateGhostCoordinateSuggestions(targetFranceDateTime, slowestShipSpeed) {
+    function calculateGhostCoordinateSuggestion(targetFranceDateTime, slowestShipSpeed) {
         const targetTimestamp = ghostWallDateTimeToTimestamp(
             targetFranceDateTime,
             GHOST_FRANCE_TIME_ZONE
@@ -4869,43 +4848,36 @@
         const now = Date.now();
         if (!Number.isFinite(targetTimestamp) || targetTimestamp <= now ||
             !Number.isFinite(slowestShipSpeed) || slowestShipSpeed <= 0) {
-            return { percent100: null, percent20: null };
+            return null;
         }
 
-        const percentages = [100, 20];
-        const bestByPercent = new Map(percentages.map((percent) => [percent, null]));
+        let best = null;
         for (let galaxy = 1; galaxy <= 6; galaxy += 1) {
             for (let system = 1; system <= 499; system += 1) {
                 const distance = getGhostFlightDistanceInternal({
                     ...GHOST_ORIGIN_COORDINATES,
                 }, { galaxy, system, position: GHOST_TARGET_POSITION });
-                for (const percent of percentages) {
-                    const oneWaySeconds = calculateGhostFlightSeconds(
-                        distance,
-                        slowestShipSpeed,
-                        percent
-                    );
-                    const returnTimestamp = now + oneWaySeconds * 2 * 1000;
-                    const differenceMs = Math.abs(returnTimestamp - targetTimestamp);
-                    const best = bestByPercent.get(percent);
-                    if (!best || differenceMs < best.differenceMs) {
-                        bestByPercent.set(percent, {
-                            galaxy,
-                            system,
-                            position: GHOST_TARGET_POSITION,
-                            returnTimestamp,
-                            differenceMs,
-                            withinTolerance: differenceMs <= GHOST_COORDINATE_TOLERANCE_MS,
-                        });
-                    }
+                const oneWaySeconds = calculateGhostFlightSeconds(
+                    distance,
+                    slowestShipSpeed,
+                    100
+                );
+                const returnTimestamp = now + oneWaySeconds * 2 * 1000;
+                const differenceMs = Math.abs(returnTimestamp - targetTimestamp);
+                if (!best || differenceMs < best.differenceMs) {
+                    best = {
+                        galaxy,
+                        system,
+                        position: GHOST_TARGET_POSITION,
+                        returnTimestamp,
+                        differenceMs,
+                        withinTolerance: differenceMs <= GHOST_COORDINATE_TOLERANCE_MS,
+                    };
                 }
             }
         }
 
-        return {
-            percent100: bestByPercent.get(100),
-            percent20: bestByPercent.get(20),
-        };
+        return best;
     }
 
     function getGhostFlightDistanceInternal(origin, destination) {
@@ -7381,7 +7353,6 @@
                 'ghost-wait-destination-page': 'Action 4/6 — attendre la page de destination',
                 'ghost-set-position': 'Action 4/6 — renseigner la position 16',
                 'ghost-select-mission': 'Action 4/6 — sélectionner Espionner',
-                'ghost-select-duration': 'Action 4/6 — sélectionner la durée 20',
                 'ghost-read-return-time': 'Action 4/6 — lire l’heure de retour initiale',
                 'ghost-search-system':
                     `Action 5/6 — trianguler le système ` +
@@ -7921,107 +7892,6 @@
         }
 
         throw new ElementNotFoundError(selector, options.timeoutMs);
-    }
-
-    async function waitForGhostDuration(timeoutMs) {
-        const deadline = Date.now() + timeoutMs;
-        while (Date.now() < deadline) {
-            const candidates = [...document.querySelectorAll(GHOST_DURATION_SELECTOR)];
-            const duration = candidates.find((element) => {
-                const text = String(element.textContent || '').replace(/\s+/g, ' ').trim();
-                return text === '20' && isElementVisible(element) && isElementClickable(element);
-            });
-            if (duration) return duration;
-            await delay(75);
-        }
-
-        throw new ElementNotFoundError(
-            `${GHOST_DURATION_SELECTOR} avec le texte 20`,
-            timeoutMs
-        );
-    }
-
-    function clickGhostDuration20(durationButton) {
-        let clickObserved = false;
-        durationButton.addEventListener('click', () => {
-            clickObserved = true;
-        }, { capture: true, once: true });
-
-        durationButton.scrollIntoView({ block: 'center', inline: 'nearest' });
-        try {
-            durationButton.focus({ preventScroll: true });
-        } catch {
-            durationButton.focus();
-        }
-
-        const eventWindow = durationButton.ownerDocument?.defaultView || window;
-        const rect = durationButton.getBoundingClientRect();
-        const clientX = rect.left + rect.width / 2;
-        const clientY = rect.top + rect.height / 2;
-        const mouseOptions = {
-            bubbles: true,
-            cancelable: true,
-            composed: true,
-            view: eventWindow,
-            clientX,
-            clientY,
-            button: 0,
-        };
-
-        if (typeof eventWindow.PointerEvent === 'function') {
-            durationButton.dispatchEvent(new eventWindow.PointerEvent('pointerdown', {
-                ...mouseOptions,
-                buttons: 1,
-                pointerId: 1,
-                pointerType: 'mouse',
-                isPrimary: true,
-            }));
-        }
-        durationButton.dispatchEvent(new eventWindow.MouseEvent('mousedown', {
-            ...mouseOptions,
-            buttons: 1,
-        }));
-        if (typeof eventWindow.PointerEvent === 'function') {
-            durationButton.dispatchEvent(new eventWindow.PointerEvent('pointerup', {
-                ...mouseOptions,
-                buttons: 0,
-                pointerId: 1,
-                pointerType: 'mouse',
-                isPrimary: true,
-            }));
-        }
-        durationButton.dispatchEvent(new eventWindow.MouseEvent('mouseup', {
-            ...mouseOptions,
-            buttons: 0,
-        }));
-
-        const nativeClick = eventWindow.HTMLElement?.prototype?.click;
-        if (typeof nativeClick === 'function') {
-            nativeClick.call(durationButton);
-        } else {
-            durationButton.click();
-        }
-
-        if (!clickObserved) {
-            throw new Error('Le clic natif sur la durée 20 n’a pas été émis par le navigateur.');
-        }
-    }
-
-    async function waitForGhostDurationSelection(timeoutMs) {
-        const deadline = Date.now() + timeoutMs;
-        while (Date.now() < deadline) {
-            const selectedDuration = [...document.querySelectorAll(GHOST_DURATION_SELECTOR)]
-                .find((element) => {
-                    const text = String(element.textContent || '').replace(/\s+/g, ' ').trim();
-                    return text === '20' && element.classList.contains('selected');
-                });
-            if (selectedDuration) return selectedDuration;
-            await delay(75);
-        }
-
-        throw new Error(
-            'Le clic sur la durée 20 a été effectué, mais la page n’a pas confirmé sa sélection.'
-        );
     }
 
     async function readGhostReturnTime(timeoutMs) {
