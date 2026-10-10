@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Projet secret — boucle multi-liens
 // @namespace    local.projet-secret
-// @version      6.21.3
+// @version      6.22.0
 // @updateURL    https://raw.githubusercontent.com/raphaelrobert1104-sys/mysecretproject/main/outputs/projet-secret.user.js
 // @downloadURL  https://raw.githubusercontent.com/raphaelrobert1104-sys/mysecretproject/main/outputs/projet-secret.user.js
 // @description  Automatise Ressources, Expédition V2, Attaques, Forme de vie, Import, Constructions, Ghost, Rappatriement, Bâtiments Mecha et Switch FDV avec configurations privées.
@@ -21,7 +21,7 @@
 (function () {
     'use strict';
 
-    const SCRIPT_VERSION = '6.21.3';
+    const SCRIPT_VERSION = '6.22.0';
     const CONFIG_KEYS = {
         1: 'secretMultiLinkConfig',
         2: 'secretMultiLinkConfig2',
@@ -41,8 +41,14 @@
     const GHOST_TIME_KEY = 'secretMultiLinkGhostTime';
     const GHOST_DATETIME_KEY = 'secretMultiLinkGhostDateTime';
     const GHOST_JAPAN_DATETIME_KEY = 'secretMultiLinkGhostJapanDateTime';
+    const GHOST_SLOWEST_SPEED_KEY = 'secretMultiLinkGhostSlowestSpeed';
     const GHOST_JAPAN_TIME_ZONE = 'Asia/Tokyo';
     const GHOST_FRANCE_TIME_ZONE = 'Europe/Paris';
+    const GHOST_ORIGIN_COORDINATES = Object.freeze({ galaxy: 5, system: 109, position: 15 });
+    const GHOST_UNIVERSE_SPEED = 2;
+    const GHOST_TARGET_POSITION = 16;
+    const GHOST_SLOWEST_SPEED_DEFAULT = 550;
+    const GHOST_COORDINATE_TOLERANCE_MS = 30 * 60 * 1000;
     const MAX_LINKS_BY_PROFILE = {
         1: 15,
         2: 10,
@@ -1003,6 +1009,16 @@
                     gap: 9px;
                     margin: 14px 0 10px;
                 }
+                .construction-common-resources {
+                    display: grid;
+                    gap: 8px;
+                    margin-top: 14px;
+                }
+                .construction-resource-grid {
+                    display: grid;
+                    grid-template-columns: repeat(3, minmax(0, 1fr));
+                    gap: 8px;
+                }
                 .construction-orders-header {
                     display: flex;
                     align-items: center;
@@ -1069,10 +1085,7 @@
                 .construction-order-remove:disabled { visibility: hidden; }
                 .construction-order-grid {
                     display: grid;
-                    grid-template-columns:
-                        repeat(3, minmax(76px, .68fr))
-                        minmax(140px, 1.15fr)
-                        minmax(140px, 1.2fr);
+                    grid-template-columns: minmax(140px, 1fr) minmax(140px, 1.2fr);
                     gap: 8px;
                     align-items: end;
                 }
@@ -1197,6 +1210,35 @@
                     color: #d1fae5;
                     box-shadow: none;
                 }
+                .ghost-origin-note {
+                    margin: 12px 0 0;
+                    padding: 9px 11px;
+                    border: 1px solid rgba(167, 139, 250, .25);
+                    border-radius: 10px;
+                    color: #ddd6fe;
+                    background: rgba(76, 29, 149, .16);
+                    font-size: 11px;
+                    line-height: 1.45;
+                }
+                .ghost-coordinate-suggestions {
+                    display: grid;
+                    gap: 8px;
+                    margin: 9px 0 14px;
+                }
+                .ghost-coordinate-suggestion {
+                    display: grid;
+                    grid-template-columns: 45px 1fr;
+                    gap: 7px;
+                    padding: 9px 10px;
+                    border: 1px solid rgba(148, 163, 184, .2);
+                    border-radius: 10px;
+                    background: rgba(15, 23, 42, .48);
+                    color: #e2e8f0;
+                    font-size: 11px;
+                    line-height: 1.4;
+                }
+                .ghost-coordinate-suggestion strong { color: #c4b5fd; }
+                .ghost-coordinate-suggestion span { overflow-wrap: anywhere; }
                 .ghost-time-preview {
                     margin: 0 0 14px;
                     padding: 10px 12px;
@@ -1224,9 +1266,7 @@
                     .named-link-row input, .construction-loading-url,
                     .construction-runner input, .construction-runner select { font-size: 16px; }
                     .construction-runner, .ghost-runner, .switch-fdv-runner { padding: 14px; }
-                    .construction-order-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-                    .construction-order-field.vehicle,
-                    .construction-order-field.destination { grid-column: 1 / -1; }
+                    .construction-resource-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
                     .construction-orders-list { max-height: min(48vh, 480px); }
                 }
                 @media (prefers-reduced-motion: reduce) {
@@ -1384,7 +1424,33 @@
                         <span>1 · Montants</span><span>2 · Transport</span>
                         <span>3 · Destination</span><span>4 · Exécution</span>
                     </div>
-                    <p class="help">Chaque ligne correspond à une exécution complète des actions 4 à 7. Les ressources sont exprimées en millions.</p>
+                    <p class="help">R1, R2 et R3 sont demandées une seule fois et réutilisées pour chaque ligne. Chaque ligne correspond à une exécution complète des actions 4 à 7.</p>
+                    <div class="construction-common-resources">
+                        <div class="construction-resource-grid">
+                            <div class="construction-order-field">
+                                <label for="construction-common-r1">Ressource 1 (R1)</label>
+                                <div class="amount-input-shell">
+                                    <input id="construction-common-r1" class="construction-common-r1" type="text" inputmode="decimal" autocomplete="off" value="0" placeholder="3.3">
+                                    <span>M</span>
+                                </div>
+                            </div>
+                            <div class="construction-order-field">
+                                <label for="construction-common-r2">Ressource 2 (R2)</label>
+                                <div class="amount-input-shell">
+                                    <input id="construction-common-r2" class="construction-common-r2" type="text" inputmode="decimal" autocomplete="off" value="0" placeholder="2.0">
+                                    <span>M</span>
+                                </div>
+                            </div>
+                            <div class="construction-order-field">
+                                <label for="construction-common-r3">Ressource 3 (R3)</label>
+                                <div class="amount-input-shell">
+                                    <input id="construction-common-r3" class="construction-common-r3" type="text" inputmode="decimal" autocomplete="off" value="0" placeholder="1">
+                                    <span>M</span>
+                                </div>
+                            </div>
+                        </div>
+                        <p class="field-help">Montants communs à toutes les destinations, exprimés en millions.</p>
+                    </div>
                     <div class="construction-orders">
                         <div class="construction-orders-header">
                             <span>Ordres à exécuter</span>
@@ -1420,10 +1486,14 @@
                         </div>
                         <button type="button" class="close ghost-runner-close" aria-label="Fermer">×</button>
                     </div>
-                    <p class="help">Choisissez l’horaire japonais. La cible française est calculée automatiquement selon l’heure d’été ou d’hiver.</p>
+                    <p class="help">Indiquez la vitesse du vaisseau le plus lent et la date/heure souhaitée au Japon. Ghost convertit la cible en heure française.</p>
                     <div class="ghost-time-grid">
                         <div class="ghost-time-field">
-                            <label for="ghost-japan-datetime">Heure souhaitée Japon</label>
+                            <label for="ghost-slowest-speed">Vitesse du vaisseau le plus lent</label>
+                            <input id="ghost-slowest-speed" class="ghost-slowest-speed" type="number" min="1" step="1" inputmode="numeric">
+                        </div>
+                        <div class="ghost-time-field">
+                            <label for="ghost-japan-datetime">Jour et heure souhaités (Japon)</label>
                             <input id="ghost-japan-datetime" class="ghost-japan-datetime" type="datetime-local" step="60">
                         </div>
                         <div class="ghost-time-field">
@@ -1432,6 +1502,11 @@
                         </div>
                     </div>
                     <div class="ghost-time-preview">Conversion automatique : <span class="ghost-time-value">—</span></div>
+                    <div class="ghost-origin-note">Départ fixe : <strong>5:109:15 (lune)</strong> · destination en position 16 · calcul Hercules x2 au départ estimé maintenant. Les coordonnées sont des estimations ; Ghost vérifie toujours le retour affiché par le jeu à 20 % avant l’envoi.</div>
+                    <div class="ghost-coordinate-suggestions" aria-live="polite">
+                        <div class="ghost-coordinate-suggestion"><strong>100 %</strong><span class="ghost-coordinate-100">Saisissez la vitesse et l’horaire pour calculer.</span></div>
+                        <div class="ghost-coordinate-suggestion"><strong>20 %</strong><span class="ghost-coordinate-20">Saisissez la vitesse et l’horaire pour calculer.</span></div>
+                    </div>
                     <div class="actions">
                         <button type="button" class="save ghost-runner-cancel">Annuler</button>
                         <button type="button" class="start ghost-runner-confirm">Valider et démarrer</button>
@@ -1517,15 +1592,21 @@
             constructionOrdersList: shadow.querySelector('.construction-orders-list'),
             constructionOrdersCounter: shadow.querySelector('.construction-orders-counter'),
             constructionAddOrder: shadow.querySelector('.construction-add-order'),
+            constructionCommonR1: shadow.querySelector('.construction-common-r1'),
+            constructionCommonR2: shadow.querySelector('.construction-common-r2'),
+            constructionCommonR3: shadow.querySelector('.construction-common-r3'),
             constructionCalculation: shadow.querySelector('.construction-calculation'),
             constructionRunnerError: shadow.querySelector('.construction-runner-error'),
             ghostRunner: shadow.querySelector('.ghost-runner'),
             ghostRunnerClose: shadow.querySelector('.ghost-runner-close'),
             ghostRunnerCancel: shadow.querySelector('.ghost-runner-cancel'),
             ghostRunnerConfirm: shadow.querySelector('.ghost-runner-confirm'),
+            ghostSlowestSpeed: shadow.querySelector('.ghost-slowest-speed'),
             ghostJapanDateTime: shadow.querySelector('.ghost-japan-datetime'),
             ghostDateTime: shadow.querySelector('.ghost-datetime'),
             ghostTimeValue: shadow.querySelector('.ghost-time-value'),
+            ghostCoordinate100: shadow.querySelector('.ghost-coordinate-100'),
+            ghostCoordinate20: shadow.querySelector('.ghost-coordinate-20'),
         };
 
         let editingProfileId = 1;
@@ -1578,6 +1659,37 @@
         refs.constructionRunnerClose.addEventListener('click', closeConstructionRunner);
         refs.constructionRunnerCancel.addEventListener('click', closeConstructionRunner);
         refs.constructionRunnerStart.addEventListener('click', launchConstructionFromRunner);
+        const constructionCommonAmountInputs = [
+            refs.constructionCommonR1,
+            refs.constructionCommonR2,
+            refs.constructionCommonR3,
+        ];
+        constructionCommonAmountInputs.forEach((input, index) => {
+            input.setAttribute('aria-label', `Ressource ${index + 1} commune à toutes les lignes`);
+            input.addEventListener('input', updateConstructionCalculation);
+            input.addEventListener('focus', () => {
+                if (input.value.trim() === '0') {
+                    input.value = '';
+                    updateConstructionCalculation();
+                }
+            });
+            input.addEventListener('blur', () => {
+                if (input.value.trim() === '') {
+                    input.value = '0';
+                    updateConstructionCalculation();
+                }
+            });
+            input.addEventListener('keydown', (event) => {
+                if (event.key !== 'Enter' || event.isComposing) return;
+                event.preventDefault();
+                const nextInput = constructionCommonAmountInputs[index + 1];
+                if (nextInput) {
+                    nextInput.focus();
+                    return;
+                }
+                getConstructionOrderRows()[0]?.querySelector('.construction-order-vehicle')?.focus();
+            });
+        });
         refs.constructionAddOrder.addEventListener('click', () => {
             const row = addConstructionOrderRow();
             row?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
@@ -1585,6 +1697,8 @@
         refs.ghostRunnerClose.addEventListener('click', closeGhostRunner);
         refs.ghostRunnerCancel.addEventListener('click', closeGhostRunner);
         refs.ghostRunnerConfirm.addEventListener('click', confirmGhostTime);
+        refs.ghostSlowestSpeed.addEventListener('input', updateGhostTimePreview);
+        refs.ghostSlowestSpeed.addEventListener('change', updateGhostTimePreview);
         refs.ghostJapanDateTime.addEventListener('input', updateGhostTimePreview);
         refs.ghostJapanDateTime.addEventListener('change', updateGhostTimePreview);
         refs.debugProgressClose.addEventListener('click', () => {
@@ -1719,6 +1833,7 @@
             closeDropdowns();
             closePanel();
             closeConstructionRunner();
+            refs.ghostSlowestSpeed.value = String(getStoredGhostSlowestSpeed());
             refs.ghostJapanDateTime.value = getStoredGhostJapanDateTimeValue();
             updateGhostTimePreview();
             refs.ghostRunner.classList.add('open');
@@ -1736,6 +1851,19 @@
                 ? `${formatGhostDateTime(franceDateTime)} en France · ` +
                   `${getGhostJapanFranceDifferenceHours(japanDateTime)} h de moins qu’au Japon`
                 : 'sélectionnez une date et une heure japonaises';
+
+            const speed = Number(refs.ghostSlowestSpeed.value);
+            const suggestions = Number.isFinite(speed) && speed > 0 && franceDateTime
+                ? calculateGhostCoordinateSuggestions(franceDateTime, speed)
+                : null;
+            refs.ghostCoordinate100.textContent = formatGhostCoordinateSuggestion(
+                suggestions?.percent100,
+                franceDateTime
+            );
+            refs.ghostCoordinate20.textContent = formatGhostCoordinateSuggestion(
+                suggestions?.percent20,
+                franceDateTime
+            );
         }
 
         function confirmGhostTime() {
@@ -1745,9 +1873,19 @@
                 refs.ghostJapanDateTime.focus();
                 return;
             }
+            const slowestShipSpeed = Number(refs.ghostSlowestSpeed.value);
+            if (!Number.isFinite(slowestShipSpeed) || slowestShipSpeed <= 0) {
+                refs.ghostSlowestSpeed.focus();
+                return;
+            }
+            const suggestions = calculateGhostCoordinateSuggestions(
+                franceDateTime,
+                slowestShipSpeed
+            );
             GM_setValue(GHOST_JAPAN_DATETIME_KEY, japanDateTime);
             GM_setValue(GHOST_DATETIME_KEY, franceDateTime);
             GM_setValue(GHOST_TIME_KEY, franceDateTime.slice(11, 16));
+            GM_setValue(GHOST_SLOWEST_SPEED_KEY, slowestShipSpeed);
             closeGhostRunner();
             void startGhostAutomation(franceDateTime);
         }
@@ -1771,6 +1909,7 @@
             closePanel();
             closeGhostRunner();
             refs.constructionOrdersList.replaceChildren();
+            constructionCommonAmountInputs.forEach((input) => { input.value = '0'; });
             addConstructionOrderRow();
             showConstructionRunnerError('');
             updateConstructionCalculation();
@@ -1804,27 +1943,6 @@
                     <button type="button" class="construction-order-remove" title="Supprimer cette ligne" aria-label="Supprimer cette ligne">×</button>
                 </div>
                 <div class="construction-order-grid">
-                    <div class="construction-order-field">
-                        <label>R1</label>
-                        <div class="amount-input-shell">
-                            <input class="construction-order-r1" type="text" inputmode="decimal" autocomplete="off" placeholder="3.3">
-                            <span>M</span>
-                        </div>
-                    </div>
-                    <div class="construction-order-field">
-                        <label>R2</label>
-                        <div class="amount-input-shell">
-                            <input class="construction-order-r2" type="text" inputmode="decimal" autocomplete="off" placeholder="2.0">
-                            <span>M</span>
-                        </div>
-                    </div>
-                    <div class="construction-order-field">
-                        <label>R3</label>
-                        <div class="amount-input-shell">
-                            <input class="construction-order-r3" type="text" inputmode="decimal" autocomplete="off" placeholder="1">
-                            <span>M</span>
-                        </div>
-                    </div>
                     <div class="construction-order-field vehicle">
                         <label>Type de voiture</label>
                         <select class="construction-order-vehicle">
@@ -1838,29 +1956,6 @@
                     </div>
                 </div>
             `;
-
-            const amountInputs = [
-                row.querySelector('.construction-order-r1'),
-                row.querySelector('.construction-order-r2'),
-                row.querySelector('.construction-order-r3'),
-            ];
-            const initialAmounts = [initialValues.r1, initialValues.r2, initialValues.r3];
-            amountInputs.forEach((input, index) => {
-                input.value = String(initialAmounts[index] ?? '0');
-                input.addEventListener('input', updateConstructionCalculation);
-                input.addEventListener('focus', () => {
-                    if (input.value.trim() === '0') {
-                        input.value = '';
-                        updateConstructionCalculation();
-                    }
-                });
-                input.addEventListener('blur', () => {
-                    if (input.value.trim() === '') {
-                        input.value = '0';
-                        updateConstructionCalculation();
-                    }
-                });
-            });
 
             const destinationSelect = row.querySelector('.construction-order-destination');
             const config = getStoredConfig(7);
@@ -1880,15 +1975,6 @@
                 initialValues.transporterType
             );
             vehicleSelect.addEventListener('change', updateConstructionCalculation);
-            amountInputs.forEach((input, index) => {
-                input.addEventListener('keydown', (event) => {
-                    if (event.key !== 'Enter' || event.isComposing) return;
-                    event.preventDefault();
-                    const nextField = amountInputs[index + 1] || vehicleSelect;
-                    nextField.focus();
-                });
-            });
-
             row.querySelector('.construction-order-remove').addEventListener('click', () => {
                 if (getConstructionOrderRows().length <= 1) return;
                 row.remove();
@@ -1902,30 +1988,24 @@
 
         function updateConstructionCalculation() {
             const rows = getConstructionOrderRows();
+            const commonAmounts = constructionCommonAmountInputs
+                .map((input) => parseConstructionMillions(input.value));
+            const commonAmountsAreValid = commonAmounts.every((value) => value !== null);
             let cumulativeTotal = 0;
             let cumulativeSmallTransporters = 0;
             let cumulativeLargeTransporters = 0;
-            let allRowsAreValid = rows.length > 0;
+            let allRowsAreValid = rows.length > 0 && commonAmountsAreValid;
 
             rows.forEach((row, index) => {
                 row.querySelector('.construction-order-title').textContent = `Ligne ${index + 1}`;
-                const inputs = [
-                    row.querySelector('.construction-order-r1'),
-                    row.querySelector('.construction-order-r2'),
-                    row.querySelector('.construction-order-r3'),
-                ];
-                inputs.forEach((input, inputIndex) => {
-                    input.setAttribute('aria-label', `R${inputIndex + 1} de la ligne ${index + 1}`);
-                });
+                const values = commonAmounts;
                 row.querySelector('.construction-order-destination')
                     .setAttribute('aria-label', `Destination de la ligne ${index + 1}`);
                 row.querySelector('.construction-order-vehicle')
                     .setAttribute('aria-label', `Type de voiture de la ligne ${index + 1}`);
 
-                const values = inputs.map((input) => parseConstructionMillions(input.value));
                 const summary = row.querySelector('.construction-order-summary');
-                if (values.some((value) => value === null)) {
-                    allRowsAreValid = false;
+                if (!commonAmountsAreValid) {
                     summary.textContent = 'Montant à compléter';
                 } else {
                     const total = values.reduce((sum, value) => sum + value, 0);
@@ -1971,26 +2051,22 @@
                     `Total réel cumulé : ${formatInteger(cumulativeTotal)} · ` +
                     `Petites : ${formatInteger(cumulativeSmallTransporters)} · ` +
                     `Grandes : ${formatInteger(cumulativeLargeTransporters)}`
-                : 'Corrigez les montants indiqués avant de démarrer.';
+                : 'Renseignez des montants R1/R2/R3 valides avant de démarrer.';
         }
 
         function launchConstructionFromRunner() {
             const config = getStoredConfig(7);
             const rows = getConstructionOrderRows();
             const orders = [];
+            const amounts = constructionCommonAmountInputs
+                .map((input) => parseConstructionMillions(input.value));
+            if (amounts.some((value) => value === null)) {
+                showConstructionRunnerError(
+                    'R1, R2 et R3 doivent être des montants positifs ou nuls en millions.'
+                );
+                return;
+            }
             for (const [index, row] of rows.entries()) {
-                const amounts = [
-                    row.querySelector('.construction-order-r1'),
-                    row.querySelector('.construction-order-r2'),
-                    row.querySelector('.construction-order-r3'),
-                ].map((input) => parseConstructionMillions(input.value));
-                if (amounts.some((value) => value === null)) {
-                    showConstructionRunnerError(
-                        `Ligne ${index + 1} : R1, R2 et R3 doivent être des montants positifs ou nuls en millions.`
-                    );
-                    return;
-                }
-
                 const selectedLinkIndex = Number(
                     row.querySelector('.construction-order-destination').value
                 );
@@ -4773,6 +4849,104 @@
         });
         refreshUi();
         return true;
+    }
+
+    function getStoredGhostSlowestSpeed() {
+        const stored = Number(GM_getValue(
+            GHOST_SLOWEST_SPEED_KEY,
+            GHOST_SLOWEST_SPEED_DEFAULT
+        ));
+        return Number.isFinite(stored) && stored > 0
+            ? stored
+            : GHOST_SLOWEST_SPEED_DEFAULT;
+    }
+
+    function calculateGhostCoordinateSuggestions(targetFranceDateTime, slowestShipSpeed) {
+        const targetTimestamp = ghostWallDateTimeToTimestamp(
+            targetFranceDateTime,
+            GHOST_FRANCE_TIME_ZONE
+        );
+        const now = Date.now();
+        if (!Number.isFinite(targetTimestamp) || targetTimestamp <= now ||
+            !Number.isFinite(slowestShipSpeed) || slowestShipSpeed <= 0) {
+            return { percent100: null, percent20: null };
+        }
+
+        const percentages = [100, 20];
+        const bestByPercent = new Map(percentages.map((percent) => [percent, null]));
+        for (let galaxy = 1; galaxy <= 6; galaxy += 1) {
+            for (let system = 1; system <= 499; system += 1) {
+                const distance = getGhostFlightDistanceInternal({
+                    ...GHOST_ORIGIN_COORDINATES,
+                }, { galaxy, system, position: GHOST_TARGET_POSITION });
+                for (const percent of percentages) {
+                    const oneWaySeconds = calculateGhostFlightSeconds(
+                        distance,
+                        slowestShipSpeed,
+                        percent
+                    );
+                    const returnTimestamp = now + oneWaySeconds * 2 * 1000;
+                    const differenceMs = Math.abs(returnTimestamp - targetTimestamp);
+                    const best = bestByPercent.get(percent);
+                    if (!best || differenceMs < best.differenceMs) {
+                        bestByPercent.set(percent, {
+                            galaxy,
+                            system,
+                            position: GHOST_TARGET_POSITION,
+                            returnTimestamp,
+                            differenceMs,
+                            withinTolerance: differenceMs <= GHOST_COORDINATE_TOLERANCE_MS,
+                        });
+                    }
+                }
+            }
+        }
+
+        return {
+            percent100: bestByPercent.get(100),
+            percent20: bestByPercent.get(20),
+        };
+    }
+
+    function getGhostFlightDistanceInternal(origin, destination) {
+        let distance;
+        if (origin.galaxy !== destination.galaxy) {
+            distance = 20_000 * Math.abs(origin.galaxy - destination.galaxy);
+        } else if (origin.system !== destination.system) {
+            distance = 2_700 + 95 * Math.abs(origin.system - destination.system);
+        } else {
+            distance = 1_000 + 5 * Math.abs(origin.position - destination.position);
+        }
+        return distance * 1000;
+    }
+
+    function calculateGhostFlightSeconds(distanceInternal, slowestShipSpeed, speedPercent) {
+        return Math.round((
+            35_000 / speedPercent * Math.sqrt(distanceInternal / slowestShipSpeed) + 10
+        ) / GHOST_UNIVERSE_SPEED);
+    }
+
+    function formatGhostCoordinateSuggestion(suggestion, targetFranceDateTime) {
+        if (!suggestion) {
+            return 'Pas de proposition : cible passée ou données invalides.';
+        }
+        const coordinate = `${suggestion.galaxy}:${suggestion.system}:${suggestion.position}`;
+        const returnTime = formatGhostDateTime(
+            formatGhostTimestampInTimeZone(
+                suggestion.returnTimestamp,
+                GHOST_FRANCE_TIME_ZONE
+            )
+        );
+        const signedMinutes = Math.round(
+            (suggestion.returnTimestamp - ghostWallDateTimeToTimestamp(
+                targetFranceDateTime,
+                GHOST_FRANCE_TIME_ZONE
+            )) / 60_000
+        );
+        const delta = `${signedMinutes >= 0 ? '+' : ''}${signedMinutes} min`;
+        return suggestion.withinTolerance
+            ? `${coordinate} · retour estimé ${returnTime} (${delta}, dans ±30 min)`
+            : `Aucune coordonnée dans ±30 min. Meilleure : ${coordinate} · retour ${returnTime} (${delta}).`;
     }
 
     function getStoredGhostJapanDateTimeValue() {
