@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Projet secret — boucle multi-liens
 // @namespace    local.projet-secret
-// @version      6.22.5
+// @version      6.23.0
 // @updateURL    https://raw.githubusercontent.com/raphaelrobert1104-sys/mysecretproject/main/outputs/projet-secret.user.js
 // @downloadURL  https://raw.githubusercontent.com/raphaelrobert1104-sys/mysecretproject/main/outputs/projet-secret.user.js
 // @description  Automatise Ressources, Expédition V2, Attaques, Forme de vie, Import, Constructions, Ghost, Rappatriement, Bâtiments Mecha et Switch FDV avec configurations privées.
@@ -22,7 +22,7 @@
 (function () {
     'use strict';
 
-    const SCRIPT_VERSION = '6.22.5';
+    const SCRIPT_VERSION = '6.23.0';
     const CONFIG_KEYS = {
         1: 'secretMultiLinkConfig',
         2: 'secretMultiLinkConfig2',
@@ -36,7 +36,9 @@
         13: 'secretAttacksConfig',
         15: 'secretSwitchFdvConfig',
     };
+    const ACTION_SEQUENCE_PROFILES = [1, 9, 4, 6, 7, 8, 11, 12, 13, 15];
     const RUN_KEY = 'secretMultiLinkRun';
+    const ACTION_SEQUENCE_KEY = 'secretMultiLinkActionSequence';
     const TAB_RUN_ID_KEY = 'secretMultiLinkRunId';
     const DEBUG_DISMISSED_RUN_KEY = 'secretMultiLinkDebugDismissedRunId';
     const GHOST_TIME_KEY = 'secretMultiLinkGhostTime';
@@ -280,80 +282,32 @@
     registerMenuCommandSafely('Configurer Ressources', () => {
         void openControlPanel(1);
     });
-    registerMenuCommandSafely('Démarrer Ressources', () => {
-        void startFromStoredConfiguration(1);
-    });
-    registerMenuCommandSafely('Configurer Expéditions V2 & Ressources', () => {
-        void openControlPanel(3);
-    });
-    registerMenuCommandSafely('Démarrer Expéditions V2 & Ressources', () => {
-        void startExpeditionV2ResourcesAutomation();
-    });
     registerMenuCommandSafely('Configurer Forme de vie', () => {
         void openControlPanel(4);
-    });
-    registerMenuCommandSafely('Démarrer Forme de vie', () => {
-        void startFromStoredConfiguration(4);
     });
     registerMenuCommandSafely('Configurer Import', () => {
         void openControlPanel(6);
     });
-    registerMenuCommandSafely('Démarrer Import', () => {
-        void startFromStoredConfiguration(6);
-    });
     registerMenuCommandSafely('Configurer Constructions', () => {
         void openControlPanel(7);
-    });
-    registerMenuCommandSafely('Démarrer Constructions', () => {
-        void startFromStoredConfiguration(7);
     });
     registerMenuCommandSafely('Configurer Ghost', () => {
         void openControlPanel(8);
     });
-    registerMenuCommandSafely('Ouvrir Ghost', () => {
-        void ensureUi().then((ui) => ui.openGhostRunner());
-    });
     registerMenuCommandSafely('Configurer Expédition V2', () => {
         void openControlPanel(9);
-    });
-    registerMenuCommandSafely('Démarrer Expédition V2', () => {
-        void startFromStoredConfiguration(9);
     });
     registerMenuCommandSafely('Configurer Rappatriement', () => {
         void openControlPanel(11);
     });
-    registerMenuCommandSafely('Démarrer Rappatriement', () => {
-        void startFromStoredConfiguration(11);
-    });
     registerMenuCommandSafely('Configurer Bâtiments Mecha', () => {
         void openControlPanel(12);
-    });
-    registerMenuCommandSafely('Démarrer Bâtiments Mecha', () => {
-        void startFromStoredConfiguration(12);
     });
     registerMenuCommandSafely('Configurer Attaques', () => {
         void openControlPanel(13);
     });
-    registerMenuCommandSafely('Démarrer Attaques', () => {
-        void startFromStoredConfiguration(13);
-    });
     registerMenuCommandSafely('Configurer Switch FDV', () => {
         void openControlPanel(15);
-    });
-    registerMenuCommandSafely('Démarrer Switch FDV', () => {
-        void startFromStoredConfiguration(15);
-    });
-    registerMenuCommandSafely('Configurer Expéditions V2 & Attaques', () => {
-        void openControlPanel(14);
-    });
-    registerMenuCommandSafely('Démarrer Expéditions V2 & Attaques', () => {
-        void startExpeditionV2AttacksAutomation();
-    });
-    registerMenuCommandSafely('Configurer Expédition V2 & Forme de vie', () => {
-        void openControlPanel(10);
-    });
-    registerMenuCommandSafely('Démarrer Expédition V2 & Forme de vie', () => {
-        void startExpeditionV2LifeformAutomation();
     });
     registerMenuCommandSafely('Arrêter la boucle', () => {
         void stopAutomation('Arrêt demandé depuis le menu Tampermonkey.');
@@ -419,6 +373,7 @@
         ui.refresh();
         startUiWatchdog();
         await resumeAutomationForThisTab();
+        await resumeQueuedActionSequence();
     }
 
     function installMobileFleetSpeedSelector() {
@@ -810,6 +765,7 @@
                     -webkit-backdrop-filter: blur(22px);
                 }
                 .dropdown-menu.open { display: grid; gap: 7px; animation: secret-enter .18s ease-out; }
+                .simple-menu { max-height: min(78vh, 680px); overflow-y: auto; overscroll-behavior: contain; }
                 .dropdown-menu .control-group { width: 100%; }
                 .dropdown-menu .quick { flex: 1 1 auto; min-width: 0 !important; text-align: left; }
                 .control-group {
@@ -840,6 +796,7 @@
                     transition: transform .16s ease, background .16s ease, box-shadow .16s ease;
                 }
                 .quick {
+                    position: relative;
                     min-width: 116px;
                     padding: 9px 14px;
                     background: linear-gradient(135deg, rgba(37, 99, 235, .95), rgba(79, 70, 229, .95));
@@ -848,6 +805,43 @@
                     letter-spacing: .01em;
                     white-space: nowrap;
                 }
+                .quick.selected {
+                    box-shadow: inset 0 0 0 2px rgba(186, 230, 253, .9), 0 0 16px rgba(56, 189, 248, .26);
+                    filter: brightness(1.08);
+                }
+                .quick.selected::after {
+                    content: attr(data-sequence-number);
+                    position: absolute;
+                    top: 3px;
+                    right: 4px;
+                    display: grid;
+                    place-items: center;
+                    min-width: 20px;
+                    height: 20px;
+                    padding: 0 5px;
+                    border: 1px solid rgba(255, 255, 255, .65);
+                    border-radius: 999px;
+                    background: linear-gradient(135deg, #f8fafc, #bae6fd);
+                    color: #0f172a;
+                    font-size: 11px;
+                    line-height: 1;
+                    font-weight: 900;
+                    box-shadow: 0 2px 8px rgba(2, 6, 23, .35);
+                }
+                .execute-actions {
+                    width: 100%;
+                    min-height: 44px;
+                    margin-top: 4px;
+                    border: 1px solid rgba(134, 239, 172, .46);
+                    border-radius: 11px;
+                    background: linear-gradient(135deg, #15803d, #059669);
+                    color: #fff;
+                    font-weight: 850;
+                    letter-spacing: .015em;
+                    box-shadow: inset 0 1px 0 rgba(255,255,255,.18), 0 8px 20px rgba(5, 150, 105, .2);
+                }
+                .execute-actions:disabled { cursor: not-allowed; opacity: .48; filter: saturate(.65); }
+                .sequence-hint { margin: 3px 4px 1px; color: #cbd5e1; font-size: 11px; line-height: 1.35; }
                 .control-group.expeditions-v2 .quick {
                     background: linear-gradient(135deg, rgba(14, 116, 144, .97), rgba(79, 70, 229, .96));
                 }
@@ -1565,23 +1559,8 @@
                                 <button type="button" class="quick quick-15" title="Lancer Switch FDV">Switch FDV</button>
                                 <button type="button" class="settings settings-15" title="Configurer Switch FDV" aria-label="Configurer Switch FDV">⚙</button>
                             </div>
-                        </div>
-                    </div>
-                    <div class="menu-group grouped-menu-group">
-                        <button type="button" class="menu-toggle grouped-menu-toggle" aria-expanded="false">Actions groupées</button>
-                        <div class="dropdown-menu grouped-menu">
-                            <div class="control-group combined">
-                                <button type="button" class="quick quick-3" title="Lancer Expédition V2 puis Ressources">Expéditions V2 &amp; Ressources</button>
-                                <button type="button" class="settings settings-3" title="Configurer le mode combiné" aria-label="Configurer Expéditions V2 et Ressources">⚙</button>
-                            </div>
-                            <div class="control-group expeditions-v2-lifeform">
-                                <button type="button" class="quick quick-10" title="Lancer Expédition V2 puis Forme de vie">Expédition V2 &amp; Forme de vie</button>
-                                <button type="button" class="settings settings-10" title="Configurer Expédition V2 et Forme de vie" aria-label="Configurer Expédition V2 et Forme de vie">⚙</button>
-                            </div>
-                            <div class="control-group expeditions-v2-attacks">
-                                <button type="button" class="quick quick-14" title="Lancer Expédition V2 puis Attaques">Expéditions V2 &amp; Attaques</button>
-                                <button type="button" class="settings settings-14" title="Configurer Expédition V2 et Attaques" aria-label="Configurer Expédition V2 et Attaques">⚙</button>
-                            </div>
+                            <p class="sequence-hint">Cliquez sur les actions pour les numéroter, puis lancez-les dans cet ordre.</p>
+                            <button type="button" class="execute-actions" disabled>Exécuter</button>
                         </div>
                     </div>
                 </div>
@@ -1648,7 +1627,6 @@
                     <div class="actions">
                         <button type="button" class="stop">Arrêter</button>
                         <button type="button" class="save">Enregistrer</button>
-                        <button type="button" class="start">Enregistrer et lancer</button>
                     </div>
                 </section>
                 <section class="construction-runner" role="dialog" aria-label="Lancer Constructions">
@@ -1755,33 +1733,28 @@
 
         const refs = {
             quick1: shadow.querySelector('.quick-1'),
-            quick3: shadow.querySelector('.quick-3'),
             quick4: shadow.querySelector('.quick-4'),
             quick6: shadow.querySelector('.quick-6'),
             quick7: shadow.querySelector('.quick-7'),
             quick8: shadow.querySelector('.quick-8'),
             quick9: shadow.querySelector('.quick-9'),
-            quick10: shadow.querySelector('.quick-10'),
             quick11: shadow.querySelector('.quick-11'),
             quick12: shadow.querySelector('.quick-12'),
             quick13: shadow.querySelector('.quick-13'),
             quick15: shadow.querySelector('.quick-15'),
-            quick14: shadow.querySelector('.quick-14'),
             simpleMenuToggle: shadow.querySelector('.simple-menu-toggle'),
-            groupedMenuToggle: shadow.querySelector('.grouped-menu-toggle'),
             simpleMenu: shadow.querySelector('.simple-menu'),
-            groupedMenu: shadow.querySelector('.grouped-menu'),
+            executeActions: shadow.querySelector('.execute-actions'),
+            actionButtons: [...shadow.querySelectorAll('.simple-menu .quick')],
             debugProgress: shadow.querySelector('.debug-progress'),
             debugProgressContent: shadow.querySelector('.debug-progress-content'),
             debugProgressClose: shadow.querySelector('.debug-progress-close'),
             settings1: shadow.querySelector('.settings-1'),
-            settings3: shadow.querySelector('.settings-3'),
             settings4: shadow.querySelector('.settings-4'),
             settings6: shadow.querySelector('.settings-6'),
             settings7: shadow.querySelector('.settings-7'),
             settings8: shadow.querySelector('.settings-8'),
             settings9: shadow.querySelector('.settings-9'),
-            settings10: shadow.querySelector('.settings-10'),
             settings11: shadow.querySelector('.settings-11'),
             settings12: shadow.querySelector('.settings-12'),
             settings13: shadow.querySelector('.settings-13'),
@@ -1789,7 +1762,6 @@
             switchFdvRunner: shadow.querySelector('.switch-fdv-runner'),
             switchFdvClose: shadow.querySelector('.switch-fdv-close'),
             switchFdvRoctas: shadow.querySelector('.switch-fdv-roctas'),
-            settings14: shadow.querySelector('.settings-14'),
             panel: shadow.querySelector('.panel'),
             panelTitle: shadow.querySelector('.panel-title'),
             help: shadow.querySelector('.help'),
@@ -1821,7 +1793,6 @@
             error: shadow.querySelector('.error'),
             status: shadow.querySelector('.status'),
             save: shadow.querySelector('.save'),
-            start: shadow.querySelector('.start'),
             stop: shadow.querySelector('.stop'),
             constructionRunner: shadow.querySelector('.construction-runner'),
             constructionRunnerClose: shadow.querySelector('.construction-runner-close'),
@@ -1848,26 +1819,28 @@
 
         let editingProfileId = 1;
         let combinedTargetProfiles = [9, 1];
+        let selectedActionIds = [];
         loadProfileIntoPanel(1);
+        updateActionSelectionUi();
 
         refs.settings1.addEventListener('click', () => togglePanel(1));
-        refs.settings3.addEventListener('click', () => togglePanel(3));
         refs.settings4.addEventListener('click', () => togglePanel(4));
         refs.settings6.addEventListener('click', () => togglePanel(6));
         refs.settings7.addEventListener('click', () => togglePanel(7));
         refs.settings8.addEventListener('click', () => togglePanel(8));
         refs.settings9.addEventListener('click', () => togglePanel(9));
-        refs.settings10.addEventListener('click', () => togglePanel(10));
         refs.settings11.addEventListener('click', () => togglePanel(11));
         refs.settings12.addEventListener('click', () => togglePanel(12));
         refs.settings13.addEventListener('click', () => togglePanel(13));
         refs.settings15.addEventListener('click', () => togglePanel(15));
-        refs.switchFdvClose.addEventListener('click', closeSwitchFdvRunner);
+        refs.switchFdvClose.addEventListener('click', () => {
+            cancelPendingActionSequence(15);
+            closeSwitchFdvRunner();
+        });
         refs.switchFdvRoctas.addEventListener('click', () => {
             closeSwitchFdvRunner();
             void startSwitchFdvAutomation('roctas');
         });
-        refs.settings14.addEventListener('click', () => togglePanel(14));
         refs.combinedResources.addEventListener('click', () => open(combinedTargetProfiles[0]));
         refs.combinedExpeditions.addEventListener('click', () => open(combinedTargetProfiles[1]));
         refs.close.addEventListener('click', () => closePanel());
@@ -1875,26 +1848,32 @@
         refs.mechaLinks2.addEventListener('input', () => updateCounter());
         refs.namedLinkNames.forEach((input) => input.addEventListener('input', updateCounter));
         refs.namedLinkUrls.forEach((input) => input.addEventListener('input', updateCounter));
-        refs.save.addEventListener('click', () => saveFromPanel(false));
-        refs.start.addEventListener('click', () => saveFromPanel(true));
+        refs.save.addEventListener('click', () => saveFromPanel());
         refs.stop.addEventListener('click', () => {
             void stopAutomation('Arrêt demandé depuis le panneau.');
         });
-        refs.quick1.addEventListener('click', () => quickAction(1));
-        refs.quick3.addEventListener('click', () => quickCombinedAction());
-        refs.quick4.addEventListener('click', () => quickAction(4));
-        refs.quick6.addEventListener('click', () => quickAction(6));
-        refs.quick7.addEventListener('click', () => quickAction(7));
-        refs.quick8.addEventListener('click', quickGhostAction);
-        refs.quick9.addEventListener('click', () => quickAction(9));
-        refs.quick10.addEventListener('click', () => quickExpeditionV2LifeformAction());
-        refs.quick11.addEventListener('click', () => quickAction(11));
-        refs.quick12.addEventListener('click', () => quickAction(12));
-        refs.quick13.addEventListener('click', () => quickAction(13));
-        refs.quick15.addEventListener('click', () => quickAction(15));
-        refs.quick14.addEventListener('click', () => quickExpeditionV2AttacksAction());
-        refs.constructionRunnerClose.addEventListener('click', closeConstructionRunner);
-        refs.constructionRunnerCancel.addEventListener('click', closeConstructionRunner);
+        refs.actionButtons.forEach((button) => {
+            button.addEventListener('click', () => toggleActionSelection(Number(
+                [...button.classList].find((className) => /^quick-\d+$/.test(className))?.slice(6)
+            )));
+        });
+        refs.executeActions.addEventListener('click', () => {
+            const requestedActions = selectedActionIds.slice();
+            void startActionSequence(requestedActions).then((started) => {
+                if (!started) return;
+                selectedActionIds = [];
+                updateActionSelectionUi();
+                closeDropdowns();
+            });
+        });
+        refs.constructionRunnerClose.addEventListener('click', () => {
+            cancelPendingActionSequence(7);
+            closeConstructionRunner();
+        });
+        refs.constructionRunnerCancel.addEventListener('click', () => {
+            cancelPendingActionSequence(7);
+            closeConstructionRunner();
+        });
         refs.constructionRunnerStart.addEventListener('click', launchConstructionFromRunner);
         const constructionCommonAmountInputs = [
             refs.constructionCommonR1,
@@ -1931,8 +1910,14 @@
             const row = addConstructionOrderRow();
             row?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
         });
-        refs.ghostRunnerClose.addEventListener('click', closeGhostRunner);
-        refs.ghostRunnerCancel.addEventListener('click', closeGhostRunner);
+        refs.ghostRunnerClose.addEventListener('click', () => {
+            cancelPendingActionSequence(8);
+            closeGhostRunner();
+        });
+        refs.ghostRunnerCancel.addEventListener('click', () => {
+            cancelPendingActionSequence(8);
+            closeGhostRunner();
+        });
         refs.ghostRunnerConfirm.addEventListener('click', confirmGhostTime);
         refs.ghostSlowestSpeed.addEventListener('input', updateGhostTimePreview);
         refs.ghostSlowestSpeed.addEventListener('change', updateGhostTimePreview);
@@ -1945,9 +1930,8 @@
             }
             refs.debugProgress.style.display = 'none';
         });
-        refs.simpleMenuToggle.addEventListener('click', () => toggleDropdown('simple'));
-        refs.groupedMenuToggle.addEventListener('click', () => toggleDropdown('grouped'));
-        shadow.querySelectorAll('.quick, .settings').forEach((button) => {
+        refs.simpleMenuToggle.addEventListener('click', () => toggleDropdown());
+        shadow.querySelectorAll('.settings').forEach((button) => {
             button.addEventListener('click', closeDropdowns);
         });
         document.addEventListener('pointerdown', (event) => {
@@ -1958,59 +1942,45 @@
         uiHost = host;
         updateCounter();
 
-        function quickAction(profileId) {
-            const run = getRunState();
-            if (run.status === 'running' && run.profileId === profileId && !run.combinedMode) {
-                void stopAutomation(`Arrêt de ${getProfileLabel(profileId)} demandé avec le bouton flottant.`);
-            } else {
-                void startFromStoredConfiguration(profileId);
-            }
+        function toggleActionSelection(profileId) {
+            if (!Number.isInteger(profileId) || !ACTION_SEQUENCE_PROFILES.includes(profileId)) return;
+            if (getRunState().status === 'running' || GM_getValue(ACTION_SEQUENCE_KEY, null)) return;
+            selectedActionIds = selectedActionIds.includes(profileId)
+                ? selectedActionIds.filter((id) => id !== profileId)
+                : [...selectedActionIds, profileId];
+            updateActionSelectionUi();
         }
 
-        function quickCombinedAction() {
-            const run = getRunState();
-            if (
-                run.status === 'running' &&
-                run.combinedKind === 'expedition-v2-resources-lifeform'
-            ) {
-                void stopAutomation('Arrêt d’Expéditions V2 & Ressources demandé avec le bouton flottant.');
-            } else {
-                void startExpeditionV2ResourcesAutomation();
-            }
+        function updateActionSelectionUi() {
+            refs.actionButtons.forEach((button) => {
+                const className = [...button.classList].find((name) => /^quick-\d+$/.test(name));
+                const profileId = Number(className?.slice(6));
+                const sequenceNumber = selectedActionIds.indexOf(profileId);
+                const selected = sequenceNumber >= 0;
+                button.classList.toggle('selected', selected);
+                button.setAttribute('aria-pressed', selected ? 'true' : 'false');
+                if (selected) {
+                    button.dataset.sequenceNumber = String(sequenceNumber + 1);
+                    button.title = `${getProfileLabel(profileId)} — étape ${sequenceNumber + 1} (recliquer pour retirer)`;
+                } else {
+                    delete button.dataset.sequenceNumber;
+                    button.title = `${getProfileLabel(profileId)} — cliquer pour ajouter à la séquence`;
+                }
+            });
+            refs.executeActions.disabled = selectedActionIds.length === 0 ||
+                getRunState().status === 'running' || Boolean(GM_getValue(ACTION_SEQUENCE_KEY, null));
+            refs.executeActions.textContent = selectedActionIds.length
+                ? `Exécuter · ${selectedActionIds.length} action${selectedActionIds.length > 1 ? 's' : ''}`
+                : 'Exécuter';
         }
 
-        function quickExpeditionV2LifeformAction() {
-            const run = getRunState();
-            if (run.status === 'running' && run.combinedKind === 'expedition-v2-lifeform') {
-                void stopAutomation('Arrêt d’Expédition V2 & Forme de vie demandé avec le bouton flottant.');
-            } else {
-                void startExpeditionV2LifeformAutomation();
-            }
-        }
-
-        function quickExpeditionV2AttacksAction() {
-            const run = getRunState();
-            if (run.status === 'running' && run.combinedKind === 'expedition-v2-attacks') {
-                void stopAutomation('Arrêt d’Expéditions V2 & Attaques demandé avec le bouton flottant.');
-            } else {
-                void startExpeditionV2AttacksAutomation();
-            }
-        }
-
-        function quickGhostAction() {
-            const run = getRunState();
-            if (run.status === 'running' && run.profileId === 8 && !run.combinedMode) {
-                void stopAutomation('Arrêt de Ghost demandé avec le bouton flottant.');
-            } else {
-                openGhostRunner();
-            }
-        }
-
-        function toggleDropdown(menuName) {
-            const opensSimple = menuName === 'simple' && !refs.simpleMenu.classList.contains('open');
-            const opensGrouped = menuName === 'grouped' && !refs.groupedMenu.classList.contains('open');
+        function toggleDropdown() {
+            const opensSimple = !refs.simpleMenu.classList.contains('open');
             closeDropdowns();
-            if (opensSimple || opensGrouped) {
+            if (opensSimple) {
+                cancelPendingActionSequence(7);
+                cancelPendingActionSequence(8);
+                cancelPendingActionSequence(15);
                 closeSwitchFdvRunner();
                 closePanel();
                 closeConstructionRunner();
@@ -2021,20 +1991,12 @@
                 refs.simpleMenuToggle.classList.add('open');
                 refs.simpleMenuToggle.setAttribute('aria-expanded', 'true');
             }
-            if (opensGrouped) {
-                refs.groupedMenu.classList.add('open');
-                refs.groupedMenuToggle.classList.add('open');
-                refs.groupedMenuToggle.setAttribute('aria-expanded', 'true');
-            }
         }
 
         function closeDropdowns() {
             refs.simpleMenu.classList.remove('open');
-            refs.groupedMenu.classList.remove('open');
             refs.simpleMenuToggle.classList.remove('open');
-            refs.groupedMenuToggle.classList.remove('open');
             refs.simpleMenuToggle.setAttribute('aria-expanded', 'false');
-            refs.groupedMenuToggle.setAttribute('aria-expanded', 'false');
         }
 
         function togglePanel(profileId) {
@@ -2046,6 +2008,9 @@
         }
 
         function open(profileId = 1) {
+            cancelPendingActionSequence(7);
+            cancelPendingActionSequence(8);
+            cancelPendingActionSequence(15);
             closeSwitchFdvRunner();
             closeConstructionRunner();
             closeGhostRunner();
@@ -2383,7 +2348,6 @@
                     `Configurer ${getProfileLabel(combinedTargetProfiles[0])}`;
                 refs.combinedExpeditions.textContent =
                     `Configurer ${getProfileLabel(combinedTargetProfiles[1])}`;
-                refs.start.textContent = combinedDetails.startLabel;
                 refs.status.textContent =
                     `${getProfileLabel(combinedTargetProfiles[0])} : ${firstConfig.links.length} lien(s) · ` +
                     `${getProfileLabel(combinedTargetProfiles[1])} : ${secondConfig.links.length} lien(s).`;
@@ -2454,9 +2418,6 @@
             refs.repeat.checked = config.repeat;
             refs.repeatRow.style.display = editingProfileId === 1 ? 'flex' : 'none';
             refs.save.style.display = '';
-            refs.start.textContent = editingProfileId === 8
-                ? 'Enregistrer et choisir l’heure'
-                : 'Enregistrer et lancer';
             showError('');
             updateCounter();
         }
@@ -2494,18 +2455,9 @@
             refs.error.classList.toggle('visible', Boolean(message));
         }
 
-        function saveFromPanel(shouldStart) {
+        function saveFromPanel() {
             if ([3, 10, 14].includes(editingProfileId)) {
                 showError('');
-                if (shouldStart) {
-                    if (editingProfileId === 3) {
-                        void startExpeditionV2ResourcesAutomation();
-                    } else if (editingProfileId === 10) {
-                        void startExpeditionV2LifeformAutomation();
-                    } else {
-                        void startExpeditionV2AttacksAutomation();
-                    }
-                }
                 return;
             }
 
@@ -2540,7 +2492,6 @@
                     'Constructions : Page de chargement et ' +
                     parsedNamedLinks.namedLinks.length +
                     ' destination(s) enregistrées dans Tampermonkey.';
-                if (shouldStart) openConstructionRunner();
                 return;
             }
 
@@ -2606,40 +2557,12 @@
                 ? 'Bâtiments Mecha : 13 + 13 liens enregistrés dans Tampermonkey.'
                 : `${getProfileLabel(editingProfileId)} : ${parsed.links.length} lien(s) enregistré(s) dans Tampermonkey.`;
 
-            if (shouldStart) {
-                if (editingProfileId === 4) {
-                    void startLifeformAutomation();
-                } else if (editingProfileId === 6) {
-                    void startImportAutomation();
-                } else if (editingProfileId === 8) {
-                    openGhostRunner();
-                } else if (editingProfileId === 9) {
-                    void startExpeditionV2Automation();
-                } else if (editingProfileId === 11) {
-                    void startRepatriationAutomation();
-                } else if (editingProfileId === 12) {
-                    void startMechaAutomation();
-                } else if (editingProfileId === 13) {
-                    void startAttackAutomation();
-                } else if (editingProfileId === 15) {
-                    void startSwitchFdvAutomation();
-                } else {
-                    void startAutomation(editingProfileId, parsed.links);
-                }
-            }
         }
 
         function refresh() {
             const run = getRunState();
             const isCombinedPanel = [3, 10, 14].includes(editingProfileId);
             const config = isCombinedPanel ? null : getStoredConfig(editingProfileId);
-            const expeditionV2ResourcesRunning =
-                run.status === 'running' &&
-                run.combinedKind === 'expedition-v2-resources-lifeform';
-            const expeditionV2LifeformRunning =
-                run.status === 'running' && run.combinedKind === 'expedition-v2-lifeform';
-            const expeditionV2AttacksRunning =
-                run.status === 'running' && run.combinedKind === 'expedition-v2-attacks';
             const profile1Running =
                 run.status === 'running' && run.profileId === 1 && !run.combinedMode;
             const profile4Running =
@@ -2664,67 +2587,42 @@
                 profile1Running || profile4Running || profile6Running ||
                 profile7Running || profile8Running || profile9Running || profile11Running ||
                 profile12Running || profile13Running || profile15Running;
-            const groupedActionRunning =
-                expeditionV2ResourcesRunning || expeditionV2LifeformRunning ||
-                expeditionV2AttacksRunning;
-
             refs.quick1.classList.toggle('running', profile1Running);
-            refs.quick3.classList.toggle('running', expeditionV2ResourcesRunning);
             refs.quick4.classList.toggle('running', profile4Running);
             refs.quick6.classList.toggle('running', profile6Running);
             refs.quick7.classList.toggle('running', profile7Running);
             refs.quick8.classList.toggle('running', profile8Running);
             refs.quick9.classList.toggle('running', profile9Running);
-            refs.quick10.classList.toggle('running', expeditionV2LifeformRunning);
             refs.quick11.classList.toggle('running', profile11Running);
             refs.quick12.classList.toggle('running', profile12Running);
             refs.quick13.classList.toggle('running', profile13Running);
             refs.quick15.classList.toggle('running', profile15Running);
-            refs.quick14.classList.toggle('running', expeditionV2AttacksRunning);
             refs.simpleMenuToggle.classList.toggle('running', simpleActionRunning);
-            refs.groupedMenuToggle.classList.toggle('running', groupedActionRunning);
-            refs.quick1.textContent = profile1Running ? '■ Arrêter' : 'Ressources';
-            refs.quick3.textContent = expeditionV2ResourcesRunning
-                ? '■ Arrêter le combiné'
-                : 'Expéditions V2 & Ressources';
-            refs.quick4.textContent = profile4Running ? '■ Arrêter' : 'Forme de vie';
-            refs.quick6.textContent = profile6Running ? '■ Arrêter' : 'Import';
-            refs.quick7.textContent = profile7Running ? '■ Arrêter' : 'Constructions';
-            refs.quick8.textContent = profile8Running ? '■ Arrêter' : 'Ghost';
-            refs.quick9.textContent = profile9Running ? '■ Arrêter' : 'Expédition V2';
-            refs.quick10.textContent = expeditionV2LifeformRunning
-                ? '■ Arrêter le combiné'
-                : 'Expédition V2 & Forme de vie';
-            refs.quick11.textContent = profile11Running ? '■ Arrêter' : 'Rappatriement';
-            refs.quick12.textContent = profile12Running ? '■ Arrêter' : 'Bâtiments Mecha';
-            refs.quick13.textContent = profile13Running ? '■ Arrêter' : 'Attaques';
-            refs.quick15.textContent = profile15Running ? '■ Arrêter' : 'Switch FDV';
-            refs.quick14.textContent = expeditionV2AttacksRunning
-                ? '■ Arrêter le combiné'
-                : 'Expéditions V2 & Attaques';
-            refs.quick1.title = profile1Running ? 'Arrêter Ressources' : 'Lancer Ressources';
-            refs.quick3.title = expeditionV2ResourcesRunning
-                ? 'Arrêter Expéditions V2 & Ressources'
-                : 'Lancer Expédition V2 puis Ressources';
-            refs.quick4.title = profile4Running ? 'Arrêter Forme de vie' : 'Lancer Forme de vie';
-            refs.quick6.title = profile6Running ? 'Arrêter Import' : 'Lancer Import';
-            refs.quick7.title = profile7Running ? 'Arrêter Constructions' : 'Lancer Constructions';
-            refs.quick8.title = profile8Running ? 'Arrêter Ghost' : 'Lancer Ghost';
-            refs.quick9.title = profile9Running ? 'Arrêter Expédition V2' : 'Lancer Expédition V2';
-            refs.quick10.title = expeditionV2LifeformRunning
-                ? 'Arrêter Expédition V2 & Forme de vie'
-                : 'Lancer Expédition V2 puis Forme de vie';
-            refs.quick11.title = profile11Running
-                ? 'Arrêter Rappatriement'
-                : 'Lancer Rappatriement';
-            refs.quick12.title = profile12Running
-                ? 'Arrêter Bâtiments Mecha'
-                : 'Lancer Bâtiments Mecha';
-            refs.quick13.title = profile13Running ? 'Arrêter Attaques' : 'Lancer Attaques';
-            refs.quick15.title = profile15Running ? 'Arrêter Switch FDV' : 'Lancer Switch FDV';
-            refs.quick14.title = expeditionV2AttacksRunning
-                ? 'Arrêter Expéditions V2 & Attaques'
-                : 'Lancer Expédition V2 puis Attaques';
+            refs.quick1.title = 'Ressources — cliquer pour ajouter à la séquence';
+            refs.quick4.title = 'Forme de vie — cliquer pour ajouter à la séquence';
+            refs.quick6.title = 'Import — cliquer pour ajouter à la séquence';
+            refs.quick7.title = 'Constructions — cliquer pour ajouter à la séquence';
+            refs.quick8.title = 'Ghost — cliquer pour ajouter à la séquence';
+            refs.quick9.title = 'Expédition V2 — cliquer pour ajouter à la séquence';
+            refs.quick11.title = 'Rappatriement — cliquer pour ajouter à la séquence';
+            refs.quick12.title = 'Bâtiments Mecha — cliquer pour ajouter à la séquence';
+            refs.quick13.title = 'Attaques — cliquer pour ajouter à la séquence';
+            refs.quick15.title = 'Switch FDV — cliquer pour ajouter à la séquence';
+            refs.actionButtons.forEach((button) => {
+                button.disabled = run.status === 'running' || Boolean(GM_getValue(ACTION_SEQUENCE_KEY, null));
+            });
+            const queuedSequence = GM_getValue(ACTION_SEQUENCE_KEY, null);
+            refs.executeActions.disabled = selectedActionIds.length === 0 ||
+                run.status === 'running' || Boolean(queuedSequence);
+            if (queuedSequence) {
+                refs.executeActions.textContent = `Séquence ${queuedSequence.index + 1}/${queuedSequence.actions.length} en cours…`;
+            } else if (run.status === 'running') {
+                refs.executeActions.textContent = 'Séquence en cours…';
+            } else if (selectedActionIds.length > 0) {
+                refs.executeActions.textContent = `Exécuter · ${selectedActionIds.length} action${selectedActionIds.length > 1 ? 's' : ''}`;
+            } else {
+                refs.executeActions.textContent = 'Exécuter';
+            }
 
             const debugText = formatDebugProgress(run);
             const debugWasDismissed =
@@ -2776,7 +2674,7 @@
         };
     }
 
-    async function startFromStoredConfiguration(profileId = 1) {
+    async function startFromStoredConfiguration(profileId = 1, options = {}) {
         const normalizedProfileId = normalizeProfileId(profileId);
         const config = getStoredConfig(normalizedProfileId);
         if (config.links.length === 0) {
@@ -2813,10 +2711,12 @@
 
         if (normalizedProfileId === 4) {
             await startLifeformAutomation();
+            await associateQueuedActionWithCurrentRun(normalizedProfileId);
             return;
         }
         if (normalizedProfileId === 6) {
             await startImportAutomation();
+            await associateQueuedActionWithCurrentRun(normalizedProfileId);
             return;
         }
         if (normalizedProfileId === 7) {
@@ -2831,26 +2731,187 @@
         }
         if (normalizedProfileId === 9) {
             await startExpeditionV2Automation();
+            await associateQueuedActionWithCurrentRun(normalizedProfileId);
             return;
         }
         if (normalizedProfileId === 11) {
             await startRepatriationAutomation();
+            await associateQueuedActionWithCurrentRun(normalizedProfileId);
             return;
         }
         if (normalizedProfileId === 12) {
             await startMechaAutomation();
+            await associateQueuedActionWithCurrentRun(normalizedProfileId);
             return;
         }
         if (normalizedProfileId === 13) {
             await startAttackAutomation();
+            await associateQueuedActionWithCurrentRun(normalizedProfileId);
             return;
         }
         if (normalizedProfileId === 15) {
             await startSwitchFdvAutomation();
+            await associateQueuedActionWithCurrentRun(normalizedProfileId);
             return;
         }
 
-        await startAutomation(normalizedProfileId, config.links);
+        await startAutomation(normalizedProfileId, config.links, {
+            actionSequence: Boolean(options.actionSequence),
+        });
+        await associateQueuedActionWithCurrentRun(normalizedProfileId);
+    }
+
+    async function startActionSequence(profileIds) {
+        const ui = await ensureUi();
+        if (!Array.isArray(profileIds) || profileIds.length === 0) {
+            ui.showError('Sélectionnez au moins une action avant de cliquer sur Exécuter.');
+            return false;
+        }
+        if (getRunState().status === 'running' || GM_getValue(ACTION_SEQUENCE_KEY, null)) {
+            ui.showError('Une action ou une séquence est déjà en cours. Attendez sa fin ou arrêtez-la avant d’en lancer une autre.');
+            return false;
+        }
+
+        for (const profileId of profileIds) {
+            const configError = getActionSequenceConfigurationError(profileId);
+            if (configError) {
+                ui.open(profileId);
+                ui.showError(configError);
+                ui.refresh();
+                return false;
+            }
+        }
+
+        const sequence = {
+            sequenceId: createRunId(),
+            actions: profileIds.slice(),
+            index: 0,
+            status: 'running',
+            activeRunId: '',
+            startedAt: Date.now(),
+        };
+        GM_setValue(ACTION_SEQUENCE_KEY, sequence);
+        await startNextQueuedAction(sequence.sequenceId);
+        return true;
+    }
+
+    function getActionSequenceConfigurationError(profileId) {
+        const config = getStoredConfig(profileId);
+        if (profileId === 7) {
+            if (!config.constructionLoadingUrl || config.namedLinks.length === 0) {
+                return 'Configurez la Page de chargement et au moins une destination dans Constructions.';
+            }
+            return '';
+        }
+        if (profileId === 12) {
+            return config.links.length === 13 && config.mechaLinks2.length === 13
+                ? ''
+                : 'Configurez exactement 13 liens dans chacune des deux listes de Bâtiments Mecha.';
+        }
+        if (profileId === 13) {
+            return config.startUrl && config.links.length > 0
+                ? ''
+                : 'Configurez la Page de départ fixe et au moins une URL cible dans Attaques.';
+        }
+        if (profileId === 15) {
+            return config.links.length === 13
+                ? ''
+                : 'Configurez exactement 13 liens dans Switch FDV.';
+        }
+        if (profileId === 9) {
+            return config.links.length === 1 ? '' : 'Configurez l’URL unique d’Expédition V2.';
+        }
+        if (config.links.length === 0) {
+            return `Configurez au moins un lien pour ${getProfileLabel(profileId)}.`;
+        }
+        return '';
+    }
+
+    async function startNextQueuedAction(sequenceId) {
+        const sequence = GM_getValue(ACTION_SEQUENCE_KEY, null);
+        if (!sequence || sequence.sequenceId !== sequenceId || sequence.status !== 'running') return;
+        if (sequence.index >= sequence.actions.length) return;
+
+        const profileId = sequence.actions[sequence.index];
+        GM_setValue(ACTION_SEQUENCE_KEY, {
+            ...sequence,
+            currentProfileId: profileId,
+            activeRunId: '',
+        });
+        const ui = await ensureUi();
+        ui.refresh();
+        await startFromStoredConfiguration(profileId, { actionSequence: true });
+        await associateQueuedActionWithCurrentRun(profileId);
+    }
+
+    async function associateQueuedActionWithCurrentRun(profileId, explicitRunId = '') {
+        const sequence = GM_getValue(ACTION_SEQUENCE_KEY, null);
+        const run = getRunState();
+        const runId = explicitRunId || run.runId;
+        if (
+            !sequence || sequence.status !== 'running' ||
+            sequence.actions[sequence.index] !== profileId ||
+            !runId || run.runId !== runId || run.profileId !== profileId || run.status !== 'running'
+        ) return;
+        GM_setValue(ACTION_SEQUENCE_KEY, { ...sequence, activeRunId: runId });
+    }
+
+    async function completeQueuedAction(runId) {
+        const sequence = GM_getValue(ACTION_SEQUENCE_KEY, null);
+        const run = getRunState();
+        if (
+            !sequence || sequence.status !== 'running' ||
+            run.runId !== runId || run.status !== 'completed' ||
+            sequence.actions[sequence.index] !== run.profileId ||
+            (sequence.activeRunId && sequence.activeRunId !== runId)
+        ) return;
+
+        const nextIndex = sequence.index + 1;
+        if (nextIndex >= sequence.actions.length) {
+            GM_deleteValue(ACTION_SEQUENCE_KEY);
+            GM_setValue(RUN_KEY, {
+                ...run,
+                message: `Séquence terminée : ${sequence.actions.map(getProfileLabel).join(' → ')}.`,
+                updatedAt: Date.now(),
+            });
+            refreshUi();
+            return;
+        }
+
+        GM_setValue(ACTION_SEQUENCE_KEY, {
+            ...sequence,
+            index: nextIndex,
+            activeRunId: '',
+        });
+        await startNextQueuedAction(sequence.sequenceId);
+    }
+
+    async function resumeQueuedActionSequence() {
+        const sequence = GM_getValue(ACTION_SEQUENCE_KEY, null);
+        if (!sequence || sequence.status !== 'running') return;
+        const run = getRunState();
+        if (run.status === 'running') return;
+        if (
+            sequence.activeRunId && run.runId === sequence.activeRunId &&
+            run.status === 'completed' && sequence.actions[sequence.index] === run.profileId
+        ) {
+            await completeQueuedAction(run.runId);
+            return;
+        }
+        if (!sequence.activeRunId && sequence.currentProfileId === sequence.actions[sequence.index]) {
+            await startNextQueuedAction(sequence.sequenceId);
+        }
+    }
+
+    function cancelPendingActionSequence(profileId) {
+        const sequence = GM_getValue(ACTION_SEQUENCE_KEY, null);
+        const run = getRunState();
+        if (
+            !sequence || sequence.currentProfileId !== profileId ||
+            (run.status === 'running' && run.profileId === profileId)
+        ) return;
+        GM_deleteValue(ACTION_SEQUENCE_KEY);
+        refreshUi();
     }
 
     async function startExpeditionV2ResourcesAutomation() {
@@ -2982,6 +3043,7 @@
             runId,
             profileId: normalizedProfileId,
             status: 'running',
+            actionSequence: Boolean(options.actionSequence),
             combinedMode: Boolean(options.combinedMode),
             combinedKind: typeof options.combinedKind === 'string' ? options.combinedKind : '',
             nextProfileId:
@@ -3182,6 +3244,7 @@
                         });
                         await clearThisTabRunId(runId);
                         refreshUi();
+                        await completeQueuedAction(runId);
                         return;
                     }
 
@@ -3385,6 +3448,7 @@
                     void clearThisTabRunId(runId);
                     refreshUi();
                     takeButton.click();
+                    await completeQueuedAction(runId);
                     return;
                 }
 
@@ -3770,6 +3834,7 @@
                     });
                     void clearThisTabRunId(runId);
                     refreshUi();
+                    await completeQueuedAction(runId);
                     return;
                 }
 
@@ -3952,6 +4017,7 @@
                         });
                         await clearThisTabRunId(runId);
                         refreshUi();
+                        await completeQueuedAction(runId);
                         return;
                     }
                     updateRun(runId, {
@@ -4108,6 +4174,7 @@
                         });
                         await clearThisTabRunId(runId);
                         refreshUi();
+                        await completeQueuedAction(runId);
                         return;
                     }
                     updateRun(runId, {
@@ -4568,6 +4635,7 @@
         });
         await clearThisTabRunId(runId);
         refreshUi();
+        await completeQueuedAction(runId);
     }
 
     async function startGhostAutomation(selectedDateTime = '', suggestedCoordinate = null) {
@@ -5174,6 +5242,7 @@
                     });
                     void clearThisTabRunId(runId);
                     refreshUi();
+                    await completeQueuedAction(runId);
                     return;
                 }
 
@@ -6268,6 +6337,7 @@
         });
         await clearThisTabRunId(runId);
         refreshUi();
+        await completeQueuedAction(runId);
     }
 
     async function startConstructionAutomation(parameters) {
@@ -6710,6 +6780,7 @@
                     void clearThisTabRunId(runId);
                     refreshUi();
                     sendButton.click();
+                    await completeQueuedAction(runId);
                     return;
                 }
 
@@ -6730,6 +6801,7 @@
             message,
         });
         await clearThisTabRunId(runId);
+        GM_deleteValue(ACTION_SEQUENCE_KEY);
         refreshUi();
     }
 
@@ -6865,6 +6937,7 @@
                 });
                 await clearThisTabRunId(run.runId);
                 refreshUi();
+                await completeQueuedAction(run.runId);
                 return;
             }
 
@@ -7306,7 +7379,7 @@
             return;
         }
 
-        if (config.repeat && !run.combinedMode) {
+        if (config.repeat && !run.combinedMode && !run.actionSequence) {
             updateRun(runId, {
                 phase: 'open-link',
                 currentLinkIndex: 0,
@@ -7333,6 +7406,7 @@
         });
         await clearThisTabRunId(runId);
         refreshUi();
+        await completeQueuedAction(runId);
     }
 
     function advanceStep(runId, completedStepIndex) {
@@ -7355,6 +7429,7 @@
 
     async function stopAutomation(message) {
         const run = getRunState();
+        GM_deleteValue(ACTION_SEQUENCE_KEY);
         if (run.runId) {
             GM_setValue(RUN_KEY, {
                 ...run,
@@ -7371,6 +7446,7 @@
         const run = getRunState();
         if (run.runId !== runId) return;
 
+        GM_deleteValue(ACTION_SEQUENCE_KEY);
         GM_setValue(RUN_KEY, {
             ...run,
             status: 'error',
