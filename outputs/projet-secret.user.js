@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Projet secret — boucle multi-liens
 // @namespace    local.projet-secret
-// @version      6.23.1
+// @version      6.23.2
 // @updateURL    https://raw.githubusercontent.com/raphaelrobert1104-sys/mysecretproject/main/outputs/projet-secret.user.js
 // @downloadURL  https://raw.githubusercontent.com/raphaelrobert1104-sys/mysecretproject/main/outputs/projet-secret.user.js
 // @description  Automatise Ressources, Expédition V2, Attaques, Forme de vie, Import, Constructions, Ghost, Rappatriement, Bâtiments Mecha et Switch FDV avec configurations privées.
@@ -22,7 +22,7 @@
 (function () {
     'use strict';
 
-    const SCRIPT_VERSION = '6.23.1';
+    const SCRIPT_VERSION = '6.23.2';
     const CONFIG_KEYS = {
         1: 'secretMultiLinkConfig',
         2: 'secretMultiLinkConfig2',
@@ -1017,6 +1017,31 @@
                     border-color: #60a5fa;
                     box-shadow: 0 0 0 2px rgba(96, 165, 250, .25);
                 }
+                .construction-capacities {
+                    display: grid;
+                    grid-template-columns: repeat(2, minmax(0, 1fr));
+                    gap: 10px;
+                    margin: 0 0 12px;
+                    padding: 10px;
+                    border: 1px solid rgba(148, 163, 184, .2);
+                    border-radius: 10px;
+                    background: rgba(15, 23, 42, .42);
+                }
+                .construction-capacities label { font-size: 12px; }
+                .construction-capacity-input {
+                    width: 100%;
+                    padding: 9px 10px;
+                    border: 1px solid #64748b;
+                    border-radius: 7px;
+                    background: #fff;
+                    color: #111827;
+                    font: 13px/1.4 ui-monospace, SFMono-Regular, Consolas, monospace;
+                    outline: none;
+                }
+                .construction-capacity-input:focus {
+                    border-color: #60a5fa;
+                    box-shadow: 0 0 0 2px rgba(96, 165, 250, .25);
+                }
                 .named-links-grid {
                     display: grid;
                     gap: 7px;
@@ -1511,7 +1536,7 @@
                     textarea { min-height: 165px; }
                     .actions button { min-height: 44px; }
                     .named-link-row { grid-template-columns: 22px minmax(82px, .7fr) minmax(145px, 1.3fr); }
-                    .named-link-row input, .construction-loading-url,
+                    .named-link-row input, .construction-loading-url, .construction-capacity-input,
                     .construction-runner input, .construction-runner select { font-size: 16px; }
                     .construction-runner, .ghost-runner, .switch-fdv-runner { padding: 14px; }
                     .construction-resource-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
@@ -1622,6 +1647,17 @@
                             <input id="construction-loading-url" class="construction-loading-url" type="url" spellcheck="false" autocomplete="off" placeholder="URL chargée avant chaque destination">
                             <p class="field-help">Cette page est chargée et attendue avant l’ouverture de chaque destination.</p>
                         </div>
+                        <div class="construction-capacities">
+                            <div>
+                                <label for="construction-small-capacity">Capacité petite voiture</label>
+                                <input id="construction-small-capacity" class="construction-capacity-input construction-small-capacity" type="number" min="1" step="1" inputmode="numeric" value="9000">
+                            </div>
+                            <div>
+                                <label for="construction-large-capacity">Capacité grande voiture</label>
+                                <input id="construction-large-capacity" class="construction-capacity-input construction-large-capacity" type="number" min="1" step="1" inputmode="numeric" value="52371">
+                            </div>
+                            <p class="field-help" style="grid-column: 1 / -1; margin-top:0">Ressources transportées par un vaisseau. Valeurs enregistrées dans Tampermonkey.</p>
+                        </div>
                         <label>Destinations de Constructions</label>
                         <p class="field-help">Renseignez un nom d’affichage et son URL. Les lignes entièrement vides sont ignorées.</p>
                         <div class="named-links-grid">${constructionLinkRows}</div>
@@ -1693,7 +1729,7 @@
                         <button type="button" class="construction-add-order">＋ Ajouter une ligne</button>
                     </div>
                     <div class="construction-calculation">1 exécution · Total réel : 0 · Petites : 0 · Grandes : 0</div>
-                    <p class="field-help">Exemple : 3.3 M devient 3 300 000. Calculs arrondis au supérieur : petites ÷ 9000, grandes ÷ 52371.</p>
+                    <p class="field-help construction-capacity-help">Exemple : 3.3 M devient 3 300 000. Les capacités des vaisseaux se règlent dans les paramètres de Constructions.</p>
                     <div class="construction-runner-error" role="alert"></div>
                     <div class="actions">
                         <button type="button" class="save construction-runner-cancel">Annuler</button>
@@ -1795,6 +1831,9 @@
             mechaLinks2Counter: shadow.querySelector('.mecha-links-2-counter'),
             namedLinksFieldGroup: shadow.querySelector('.named-links-field-group'),
             constructionLoadingUrl: shadow.querySelector('.construction-loading-url'),
+            constructionSmallCapacity: shadow.querySelector('.construction-small-capacity'),
+            constructionLargeCapacity: shadow.querySelector('.construction-large-capacity'),
+            constructionCapacityHelp: shadow.querySelector('.construction-capacity-help'),
             namedLinkNames: [...shadow.querySelectorAll('.named-link-name')],
             namedLinkUrls: [...shadow.querySelectorAll('.named-link-url')],
             namedLinksCounter: shadow.querySelector('.named-links-counter'),
@@ -2132,6 +2171,10 @@
             closeDropdowns();
             closePanel();
             closeGhostRunner();
+            refs.constructionCapacityHelp.textContent =
+                `Exemple : 3.3 M devient 3 300 000. Arrondi au supérieur : petites ÷ ` +
+                `${formatInteger(config.smallTransporterCapacity)}, grandes ÷ ` +
+                `${formatInteger(config.largeTransporterCapacity)}.`;
             refs.constructionOrdersList.replaceChildren();
             constructionCommonAmountInputs.forEach((input) => { input.value = '0'; });
             addConstructionOrderRow();
@@ -2212,6 +2255,7 @@
 
         function updateConstructionCalculation() {
             const rows = getConstructionOrderRows();
+            const constructionConfig = getStoredConfig(7);
             const commonAmounts = constructionCommonAmountInputs
                 .map((input) => parseConstructionMillions(input.value));
             const commonAmountsAreValid = commonAmounts.every((value) => value !== null);
@@ -2234,10 +2278,10 @@
                 } else {
                     const total = values.reduce((sum, value) => sum + value, 0);
                     const smallTransporterCount = Math.ceil(
-                        total / CONSTRUCTION_SMALL_TRANSPORTER_CAPACITY
+                        total / constructionConfig.smallTransporterCapacity
                     );
                     const largeTransporterCount = Math.ceil(
-                        total / CONSTRUCTION_LARGE_TRANSPORTER_CAPACITY
+                        total / constructionConfig.largeTransporterCapacity
                     );
                     if (!Number.isSafeInteger(total)) {
                         allRowsAreValid = false;
@@ -2422,6 +2466,12 @@
             refs.namedLinksFieldGroup.style.display = editingProfileId === 7 ? 'block' : 'none';
             refs.constructionLoadingUrl.value =
                 editingProfileId === 7 ? config.constructionLoadingUrl : '';
+            refs.constructionSmallCapacity.value = String(
+                editingProfileId === 7 ? config.smallTransporterCapacity : CONSTRUCTION_SMALL_TRANSPORTER_CAPACITY
+            );
+            refs.constructionLargeCapacity.value = String(
+                editingProfileId === 7 ? config.largeTransporterCapacity : CONSTRUCTION_LARGE_TRANSPORTER_CAPACITY
+            );
             refs.combinedConfig.style.display = 'none';
             const usesSingleUrl = [6, 8, 9, 11].includes(editingProfileId);
             refs.linksLabel.textContent = usesSingleUrl ? 'URL à ouvrir' : 'Liens à traiter';
@@ -2492,6 +2542,22 @@
                     refs.constructionLoadingUrl.focus();
                     return;
                 }
+                const smallTransporterCapacity = parseConstructionTransporterCapacity(
+                    refs.constructionSmallCapacity.value
+                );
+                if (smallTransporterCapacity === null) {
+                    showError('La capacité de la petite voiture doit être un entier positif.');
+                    refs.constructionSmallCapacity.focus();
+                    return;
+                }
+                const largeTransporterCapacity = parseConstructionTransporterCapacity(
+                    refs.constructionLargeCapacity.value
+                );
+                if (largeTransporterCapacity === null) {
+                    showError('La capacité de la grande voiture doit être un entier positif.');
+                    refs.constructionLargeCapacity.focus();
+                    return;
+                }
                 const parsedNamedLinks = parseNamedLinks(
                     refs.namedLinkNames.map((input, index) => ({
                         name: input.value,
@@ -2507,6 +2573,8 @@
                 saveConfig(7, {
                     namedLinks: parsedNamedLinks.namedLinks,
                     constructionLoadingUrl,
+                    smallTransporterCapacity,
+                    largeTransporterCapacity,
                 });
                 refs.status.textContent =
                     'Constructions : Page de chargement et ' +
@@ -6417,10 +6485,10 @@
                 sourceOrder?.transporterType
             );
             const smallTransporterCount = Math.ceil(
-                total / CONSTRUCTION_SMALL_TRANSPORTER_CAPACITY
+                total / config.smallTransporterCapacity
             );
             const largeTransporterCount = Math.ceil(
-                total / CONSTRUCTION_LARGE_TRANSPORTER_CAPACITY
+                total / config.largeTransporterCapacity
             );
             orders.push({
                 selectedLinkIndex,
@@ -7963,6 +8031,8 @@
                 startUrl: '',
                 smallVehicleCount: 6400,
                 constructionLoadingUrl: '',
+                smallTransporterCapacity: CONSTRUCTION_SMALL_TRANSPORTER_CAPACITY,
+                largeTransporterCapacity: CONSTRUCTION_LARGE_TRANSPORTER_CAPACITY,
                 attackCounters: {},
             };
         }
@@ -7990,6 +8060,14 @@
         const constructionLoadingUrl = normalizedProfileId === 7
             ? validateHttpUrl(stored.constructionLoadingUrl) || ''
             : '';
+        const smallTransporterCapacity = normalizedProfileId === 7
+            ? parseConstructionTransporterCapacity(stored.smallTransporterCapacity) ??
+                CONSTRUCTION_SMALL_TRANSPORTER_CAPACITY
+            : CONSTRUCTION_SMALL_TRANSPORTER_CAPACITY;
+        const largeTransporterCapacity = normalizedProfileId === 7
+            ? parseConstructionTransporterCapacity(stored.largeTransporterCapacity) ??
+                CONSTRUCTION_LARGE_TRANSPORTER_CAPACITY
+            : CONSTRUCTION_LARGE_TRANSPORTER_CAPACITY;
         const attackCounters = normalizedProfileId === 13
             ? normalizeAttackCounters(links, stored.attackCounters)
             : {};
@@ -8001,6 +8079,8 @@
             startUrl,
             smallVehicleCount,
             constructionLoadingUrl,
+            smallTransporterCapacity,
+            largeTransporterCapacity,
             attackCounters,
         };
     }
@@ -8026,6 +8106,12 @@
                 startUrl: '',
                 smallVehicleCount: 6400,
                 constructionLoadingUrl,
+                smallTransporterCapacity:
+                    parseConstructionTransporterCapacity(config.smallTransporterCapacity) ??
+                    CONSTRUCTION_SMALL_TRANSPORTER_CAPACITY,
+                largeTransporterCapacity:
+                    parseConstructionTransporterCapacity(config.largeTransporterCapacity) ??
+                    CONSTRUCTION_LARGE_TRANSPORTER_CAPACITY,
             });
             return;
         }
@@ -8218,6 +8304,13 @@
         if (value === '' || value === null || value === undefined) return null;
         const parsed = Number(value);
         if (!Number.isSafeInteger(parsed) || parsed < 0) return null;
+        return parsed;
+    }
+
+    function parseConstructionTransporterCapacity(value) {
+        if (value === '' || value === null || value === undefined) return null;
+        const parsed = Number(value);
+        if (!Number.isSafeInteger(parsed) || parsed <= 0) return null;
         return parsed;
     }
 
