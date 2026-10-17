@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Projet secret — boucle multi-liens
 // @namespace    local.projet-secret
-// @version      6.23.2
+// @version      6.23.3
 // @updateURL    https://raw.githubusercontent.com/raphaelrobert1104-sys/mysecretproject/main/outputs/projet-secret.user.js
 // @downloadURL  https://raw.githubusercontent.com/raphaelrobert1104-sys/mysecretproject/main/outputs/projet-secret.user.js
 // @description  Automatise Ressources, Expédition V2, Attaques, Forme de vie, Import, Constructions, Ghost, Rappatriement, Bâtiments Mecha et Switch FDV avec configurations privées.
@@ -22,7 +22,7 @@
 (function () {
     'use strict';
 
-    const SCRIPT_VERSION = '6.23.2';
+    const SCRIPT_VERSION = '6.23.3';
     const CONFIG_KEYS = {
         1: 'secretMultiLinkConfig',
         2: 'secretMultiLinkConfig2',
@@ -86,6 +86,7 @@
     const EXPEDITION_V2_DELAY_MAX_MS = POST_ACTION_DELAY_MAX_MS;
     const REPATRIATION_DELAY_MIN_MS = POST_ACTION_DELAY_MIN_MS;
     const REPATRIATION_DELAY_MAX_MS = POST_ACTION_DELAY_MAX_MS;
+    const MAX_REPATRIATION_COMPLETION_DELAY_SECONDS = 86400;
     // Allongement propre à Mecha, en conservant le facteur global des actions.
     const MECHA_DELAY_MIN_MS = POST_ACTION_DELAY_MIN_MS * 1.3;
     const MECHA_DELAY_MAX_MS = POST_ACTION_DELAY_MAX_MS * 1.3;
@@ -948,8 +949,8 @@
                 }
                 .help { margin: 0 0 13px; color: #cbd5e1; font-size: 12px; line-height: 1.45; }
                 label { display: block; margin-bottom: 6px; font-size: 13px; font-weight: 700; }
-                .start-url-group, .small-vehicle-group { display: none; margin-bottom: 13px; }
-                .start-url, .small-vehicle-count {
+                .start-url-group, .small-vehicle-group, .repatriation-delay-group { display: none; margin-bottom: 13px; }
+                .start-url, .small-vehicle-count, .repatriation-completion-delay {
                     display: block;
                     width: 100%;
                     padding: 9px 10px;
@@ -960,7 +961,7 @@
                     font: 12px/1.4 ui-monospace, SFMono-Regular, Consolas, monospace;
                     outline: none;
                 }
-                .start-url:focus, .small-vehicle-count:focus { border-color: #60a5fa; box-shadow: 0 0 0 2px rgba(96, 165, 250, .25); }
+                .start-url:focus, .small-vehicle-count:focus, .repatriation-completion-delay:focus { border-color: #60a5fa; box-shadow: 0 0 0 2px rgba(96, 165, 250, .25); }
                 .field-help { margin: 5px 0 0; color: #94a3b8; font-size: 11px; line-height: 1.4; }
                 .combined-config {
                     display: none;
@@ -1532,7 +1533,7 @@
                         max-height: calc(100vh - 88px - env(safe-area-inset-top));
                         padding: 14px;
                     }
-                    .start-url, .small-vehicle-count, textarea { font-size: 16px; }
+                    .start-url, .small-vehicle-count, .repatriation-completion-delay, textarea { font-size: 16px; }
                     textarea { min-height: 165px; }
                     .actions button { min-height: 44px; }
                     .named-link-row { grid-template-columns: 22px minmax(82px, .7fr) minmax(145px, 1.3fr); }
@@ -1623,6 +1624,11 @@
                         <label for="secret-small-vehicle-count">Nombre de petites voitures</label>
                         <input id="secret-small-vehicle-count" class="small-vehicle-count" type="number" min="0" step="1" inputmode="numeric" value="6400">
                         <p class="field-help">Cette valeur remplace automatiquement 6400 dans l’action correspondante.</p>
+                    </div>
+                    <div class="repatriation-delay-group">
+                        <label for="repatriation-completion-delay">Attente après Rappatriement (secondes)</label>
+                        <input id="repatriation-completion-delay" class="repatriation-completion-delay" type="number" min="0" max="86400" step="1" inputmode="numeric" value="0">
+                        <p class="field-help">Délai fixe appliqué après l’envoi de la flotte et avant l’action suivante. 0 = aucun délai. Enregistré dans Tampermonkey.</p>
                     </div>
                     <div class="links-field-group">
                         <label for="secret-links" class="links-label">Liens à traiter</label>
@@ -1824,6 +1830,8 @@
             startUrlHelp: shadow.querySelector('.start-url-help'),
             smallVehicleGroup: shadow.querySelector('.small-vehicle-group'),
             smallVehicleCount: shadow.querySelector('.small-vehicle-count'),
+            repatriationDelayGroup: shadow.querySelector('.repatriation-delay-group'),
+            repatriationCompletionDelay: shadow.querySelector('.repatriation-completion-delay'),
             linksFieldGroup: shadow.querySelector('.links-field-group'),
             linksLabel: shadow.querySelector('.links-label'),
             mechaLinks2Group: shadow.querySelector('.mecha-links-2-group'),
@@ -2462,6 +2470,10 @@
             refs.smallVehicleGroup.style.display = editingProfileId === 2 ? 'block' : 'none';
             refs.smallVehicleCount.value =
                 editingProfileId === 2 ? String(config.smallVehicleCount) : '6400';
+            refs.repatriationDelayGroup.style.display = editingProfileId === 11 ? 'block' : 'none';
+            refs.repatriationCompletionDelay.value = String(
+                editingProfileId === 11 ? config.repatriationCompletionDelaySeconds : 0
+            );
             refs.linksFieldGroup.style.display = editingProfileId === 7 ? 'none' : 'block';
             refs.namedLinksFieldGroup.style.display = editingProfileId === 7 ? 'block' : 'none';
             refs.constructionLoadingUrl.value =
@@ -2632,6 +2644,14 @@
                 refs.smallVehicleCount.focus();
                 return;
             }
+            const repatriationCompletionDelaySeconds = editingProfileId === 11
+                ? parseRepatriationCompletionDelay(refs.repatriationCompletionDelay.value)
+                : 0;
+            if (editingProfileId === 11 && repatriationCompletionDelaySeconds === null) {
+                showError('Le délai de Rappatriement doit être un nombre entier entre 0 et 86 400 secondes.');
+                refs.repatriationCompletionDelay.focus();
+                return;
+            }
 
             showError('');
             saveConfig(editingProfileId, {
@@ -2640,6 +2660,7 @@
                 repeat: editingProfileId === 1 && refs.repeat.checked,
                 startUrl,
                 smallVehicleCount,
+                repatriationCompletionDelaySeconds,
             });
             refs.status.textContent = editingProfileId === 12
                 ? 'Bâtiments Mecha : 13 + 13 liens enregistrés dans Tampermonkey.'
@@ -3601,6 +3622,7 @@
             repatriationFleetFieldIndex: 0,
             repatriationPendingDelayMs: 0,
             repatriationPendingDelayLabel: '',
+            repatriationCompletionDelayMs: config.repatriationCompletionDelaySeconds * 1000,
             startedAt: now,
             updatedAt: now,
             message: 'Rappatriement — action 1/3 : ouverture de l’URL configurée…',
@@ -3631,6 +3653,23 @@
                     const canContinue = await consumeRepatriationDelay(runId);
                     if (!canContinue) return;
                     continue;
+                }
+
+                if (run.phase === 'repatriation-completion-delay') {
+                    const activeRun = getActiveRun(runId);
+                    if (!activeRun) return;
+                    GM_setValue(RUN_KEY, {
+                        ...activeRun,
+                        status: 'completed',
+                        phase: 'repatriation-completed',
+                        updatedAt: Date.now(),
+                        message:
+                            'Rappatriement terminé : flotte stationnée sur la lune avec les ressources prévues.',
+                    });
+                    void clearThisTabRunId(runId);
+                    refreshUi();
+                    await completeQueuedAction(runId);
+                    return;
                 }
 
                 if (run.phase === 'repatriation-open-link') {
@@ -3918,18 +3957,18 @@
                     if (!activeRun) return;
 
                     sendButton.click();
-                    GM_setValue(RUN_KEY, {
-                        ...activeRun,
-                        status: 'completed',
-                        phase: 'repatriation-completed',
+                    updateRun(runId, {
+                        phase: 'repatriation-completion-delay',
+                        repatriationPendingDelayMs: Math.max(
+                            0,
+                            Math.floor(Number(activeRun.repatriationCompletionDelayMs) || 0)
+                        ),
+                        repatriationPendingDelayLabel: 'la fin de toutes les actions',
                         updatedAt: Date.now(),
-                        message:
-                            'Rappatriement terminé : flotte stationnée sur la lune avec les ressources prévues.',
+                        message: 'Rappatriement — envoi terminé, attente configurée avant la suite…',
                     });
-                    void clearThisTabRunId(runId);
                     refreshUi();
-                    await completeQueuedAction(runId);
-                    return;
+                    continue;
                 }
 
                 throw new Error(`Phase Rappatriement inconnue : ${run.phase}`);
@@ -3950,9 +3989,9 @@
 
         const label = run.repatriationPendingDelayLabel || 'l’action précédente';
         updateRun(runId, {
-            message:
-                `Rappatriement — attente aléatoire ${(delayMs / 1000).toFixed(2)} s ` +
-                `après ${label}…`,
+            message: label === 'la fin de toutes les actions'
+                ? `Rappatriement — attente configurée ${(delayMs / 1000).toFixed(0)} s après la fin des actions…`
+                : `Rappatriement — attente aléatoire ${(delayMs / 1000).toFixed(2)} s après ${label}…`,
         });
         refreshUi();
         await delay(delayMs);
@@ -8033,6 +8072,7 @@
                 constructionLoadingUrl: '',
                 smallTransporterCapacity: CONSTRUCTION_SMALL_TRANSPORTER_CAPACITY,
                 largeTransporterCapacity: CONSTRUCTION_LARGE_TRANSPORTER_CAPACITY,
+                repatriationCompletionDelaySeconds: 0,
                 attackCounters: {},
             };
         }
@@ -8057,6 +8097,9 @@
             normalizedProfileId === 2 && parsedSmallVehicleCount !== null
                 ? parsedSmallVehicleCount
                 : 6400;
+        const repatriationCompletionDelaySeconds = normalizedProfileId === 11
+            ? parseRepatriationCompletionDelay(stored.repatriationCompletionDelaySeconds) ?? 0
+            : 0;
         const constructionLoadingUrl = normalizedProfileId === 7
             ? validateHttpUrl(stored.constructionLoadingUrl) || ''
             : '';
@@ -8078,6 +8121,7 @@
             repeat: Boolean(stored.repeat),
             startUrl,
             smallVehicleCount,
+            repatriationCompletionDelaySeconds,
             constructionLoadingUrl,
             smallTransporterCapacity,
             largeTransporterCapacity,
@@ -8142,6 +8186,10 @@
                 normalizedProfileId === 2
                     ? parseSmallVehicleCount(config.smallVehicleCount) ?? 6400
                     : 6400,
+            repatriationCompletionDelaySeconds:
+                normalizedProfileId === 11
+                    ? parseRepatriationCompletionDelay(config.repatriationCompletionDelaySeconds) ?? 0
+                    : 0,
         });
 
         if (normalizedProfileId === 1) {
@@ -8396,6 +8444,14 @@
         if (value === '' || value === null || value === undefined) return null;
         const parsed = Number(value);
         if (!Number.isSafeInteger(parsed) || parsed < 0) return null;
+        return parsed;
+    }
+
+    function parseRepatriationCompletionDelay(value) {
+        if (value === '' || value === null || value === undefined) return null;
+        const parsed = Number(value);
+        if (!Number.isSafeInteger(parsed) || parsed < 0 ||
+            parsed > MAX_REPATRIATION_COMPLETION_DELAY_SECONDS) return null;
         return parsed;
     }
 
