@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Projet secret — boucle multi-liens
 // @namespace    local.projet-secret
-// @version      6.23.3
+// @version      6.23.4
 // @updateURL    https://raw.githubusercontent.com/raphaelrobert1104-sys/mysecretproject/main/outputs/projet-secret.user.js
 // @downloadURL  https://raw.githubusercontent.com/raphaelrobert1104-sys/mysecretproject/main/outputs/projet-secret.user.js
 // @description  Automatise Ressources, Expédition V2, Attaques, Forme de vie, Import, Constructions, Ghost, Rappatriement, Bâtiments Mecha et Switch FDV avec configurations privées.
@@ -22,7 +22,7 @@
 (function () {
     'use strict';
 
-    const SCRIPT_VERSION = '6.23.3';
+    const SCRIPT_VERSION = '6.23.4';
     const CONFIG_KEYS = {
         1: 'secretMultiLinkConfig',
         2: 'secretMultiLinkConfig2',
@@ -5700,10 +5700,7 @@
     function parseGhostTargetDateTimeMs(value) {
         const normalized = normalizeGhostDateTime(value);
         if (!normalized) return Number.NaN;
-        const [datePart, timePart] = normalized.split('T');
-        const [year, month, day] = datePart.split('-').map(Number);
-        const [hour, minute] = timePart.split(':').map(Number);
-        return new Date(year, month - 1, day, hour, minute, 0, 0).getTime();
+        return ghostWallDateTimeToTimestamp(normalized, GHOST_FRANCE_TIME_ZONE);
     }
 
     function parseGhostReturnTimeMs(value) {
@@ -5719,18 +5716,19 @@
         const hour = Number(match[4]);
         const minute = Number(match[5]);
         const second = Number(match[6] || 0);
-        const parsed = new Date(year, month - 1, day, hour, minute, second, 0);
-        if (
-            parsed.getFullYear() !== year ||
-            parsed.getMonth() !== month - 1 ||
-            parsed.getDate() !== day ||
-            parsed.getHours() !== hour ||
-            parsed.getMinutes() !== minute ||
-            parsed.getSeconds() !== second
-        ) {
-            return Number.NaN;
-        }
-        return parsed.getTime();
+        const franceWallTime = normalizeGhostDateTime(
+            `${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}-` +
+            `${String(day).padStart(2, '0')}T${String(hour).padStart(2, '0')}:` +
+            String(minute).padStart(2, '0')
+        );
+        if (!franceWallTime || second > 59) return Number.NaN;
+        const franceTimestamp = ghostWallDateTimeToTimestamp(
+            franceWallTime,
+            GHOST_FRANCE_TIME_ZONE
+        );
+        return Number.isFinite(franceTimestamp)
+            ? franceTimestamp + second * 1000
+            : Number.NaN;
     }
 
     function isGhostReturnWithinTolerance(returnMs, targetMs) {
