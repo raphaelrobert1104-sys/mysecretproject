@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Projet secret — boucle multi-liens
 // @namespace    local.projet-secret
-// @version      6.23.0
+// @version      6.23.1
 // @updateURL    https://raw.githubusercontent.com/raphaelrobert1104-sys/mysecretproject/main/outputs/projet-secret.user.js
 // @downloadURL  https://raw.githubusercontent.com/raphaelrobert1104-sys/mysecretproject/main/outputs/projet-secret.user.js
 // @description  Automatise Ressources, Expédition V2, Attaques, Forme de vie, Import, Constructions, Ghost, Rappatriement, Bâtiments Mecha et Switch FDV avec configurations privées.
@@ -22,7 +22,7 @@
 (function () {
     'use strict';
 
-    const SCRIPT_VERSION = '6.23.0';
+    const SCRIPT_VERSION = '6.23.1';
     const CONFIG_KEYS = {
         1: 'secretMultiLinkConfig',
         2: 'secretMultiLinkConfig2',
@@ -734,6 +734,21 @@
                     font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
                 }
                 .menu-group { position: relative; flex: 0 0 auto; }
+                .cancel-actions-toolbar {
+                    min-height: 42px;
+                    padding: 9px 13px;
+                    border: 1px solid rgba(251, 113, 133, .55);
+                    border-radius: 11px;
+                    background: linear-gradient(135deg, rgba(190, 24, 93, .96), rgba(220, 38, 38, .94));
+                    color: #fff;
+                    font-size: 12px;
+                    font-weight: 820;
+                    white-space: nowrap;
+                    box-shadow: inset 0 1px 0 rgba(255,255,255,.16), 0 7px 18px rgba(190, 24, 93, .22);
+                }
+                .cancel-actions-toolbar:hover { filter: brightness(1.12); }
+                .cancel-actions-toolbar:active { transform: scale(.97); }
+                .cancel-actions-toolbar[hidden] { display: none; }
                 .menu-toggle {
                     min-height: 42px;
                     padding: 9px 15px;
@@ -1563,6 +1578,7 @@
                             <button type="button" class="execute-actions" disabled>Exécuter</button>
                         </div>
                     </div>
+                    <button type="button" class="cancel-actions-toolbar" hidden aria-label="Annuler l’action et le reste de la séquence">Annuler</button>
                 </div>
                 <section class="panel" role="dialog" aria-label="Configuration de la boucle">
                     <div class="header">
@@ -1745,6 +1761,7 @@
             simpleMenuToggle: shadow.querySelector('.simple-menu-toggle'),
             simpleMenu: shadow.querySelector('.simple-menu'),
             executeActions: shadow.querySelector('.execute-actions'),
+            cancelActions: shadow.querySelector('.cancel-actions-toolbar'),
             actionButtons: [...shadow.querySelectorAll('.simple-menu .quick')],
             debugProgress: shadow.querySelector('.debug-progress'),
             debugProgressContent: shadow.querySelector('.debug-progress-content'),
@@ -1865,6 +1882,9 @@
                 updateActionSelectionUi();
                 closeDropdowns();
             });
+        });
+        refs.cancelActions.addEventListener('click', () => {
+            void cancelCurrentActionSequence();
         });
         refs.constructionRunnerClose.addEventListener('click', () => {
             cancelPendingActionSequence(7);
@@ -2612,6 +2632,7 @@
                 button.disabled = run.status === 'running' || Boolean(GM_getValue(ACTION_SEQUENCE_KEY, null));
             });
             const queuedSequence = GM_getValue(ACTION_SEQUENCE_KEY, null);
+            refs.cancelActions.hidden = run.status !== 'running' && !queuedSequence;
             refs.executeActions.disabled = selectedActionIds.length === 0 ||
                 run.status === 'running' || Boolean(queuedSequence);
             if (queuedSequence) {
@@ -2667,6 +2688,11 @@
             openConstructionRunner,
             openGhostRunner,
             openSwitchFdvRunner,
+            closePendingRunners: () => {
+                closeConstructionRunner();
+                closeGhostRunner();
+                closeSwitchFdvRunner();
+            },
             refresh,
             showError,
             showConstructionError: showConstructionRunnerError,
@@ -7440,6 +7466,31 @@
             await clearThisTabRunId(run.runId);
         }
         refreshUi();
+    }
+
+    async function cancelCurrentActionSequence() {
+        const run = getRunState();
+        const queuedSequence = GM_getValue(ACTION_SEQUENCE_KEY, null);
+        if (run.status !== 'running' && !queuedSequence) return;
+
+        const ui = await ensureUi();
+        ui.closePendingRunners();
+        if (run.status === 'running') {
+            await stopAutomation('Action et suite de la séquence annulées depuis la barre.');
+        } else {
+            GM_deleteValue(ACTION_SEQUENCE_KEY);
+            if (run.runId) {
+                GM_setValue(RUN_KEY, {
+                    ...run,
+                    status: 'stopped',
+                    updatedAt: Date.now(),
+                    message: 'Séquence annulée avant le lancement de l’action suivante.',
+                });
+                await clearThisTabRunId(run.runId);
+            }
+            refreshUi();
+        }
+        ui.refresh();
     }
 
     async function failRun(runId, message, error) {
