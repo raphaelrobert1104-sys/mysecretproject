@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Projet secret — boucle multi-liens
 // @namespace    local.projet-secret
-// @version      6.23.4
+// @version      6.23.5
 // @updateURL    https://raw.githubusercontent.com/raphaelrobert1104-sys/mysecretproject/main/outputs/projet-secret.user.js
 // @downloadURL  https://raw.githubusercontent.com/raphaelrobert1104-sys/mysecretproject/main/outputs/projet-secret.user.js
 // @description  Automatise Ressources, Expédition V2, Attaques, Forme de vie, Import, Constructions, Ghost, Rappatriement, Bâtiments Mecha et Switch FDV avec configurations privées.
@@ -22,7 +22,7 @@
 (function () {
     'use strict';
 
-    const SCRIPT_VERSION = '6.23.4';
+    const SCRIPT_VERSION = '6.23.5';
     const CONFIG_KEYS = {
         1: 'secretMultiLinkConfig',
         2: 'secretMultiLinkConfig2',
@@ -1988,6 +1988,10 @@
         refs.ghostRunnerConfirm.addEventListener('click', confirmGhostTime);
         refs.ghostSlowestSpeed.addEventListener('input', updateGhostTimePreview);
         refs.ghostSlowestSpeed.addEventListener('change', updateGhostTimePreview);
+        refs.ghostJapanDateTime.addEventListener('focus', () => {
+            updateGhostJapanDateTimeMinimum();
+            updateGhostTimePreview();
+        });
         refs.ghostJapanDateTime.addEventListener('input', updateGhostTimePreview);
         refs.ghostJapanDateTime.addEventListener('change', updateGhostTimePreview);
         refs.debugProgressClose.addEventListener('click', () => {
@@ -2103,13 +2107,25 @@
             closePanel();
             closeConstructionRunner();
             refs.ghostSlowestSpeed.value = String(getStoredGhostSlowestSpeed());
+            updateGhostJapanDateTimeMinimum();
             refs.ghostJapanDateTime.value = getStoredGhostJapanDateTimeValue();
+            if (refs.ghostJapanDateTime.value < refs.ghostJapanDateTime.min) {
+                refs.ghostJapanDateTime.value = refs.ghostJapanDateTime.min;
+            }
             updateGhostTimePreview();
             refs.ghostRunner.classList.add('open');
         }
 
         function closeGhostRunner() {
             refs.ghostRunner.classList.remove('open');
+        }
+
+        function updateGhostJapanDateTimeMinimum() {
+            const minimum = getNextGhostJapanMinute();
+            refs.ghostJapanDateTime.min = minimum;
+            if (refs.ghostJapanDateTime.value && refs.ghostJapanDateTime.value < minimum) {
+                refs.ghostJapanDateTime.value = minimum;
+            }
         }
 
         function updateGhostTimePreview() {
@@ -2132,7 +2148,14 @@
         }
 
         function confirmGhostTime() {
+            updateGhostJapanDateTimeMinimum();
             const japanDateTime = normalizeGhostDateTime(refs.ghostJapanDateTime.value);
+            if (!japanDateTime || japanDateTime < refs.ghostJapanDateTime.min) {
+                refs.ghostTimeValue.textContent =
+                    'Choisissez une date et une heure futures (heure du Japon).';
+                refs.ghostJapanDateTime.focus();
+                return;
+            }
             const franceDateTime = convertGhostJapanToFranceDateTime(japanDateTime);
             if (!japanDateTime || !franceDateTime) {
                 refs.ghostJapanDateTime.focus();
@@ -5527,7 +5550,14 @@
         );
         if (migratedJapanDateTime) return migratedJapanDateTime;
 
-        return formatGhostTimestampInTimeZone(Date.now(), GHOST_JAPAN_TIME_ZONE);
+        return getNextGhostJapanMinute();
+    }
+
+    function getNextGhostJapanMinute() {
+        return formatGhostTimestampInTimeZone(
+            Date.now() + 60_000,
+            GHOST_JAPAN_TIME_ZONE
+        );
     }
 
     function getStoredGhostDateTimeValue() {
