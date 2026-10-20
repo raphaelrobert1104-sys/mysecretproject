@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Projet secret — boucle multi-liens
 // @namespace    local.projet-secret
-// @version      6.23.5
+// @version      6.23.6
 // @updateURL    https://raw.githubusercontent.com/raphaelrobert1104-sys/mysecretproject/main/outputs/projet-secret.user.js
 // @downloadURL  https://raw.githubusercontent.com/raphaelrobert1104-sys/mysecretproject/main/outputs/projet-secret.user.js
 // @description  Automatise Ressources, Expédition V2, Attaques, Forme de vie, Import, Constructions, Ghost, Rappatriement, Bâtiments Mecha et Switch FDV avec configurations privées.
@@ -22,7 +22,7 @@
 (function () {
     'use strict';
 
-    const SCRIPT_VERSION = '6.23.5';
+    const SCRIPT_VERSION = '6.23.6';
     const CONFIG_KEYS = {
         1: 'secretMultiLinkConfig',
         2: 'secretMultiLinkConfig2',
@@ -39,6 +39,7 @@
     const ACTION_SEQUENCE_PROFILES = [1, 9, 4, 6, 7, 8, 11, 12, 13, 15];
     const RUN_KEY = 'secretMultiLinkRun';
     const ACTION_SEQUENCE_KEY = 'secretMultiLinkActionSequence';
+    let attackReportButtonsRefresh = null;
     const TAB_RUN_ID_KEY = 'secretMultiLinkRunId';
     const DEBUG_DISMISSED_RUN_KEY = 'secretMultiLinkDebugDismissedRunId';
     const GHOST_TIME_KEY = 'secretMultiLinkGhostTime';
@@ -370,11 +371,134 @@
     async function boot() {
         await waitForDocumentReady();
         installMobileFleetSpeedSelector();
+        installAttackReportControls();
         const ui = await ensureUi();
         ui.refresh();
         startUiWatchdog();
         await resumeAutomationForThisTab();
         await resumeQueuedActionSequence();
+    }
+
+    function installAttackReportControls() {
+        if (!/\/game\/index\.php$/i.test(window.location.pathname) || !document.body ||
+            document.body.dataset.secretAttackReportObserver === 'true') return;
+        document.body.dataset.secretAttackReportObserver = 'true';
+
+        const syncReportButtons = () => {
+            for (const dialog of document.querySelectorAll('.ui-dialog')) {
+                const title = dialog.querySelector('.ui-dialog-title')?.textContent || '';
+                const reportMaterial = dialog.querySelector('.material.spy');
+                const hasSpyReportTitle = /espionnage|espionage/i.test(title);
+                if (!reportMaterial || (!hasSpyReportTitle && !dialog.querySelector('.showmessage'))) {
+                    continue;
+                }
+
+                const coordinates = getAttackCoordinatesFromReport(reportMaterial);
+                if (!coordinates) continue;
+
+                let button = dialog.querySelector('.secret-attack-report-toggle');
+                if (!button) {
+                    button = document.createElement('button');
+                    button.type = 'button';
+                    button.className = 'secret-attack-report-toggle';
+                    button.style.cssText = [
+                        'all:initial',
+                        'display:inline-flex',
+                        'align-items:center',
+                        'justify-content:center',
+                        'gap:6px',
+                        'margin:10px 0',
+                        'padding:8px 12px',
+                        'border:1px solid #64748b',
+                        'border-radius:8px',
+                        'background:#1d4ed8',
+                        'color:#fff',
+                        'font:700 12px/1.2 system-ui,sans-serif',
+                        'cursor:pointer',
+                    ].join(';');
+                    button.addEventListener('click', (event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        try {
+                            const [galaxy, system, position] = button.dataset.coordinates
+                                .split(':')
+                                .map(Number);
+                            toggleAttackReportTarget({ galaxy, system, position });
+                            syncReportButtons();
+                        } catch (error) {
+                            button.textContent = 'Erreur — réessayer';
+                            button.title = error instanceof Error ? error.message : String(error);
+                        }
+                    });
+                    const insertionPoint = reportMaterial.closest('.showmessage') || reportMaterial;
+                    insertionPoint.insertAdjacentElement('afterend', button);
+                }
+
+                const isConfigured = getStoredConfig(13).links.some((url) => {
+                    return getAttackCoordinateKey(parseAttackCoordinatesFromUrl(url)) ===
+                        getAttackCoordinateKey(coordinates);
+                });
+                button.dataset.coordinates = getAttackCoordinateKey(coordinates);
+                const buttonLabel = isConfigured ? '✓ Vu' : '＋ Ajouter aux Attaques';
+                if (button.textContent !== buttonLabel) button.textContent = buttonLabel;
+                button.title = isConfigured
+                    ? 'Cette coordonnée est dans Attaques. Cliquer pour la retirer.'
+                    : 'Ajouter cette coordonnée à la configuration Attaques.';
+                button.style.background = isConfigured ? '#15803d' : '#1d4ed8';
+                button.style.borderColor = isConfigured ? '#86efac' : '#93c5fd';
+            }
+        };
+
+        const observer = new MutationObserver(syncReportButtons);
+        attackReportButtonsRefresh = syncReportButtons;
+        observer.observe(document.body, {
+            childList: true,
+            subtree: true,
+            characterData: true,
+        });
+        syncReportButtons();
+    }
+
+    function getAttackCoordinatesFromReport(reportMaterial) {
+        const reportText = String(reportMaterial?.innerText || reportMaterial?.textContent || '');
+        const textMatch = /\[\s*(\d{1,2})\s*:\s*(\d{1,3})\s*:\s*(\d{1,2})\s*\]/.exec(reportText);
+        if (textMatch) {
+            const coordinates = {
+                galaxy: Number(textMatch[1]),
+                system: Number(textMatch[2]),
+                position: Number(textMatch[3]),
+            };
+            if (isValidAttackCoordinates(coordinates)) return coordinates;
+        }
+
+        for (const link of reportMaterial?.querySelectorAll('a[href]') || []) {
+            const coordinates = parseAttackCoordinatesFromUrl(link.href);
+            if (coordinates) return coordinates;
+        }
+        return null;
+    }
+
+    function toggleAttackReportTarget(coordinates) {
+        const config = getStoredConfig(13);
+        const targetKey = getAttackCoordinateKey(coordinates);
+        const alreadyConfigured = config.links.some((url) => {
+            return getAttackCoordinateKey(parseAttackCoordinatesFromUrl(url)) === targetKey;
+        });
+        if (!alreadyConfigured && config.links.length >= getProfileLinkLimit(13)) {
+            throw new Error('La liste Attaques contient déjà 200 coordonnées.');
+        }
+
+        const targetUrl = createAttackFleetDispatchUrl(coordinates, window.location.origin);
+        const links = alreadyConfigured
+            ? config.links.filter((url) => {
+                return getAttackCoordinateKey(parseAttackCoordinatesFromUrl(url)) !== targetKey;
+            })
+            : [...config.links, targetUrl];
+        saveConfig(13, {
+            links,
+            startUrl: config.startUrl,
+            attackCounters: config.attackCounters,
+        });
     }
 
     function installMobileFleetSpeedSelector() {
@@ -2637,8 +2761,9 @@
                 }
                 mechaLinks2 = parsed2.links;
             }
-            if (editingProfileId === 13 && new Set(parsed.links).size !== parsed.links.length) {
-                showError('Chaque URL cible d’Attaques doit être unique.');
+            if (editingProfileId === 13 &&
+                normalizeAttackTargetLinks(parsed.links).length !== parsed.links.length) {
+                showError('Attaques : une même coordonnée ne peut figurer qu’une seule fois.');
                 return;
             }
 
@@ -8112,11 +8237,14 @@
         const namedLinks = normalizedProfileId === 7
             ? normalizeStoredNamedLinks(stored.namedLinks)
             : [];
+        const storedLinks = Array.isArray(stored.links)
+            ? stored.links.filter((value) => typeof value === 'string')
+            : [];
         const links = normalizedProfileId === 7
             ? namedLinks.map((entry) => entry.url)
-            : Array.isArray(stored.links)
-            ? stored.links.filter((value) => typeof value === 'string').slice(0, maximum)
-            : [];
+            : normalizedProfileId === 13
+            ? normalizeAttackTargetLinks(storedLinks).slice(0, maximum)
+            : storedLinks.slice(0, maximum);
         const startUrl = normalizedProfileId === 2 || normalizedProfileId === 13
             ? validateHttpUrl(stored.startUrl) || ''
             : '';
@@ -8140,7 +8268,7 @@
                 CONSTRUCTION_LARGE_TRANSPORTER_CAPACITY
             : CONSTRUCTION_LARGE_TRANSPORTER_CAPACITY;
         const attackCounters = normalizedProfileId === 13
-            ? normalizeAttackCounters(links, stored.attackCounters)
+            ? normalizeAttackCounters(links, stored.attackCounters, storedLinks)
             : {};
         return {
             links,
@@ -8188,8 +8316,12 @@
             return;
         }
         if (normalizedProfileId === 13) {
-            const links = config.links.slice(0, getProfileLinkLimit(13));
             const stored = GM_getValue(CONFIG_KEYS[13], null);
+            const previousLinks = stored && Array.isArray(stored.links)
+                ? stored.links
+                : [];
+            const links = normalizeAttackTargetLinks(config.links)
+                .slice(0, getProfileLinkLimit(13));
             const sourceCounters = config.attackCounters && typeof config.attackCounters === 'object'
                 ? config.attackCounters
                 : stored && typeof stored === 'object'
@@ -8200,8 +8332,9 @@
                 repeat: false,
                 startUrl: validateHttpUrl(config.startUrl) || '',
                 smallVehicleCount: 6400,
-                attackCounters: normalizeAttackCounters(links, sourceCounters),
+                attackCounters: normalizeAttackCounters(links, sourceCounters, previousLinks),
             });
+            attackReportButtonsRefresh?.();
             return;
         }
 
@@ -8239,11 +8372,99 @@
         return firstValid ? [validateHttpUrl(firstValid)] : [];
     }
 
-    function normalizeAttackCounters(links, counters) {
+    function isValidAttackCoordinates(coordinates) {
+        return Number.isSafeInteger(coordinates?.galaxy) && coordinates.galaxy >= 1 &&
+            coordinates.galaxy <= 99 && Number.isSafeInteger(coordinates?.system) &&
+            coordinates.system >= 1 && coordinates.system <= 499 &&
+            Number.isSafeInteger(coordinates?.position) && coordinates.position >= 1 &&
+            coordinates.position <= 16;
+    }
+
+    function getAttackCoordinateKey(coordinates) {
+        return isValidAttackCoordinates(coordinates)
+            ? `${coordinates.galaxy}:${coordinates.system}:${coordinates.position}`
+            : '';
+    }
+
+    function parseAttackCoordinatesFromUrl(value) {
+        try {
+            const url = new URL(String(value || ''), window.location.href);
+            const coordinates = {
+                galaxy: Number(url.searchParams.get('galaxy')),
+                system: Number(url.searchParams.get('system')),
+                position: Number(url.searchParams.get('position')),
+            };
+            return isValidAttackCoordinates(coordinates) ? coordinates : null;
+        } catch {
+            return null;
+        }
+    }
+
+    function createAttackFleetDispatchUrl(coordinates, origin = window.location.origin) {
+        if (!isValidAttackCoordinates(coordinates)) {
+            throw new Error('Coordonnées invalides pour Attaques.');
+        }
+        const url = new URL('/game/index.php', origin);
+        url.searchParams.set('page', 'ingame');
+        url.searchParams.set('component', 'fleetdispatch');
+        url.searchParams.set('galaxy', String(coordinates.galaxy));
+        url.searchParams.set('system', String(coordinates.system));
+        url.searchParams.set('position', String(coordinates.position));
+        url.searchParams.set('type', '1');
+        url.searchParams.set('mission', '1');
+        return url.href;
+    }
+
+    function getAttackTargetIdentity(value) {
+        const coordinates = parseAttackCoordinatesFromUrl(value);
+        if (coordinates) return `coord:${getAttackCoordinateKey(coordinates)}`;
+        try {
+            return `url:${new URL(String(value || ''), window.location.href).href}`;
+        } catch {
+            return `url:${String(value || '').trim()}`;
+        }
+    }
+
+    function normalizeAttackTargetLinks(links) {
+        const normalizedLinks = [];
+        const seen = new Set();
+        for (const value of Array.isArray(links) ? links : []) {
+            const validUrl = validateHttpUrl(value);
+            if (!validUrl) continue;
+            const parsed = new URL(validUrl);
+            const coordinates = parseAttackCoordinatesFromUrl(validUrl);
+            const normalizedUrl = coordinates
+                ? createAttackFleetDispatchUrl(coordinates, parsed.origin)
+                : parsed.href;
+            const identity = getAttackTargetIdentity(normalizedUrl);
+            if (seen.has(identity)) continue;
+            seen.add(identity);
+            normalizedLinks.push(normalizedUrl);
+        }
+        return normalizedLinks;
+    }
+
+    function normalizeAttackCounters(links, counters, previousLinks = links) {
         const source = counters && typeof counters === 'object' ? counters : {};
-        return links.reduce((result, url) => {
-            const value = Math.floor(Number(source[url]));
-            result[url] = Number.isSafeInteger(value) && value >= 0 ? value : 0;
+        const previousByIdentity = new Map();
+        for (const url of Array.isArray(previousLinks) ? previousLinks : []) {
+            const countValue = Math.floor(Number(source[url]));
+            const count = Number.isSafeInteger(countValue) && countValue >= 0
+                ? countValue
+                : 0;
+            const identity = getAttackTargetIdentity(url);
+            if (!previousByIdentity.has(identity) || count < previousByIdentity.get(identity)) {
+                previousByIdentity.set(identity, count);
+            }
+        }
+        const baseline = previousByIdentity.size > 0
+            ? Math.min(...previousByIdentity.values())
+            : 0;
+        return (Array.isArray(links) ? links : []).reduce((result, url) => {
+            const identity = getAttackTargetIdentity(url);
+            result[url] = previousByIdentity.has(identity)
+                ? previousByIdentity.get(identity)
+                : baseline;
             return result;
         }, {});
     }
