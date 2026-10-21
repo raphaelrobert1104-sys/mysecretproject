@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Projet secret — boucle multi-liens
 // @namespace    local.projet-secret
-// @version      6.23.6
+// @version      6.23.8
 // @updateURL    https://raw.githubusercontent.com/raphaelrobert1104-sys/mysecretproject/main/outputs/projet-secret.user.js
 // @downloadURL  https://raw.githubusercontent.com/raphaelrobert1104-sys/mysecretproject/main/outputs/projet-secret.user.js
 // @description  Automatise Ressources, Expédition V2, Attaques, Forme de vie, Import, Constructions, Ghost, Rappatriement, Bâtiments Mecha et Switch FDV avec configurations privées.
@@ -22,7 +22,7 @@
 (function () {
     'use strict';
 
-    const SCRIPT_VERSION = '6.23.6';
+    const SCRIPT_VERSION = '6.23.8';
     const CONFIG_KEYS = {
         1: 'secretMultiLinkConfig',
         2: 'secretMultiLinkConfig2',
@@ -380,49 +380,76 @@
     }
 
     function installAttackReportControls() {
-        if (!/\/game\/index\.php$/i.test(window.location.pathname) || !document.body ||
-            document.body.dataset.secretAttackReportObserver === 'true') return;
+        if (!/\/game\/index\.php(?:$|\/)/i.test(window.location.pathname) ||
+            !document.body || document.body.dataset.secretAttackReportObserver === 'true') return;
         document.body.dataset.secretAttackReportObserver = 'true';
 
         const syncReportButtons = () => {
-            for (const dialog of document.querySelectorAll('.ui-dialog')) {
-                const title = dialog.querySelector('.ui-dialog-title')?.textContent || '';
-                const reportMaterial = dialog.querySelector('.material.spy');
-                const hasSpyReportTitle = /espionnage|espionage/i.test(title);
-                if (!reportMaterial || (!hasSpyReportTitle && !dialog.querySelector('.showmessage'))) {
-                    continue;
+            const candidates = new Set(document.querySelectorAll([
+                '.ui-dialog', '.showmessage', '.material.spy', '[class*="spy"]',
+                '[class*="espion"]', '[id*="spy"]', '[id*="espion"]',
+                '[data-msg-type]', '[data-message-type]', '.msg', '.message',
+            ].join(',')));
+
+            // Les rapports OGame sont parfois rendus dans une boîte de dialogue,
+            // parfois dans la liste des messages. Le scan textuel couvre ces deux vues.
+            for (const node of document.querySelectorAll('body *')) {
+                if (node.children.length > 12) continue;
+                const text = String(node.innerText || node.textContent || '');
+                if (text.length <= 12000 && /\[\s*\d{1,2}\s*:\s*\d{1,3}\s*:\s*\d{1,2}\s*\]/.test(text)) {
+                    candidates.add(node);
                 }
+            }
 
-                const coordinates = getAttackCoordinatesFromReport(reportMaterial);
+            const reports = new Map();
+            for (const candidate of candidates) {
+                if (!candidate?.isConnected || candidate.closest('.secret-attack-report-toggle')) continue;
+                const coordinates = getAttackCoordinatesFromReport(candidate);
                 if (!coordinates) continue;
+                const text = String(candidate.innerText || candidate.textContent || '');
+                const classes = typeof candidate.className === 'string' ? candidate.className : '';
+                const metadata = [
+                    classes,
+                    candidate.id,
+                    candidate.getAttribute('data-msg-type'),
+                    candidate.getAttribute('data-message-type'),
+                    candidate.getAttribute('aria-label'),
+                    candidate.closest('.ui-dialog')?.querySelector('.ui-dialog-title')?.textContent,
+                ].join(' ');
+                const isExplicitSpyNode = /(?:^|[\s_-])(?:spy|espion\w*|espionage)(?:$|[\s_-])/i.test(metadata) ||
+                    candidate.matches('.material.spy, [class*="spy"], [class*="espion"], [id*="spy"], [id*="espion"]');
+                const isSpyReport = isExplicitSpyNode || /rapport\s+d['’`]?espionnage|espionage\s+report|espionnage/i.test(`${metadata} ${text}`);
+                if (!isSpyReport) continue;
 
-                let button = dialog.querySelector('.secret-attack-report-toggle');
+                // Garder le conteneur de rapport le plus précis pour éviter les
+                // doublons quand ses parents contiennent aussi les mêmes coordonnées.
+                const key = getAttackCoordinateKey(coordinates);
+                const previous = reports.get(key);
+                if (!previous || candidate.querySelectorAll('*').length < previous.querySelectorAll('*').length) {
+                    reports.set(key, candidate);
+                }
+            }
+
+            for (const [coordinateKey, report] of reports) {
+                let button = [...document.querySelectorAll('.secret-attack-report-toggle')]
+                    .find((entry) => entry.dataset.coordinates === coordinateKey);
                 if (!button) {
                     button = document.createElement('button');
                     button.type = 'button';
                     button.className = 'secret-attack-report-toggle';
                     button.style.cssText = [
-                        'all:initial',
-                        'display:inline-flex',
-                        'align-items:center',
-                        'justify-content:center',
-                        'gap:6px',
-                        'margin:10px 0',
-                        'padding:8px 12px',
-                        'border:1px solid #64748b',
-                        'border-radius:8px',
-                        'background:#1d4ed8',
-                        'color:#fff',
-                        'font:700 12px/1.2 system-ui,sans-serif',
-                        'cursor:pointer',
+                        'all:initial', 'display:inline-flex', 'align-items:center',
+                        'justify-content:center', 'margin:8px 0', 'padding:8px 12px',
+                        'border:1px solid #93c5fd', 'border-radius:8px',
+                        'background:#1d4ed8', 'color:#fff',
+                        'font:700 12px/1.2 system-ui,sans-serif', 'cursor:pointer',
+                        'position:relative', 'z-index:2147483000',
                     ].join(';');
                     button.addEventListener('click', (event) => {
                         event.preventDefault();
                         event.stopPropagation();
                         try {
-                            const [galaxy, system, position] = button.dataset.coordinates
-                                .split(':')
-                                .map(Number);
+                            const [galaxy, system, position] = button.dataset.coordinates.split(':').map(Number);
                             toggleAttackReportTarget({ galaxy, system, position });
                             syncReportButtons();
                         } catch (error) {
@@ -430,48 +457,49 @@
                             button.title = error instanceof Error ? error.message : String(error);
                         }
                     });
-                    const insertionPoint = reportMaterial.closest('.showmessage') || reportMaterial;
-                    insertionPoint.insertAdjacentElement('afterend', button);
+                    const content = report.matches('.showmessage') ? report :
+                        report.querySelector('.showmessage') || report.querySelector('.material.spy') || report;
+                    content.insertAdjacentElement('afterend', button);
                 }
 
+                const coordinates = coordinateKey.split(':').map(Number);
                 const isConfigured = getStoredConfig(13).links.some((url) => {
-                    return getAttackCoordinateKey(parseAttackCoordinatesFromUrl(url)) ===
-                        getAttackCoordinateKey(coordinates);
+                    return getAttackCoordinateKey(parseAttackCoordinatesFromUrl(url)) === coordinateKey;
                 });
-                button.dataset.coordinates = getAttackCoordinateKey(coordinates);
-                const buttonLabel = isConfigured ? '✓ Vu' : '＋ Ajouter aux Attaques';
-                if (button.textContent !== buttonLabel) button.textContent = buttonLabel;
+                button.dataset.coordinates = coordinateKey;
+                const label = isConfigured ? '✓ Vu — retirer des Attaques' : '＋ Ajouter aux Attaques';
+                if (button.textContent !== label) button.textContent = label;
                 button.title = isConfigured
-                    ? 'Cette coordonnée est dans Attaques. Cliquer pour la retirer.'
-                    : 'Ajouter cette coordonnée à la configuration Attaques.';
+                    ? 'Cette coordonnée est déjà dans Attaques. Cliquer pour la retirer.'
+                    : `Ajouter [${coordinates.join(':')}] à la configuration Attaques.`;
                 button.style.background = isConfigured ? '#15803d' : '#1d4ed8';
                 button.style.borderColor = isConfigured ? '#86efac' : '#93c5fd';
             }
         };
 
-        const observer = new MutationObserver(syncReportButtons);
+        let refreshScheduled = false;
         attackReportButtonsRefresh = syncReportButtons;
-        observer.observe(document.body, {
-            childList: true,
-            subtree: true,
-            characterData: true,
+        const observer = new MutationObserver(() => {
+            if (refreshScheduled) return;
+            refreshScheduled = true;
+            requestAnimationFrame(() => {
+                refreshScheduled = false;
+                attackReportButtonsRefresh?.();
+            });
         });
+        observer.observe(document.body, { childList: true, subtree: true, characterData: true });
         syncReportButtons();
     }
 
-    function getAttackCoordinatesFromReport(reportMaterial) {
-        const reportText = String(reportMaterial?.innerText || reportMaterial?.textContent || '');
-        const textMatch = /\[\s*(\d{1,2})\s*:\s*(\d{1,3})\s*:\s*(\d{1,2})\s*\]/.exec(reportText);
+    function getAttackCoordinatesFromReport(reportNode) {
+        const reportText = String(reportNode?.innerText || reportNode?.textContent || '');
+        const textMatch = /(?:\[|\()\s*(\d{1,2})\s*:\s*(\d{1,3})\s*:\s*(\d{1,2})\s*(?:\]|\))/.exec(reportText) ||
+            /(?:^|\s)(\d{1,2})\s*:\s*(\d{1,3})\s*:\s*(\d{1,2})(?:\s|$)/.exec(reportText);
         if (textMatch) {
-            const coordinates = {
-                galaxy: Number(textMatch[1]),
-                system: Number(textMatch[2]),
-                position: Number(textMatch[3]),
-            };
+            const coordinates = { galaxy: Number(textMatch[1]), system: Number(textMatch[2]), position: Number(textMatch[3]) };
             if (isValidAttackCoordinates(coordinates)) return coordinates;
         }
-
-        for (const link of reportMaterial?.querySelectorAll('a[href]') || []) {
+        for (const link of reportNode?.querySelectorAll('a[href]') || []) {
             const coordinates = parseAttackCoordinatesFromUrl(link.href);
             if (coordinates) return coordinates;
         }
@@ -481,24 +509,15 @@
     function toggleAttackReportTarget(coordinates) {
         const config = getStoredConfig(13);
         const targetKey = getAttackCoordinateKey(coordinates);
-        const alreadyConfigured = config.links.some((url) => {
-            return getAttackCoordinateKey(parseAttackCoordinatesFromUrl(url)) === targetKey;
-        });
+        const alreadyConfigured = config.links.some((url) => getAttackCoordinateKey(parseAttackCoordinatesFromUrl(url)) === targetKey);
         if (!alreadyConfigured && config.links.length >= getProfileLinkLimit(13)) {
             throw new Error('La liste Attaques contient déjà 200 coordonnées.');
         }
-
         const targetUrl = createAttackFleetDispatchUrl(coordinates, window.location.origin);
         const links = alreadyConfigured
-            ? config.links.filter((url) => {
-                return getAttackCoordinateKey(parseAttackCoordinatesFromUrl(url)) !== targetKey;
-            })
+            ? config.links.filter((url) => getAttackCoordinateKey(parseAttackCoordinatesFromUrl(url)) !== targetKey)
             : [...config.links, targetUrl];
-        saveConfig(13, {
-            links,
-            startUrl: config.startUrl,
-            attackCounters: config.attackCounters,
-        });
+        saveConfig(13, { links, startUrl: config.startUrl, attackCounters: config.attackCounters });
     }
 
     function installMobileFleetSpeedSelector() {
@@ -1901,7 +1920,7 @@
                         </div>
                     </div>
                     <div class="ghost-time-preview">Conversion automatique : <span class="ghost-time-value">—</span></div>
-                    <div class="ghost-origin-note">Départ fixe : <strong>5:109:15 (lune)</strong> · retour à cette lune · destination en position 16 · calcul Hercules x2. Ghost choisit la vitesse de flotte la plus basse permettant un retour à ±30 min de la cible, puis vérifie l’heure affichée par le jeu avant l’envoi.</div>
+                    <div class="ghost-origin-note">Départ fixe : <strong>5:109:15 (lune)</strong> · retour à cette lune · destination en position 16 · pré-calcul Hercules x2. Le jeu peut raccourcir la distance sur les systèmes vides/inactifs : Ghost recale donc le système sur l’heure de retour réelle affichée par OGame, à ±15 min avant l’envoi.</div>
                     <div class="ghost-coordinate-suggestions" aria-live="polite">
                         <div class="ghost-coordinate-suggestion"><strong>Vitesse minimale</strong><span class="ghost-coordinate-100">Saisissez la vitesse du vaisseau et l’horaire pour calculer.</span></div>
                     </div>
@@ -2257,7 +2276,7 @@
             const franceDateTime = convertGhostJapanToFranceDateTime(japanDateTime);
             refs.ghostDateTime.value = franceDateTime;
             refs.ghostTimeValue.textContent = franceDateTime
-                ? `${formatGhostDateTime(franceDateTime)} en France · ` +
+                ? `${formatGhostDateTimeWithJapan(franceDateTime)} · ` +
                   `${getGhostJapanFranceDifferenceHours(japanDateTime)} h de moins qu’au Japon`
                 : 'sélectionnez une date et une heure japonaises';
 
@@ -4962,7 +4981,7 @@
             updatedAt: now,
             message:
                 `Ghost — action 1/6 : ouverture de l’URL configurée ` +
-                `(cible française ${formatGhostDateTime(ghostTargetDateTime)})…`,
+                `(cible ${formatGhostDateTimeWithJapan(ghostTargetDateTime)})…`,
         };
 
         GM_setValue(RUN_KEY, run);
@@ -5160,11 +5179,9 @@
                 if ([
                     'ghost-select-duration',
                     'ghost-read-return-time',
-                    'ghost-search-system',
-                    'ghost-read-system-return',
                 ].includes(run.phase)) {
                     // Migrate runs saved by older versions to the direct system
-                    // entry; no speed control or return-time triangulation.
+                    // entry; existing live-search phases remain resumable below.
                     const suggestedCoordinate = calculateGhostCoordinateSuggestion(
                         run.ghostTargetDateTime,
                         getStoredGhostSlowestSpeed()
@@ -5207,7 +5224,7 @@
                     });
                     if (!getActiveRun(runId)) return;
                     setFormControlValue(systemInput, String(system));
-                    const estimatedReturnTime = formatGhostDateTime(
+                    const estimatedReturnTime = formatGhostDateTimeWithJapan(
                         formatGhostTimestampInTimeZone(
                             Number(coordinate.returnTimestamp),
                             GHOST_FRANCE_TIME_ZONE
@@ -5259,15 +5276,44 @@
                     const returnMs = parseGhostReturnTimeMs(returnTime);
                     const targetMs = parseGhostTargetDateTimeMs(run.ghostTargetDateTime);
                     if (!Number.isFinite(returnMs) || !Number.isFinite(targetMs)) {
-                        throw new Error(`Ghost ne peut pas lire l’heure de retour calculée par OGame : « ${returnTime} ».`);
+                        throw new Error(`Ghost ne peut pas lire l’heure de retour calculée par OGame : « ${formatGhostReturnTimeWithJapan(returnTime)} ».`);
                     }
-                    const differenceMs = returnMs - targetMs;
-                    if (Math.abs(differenceMs) > GHOST_COORDINATE_TOLERANCE_MS) {
-                        throw new Error(
-                            `Ghost s’arrête avant l’envoi : à ${run.ghostSpeedPercent} %, OGame affiche ` +
-                            `un retour ${returnTime}, hors de la tolérance de ±30 minutes autour de ` +
-                            `${formatGhostDateTime(run.ghostTargetDateTime)}.`
+                    if (!isGhostReturnWithinTolerance(returnMs, targetMs)) {
+                        const systemInput = await waitForElement(GHOST_SYSTEM_SELECTOR, {
+                            timeoutMs: ELEMENT_TIMEOUT_MS,
+                            clickable: false,
+                        });
+                        if (!getActiveRun(runId)) return;
+                        const bounds = readGhostSystemBounds(systemInput);
+                        const initialSystem = clampInteger(
+                            Number(systemInput.value),
+                            bounds.minimum,
+                            bounds.maximum
                         );
+                        updateRun(runId, {
+                            phase: 'ghost-search-system',
+                            ghostReturnTime: returnTime,
+                            ghostSystemInitial: initialSystem,
+                            ghostSystemMinimum: bounds.minimum,
+                            ghostSystemMaximum: bounds.maximum,
+                            ghostSystemSearchSamples: [{ system: initialSystem, returnMs, returnTime }],
+                            ghostSystemSearchIteration: 0,
+                            ghostSystemSearchDirection: 0,
+                            ghostSystemSearchStep: 2,
+                            ghostSystemSearchTriedOpposite: false,
+                            ghostSystemProjectionUsed: false,
+                            ghostPendingDelayMs: getRandomDelayMs(
+                                GHOST_DELAY_MIN_MS,
+                                GHOST_DELAY_MAX_MS
+                            ),
+                        ghostPendingDelayLabel: `la lecture du retour ${formatGhostReturnTimeWithJapan(returnTime)}`,
+                            message:
+                                `Ghost — le retour calculé par OGame est ${formatGhostReturnTimeWithJapan(returnTime)}, ` +
+                                `à plus de 15 minutes de la cible ${formatGhostDateTimeWithJapan(run.ghostTargetDateTime)}. ` +
+                                'Correction du système selon le temps réel du jeu…',
+                        });
+                        refreshUi();
+                        continue;
                     }
                     updateRun(runId, {
                         phase: 'ghost-load-all-resources',
@@ -5277,10 +5323,10 @@
                             GHOST_DELAY_MIN_MS,
                             GHOST_DELAY_MAX_MS
                         ),
-                        ghostPendingDelayLabel: `la vérification du retour affiché par OGame (${returnTime})`,
+                        ghostPendingDelayLabel: `la vérification du retour affiché par OGame (${formatGhostReturnTimeWithJapan(returnTime)})`,
                         message:
-                            `Ghost — OGame confirme un retour à ${returnTime} ` +
-                            `(${run.ghostSpeedPercent} %, cible ${formatGhostDateTime(run.ghostTargetDateTime)}).`,
+                            `Ghost — OGame confirme un retour à ${formatGhostReturnTimeWithJapan(returnTime)} ` +
+                            `(${run.ghostSpeedPercent} %, cible ${formatGhostDateTimeWithJapan(run.ghostTargetDateTime)}).`,
                     });
                     refreshUi();
                     continue;
@@ -5298,7 +5344,7 @@
                     const returnMs = parseGhostReturnTimeMs(returnTime);
                     if (!Number.isFinite(targetMs) || !Number.isFinite(returnMs)) {
                         throw new Error(
-                            `Impossible de comparer le retour « ${returnTime} » avec la cible configurée.`
+                            `Impossible de comparer le retour « ${formatGhostReturnTimeWithJapan(returnTime)} » avec la cible configurée.`
                         );
                     }
 
@@ -5342,7 +5388,7 @@
                         ),
                         ghostPendingDelayLabel: 'la lecture de l’heure de retour initiale',
                         message:
-                            `Ghost — action 4/6 terminée : retour initial ${returnTime} au ` +
+                            `Ghost — action 4/6 terminée : retour initial ${formatGhostReturnTimeWithJapan(returnTime)} au ` +
                             `système ${initialSystem}. Début de la triangulation à ±15 minutes ` +
                             '(estimation initiale : environ 17 min 15 s par système).',
                     });
@@ -5422,7 +5468,7 @@
                     const returnMs = parseGhostReturnTimeMs(returnTime);
                     const targetMs = parseGhostTargetDateTimeMs(run.ghostTargetDateTime);
                     if (!Number.isFinite(returnMs) || !Number.isFinite(targetMs)) {
-                        throw new Error(`Impossible d’interpréter l’heure de retour « ${returnTime} ».`);
+                        throw new Error(`Impossible d’interpréter l’heure de retour « ${formatGhostReturnTimeWithJapan(returnTime)} ».`);
                     }
 
                     const samples = addGhostSystemSample(run.ghostSystemSearchSamples, {
@@ -5455,9 +5501,9 @@
                             GHOST_DELAY_MAX_MS
                         ),
                         ghostPendingDelayLabel:
-                            `la lecture du retour ${returnTime} au système ${candidate}`,
+                            `la lecture du retour ${formatGhostReturnTimeWithJapan(returnTime)} au système ${candidate}`,
                         message:
-                            `Ghost — système ${candidate} donne ${returnTime}, hors de la ` +
+                            `Ghost — système ${candidate} donne ${formatGhostReturnTimeWithJapan(returnTime)}, hors de la ` +
                             'plage cible. La triangulation continue…',
                     });
                     refreshUi();
@@ -5638,7 +5684,7 @@
             return 'Pas de proposition : cible passée ou données invalides.';
         }
         const coordinate = `${suggestion.galaxy}:${suggestion.system}:${suggestion.position}`;
-        const returnTime = formatGhostDateTime(
+        const returnTime = formatGhostDateTimeWithJapan(
             formatGhostTimestampInTimeZone(
                 suggestion.returnTimestamp,
                 GHOST_FRANCE_TIME_ZONE
@@ -5850,6 +5896,26 @@
         const [datePart, timePart] = normalized.split('T');
         const [year, month, day] = datePart.split('-');
         return `${day}/${month}/${year} à ${timePart}`;
+    }
+
+    function formatGhostTimeInZone(timestamp, timeZone) {
+        if (!Number.isFinite(Number(timestamp))) return '';
+        const parts = getGhostDateTimePartsInZone(Number(timestamp), timeZone);
+        return `${String(parts.hour).padStart(2, '0')}h${String(parts.minute).padStart(2, '0')}`;
+    }
+
+    function formatGhostDateTimeWithJapan(value) {
+        const normalized = normalizeGhostDateTime(value);
+        if (!normalized) return formatGhostDateTime(value);
+        const timestamp = ghostWallDateTimeToTimestamp(normalized, GHOST_FRANCE_TIME_ZONE);
+        const japanTime = formatGhostTimeInZone(timestamp, GHOST_JAPAN_TIME_ZONE);
+        return `${formatGhostDateTime(normalized)} (${japanTime} au Japon)`;
+    }
+
+    function formatGhostReturnTimeWithJapan(value) {
+        const timestamp = parseGhostReturnTimeMs(value);
+        const japanTime = formatGhostTimeInZone(timestamp, GHOST_JAPAN_TIME_ZONE);
+        return japanTime ? `${String(value)} (${japanTime} au Japon)` : String(value || 'heure inconnue');
     }
 
     function parseGhostTargetDateTimeMs(value) {
@@ -6186,7 +6252,7 @@
         const differenceMinutes = Math.abs(nearest.returnMs - targetMs) / 60000;
         return new Error(
             `Aucun système testé n’atteint la plage de ±15 minutes. Meilleur résultat : ` +
-            `système ${nearest.system}, retour ${nearest.returnTime}, écart ` +
+            `système ${nearest.system}, retour ${formatGhostReturnTimeWithJapan(nearest.returnTime)}, écart ` +
             `${differenceMinutes.toFixed(1)} minute(s).`
         );
     }
@@ -6209,9 +6275,9 @@
             ghostPendingDelayLabel: 'la fin de la triangulation du système',
             message:
                 `Ghost — action 5/6 terminée : système ${sample.system} retenu, ` +
-                `retour ${sample.returnTime}, ` +
+                `retour ${formatGhostReturnTimeWithJapan(sample.returnTime)}, ` +
                 `écart ${differenceMinutes.toFixed(1)} minute(s) avec la cible ` +
-                `${formatGhostDateTime(run.ghostTargetDateTime)}. ` +
+                `${formatGhostDateTimeWithJapan(run.ghostTargetDateTime)}. ` +
                 'Courte pause avant le chargement des ressources.',
         });
         refreshUi();
@@ -8137,7 +8203,7 @@
             actionLabel = labels[run.phase] || `Phase inconnue : ${run.phase}`;
         }
 
-        const targetDateTime = formatGhostDateTime(
+        const targetDateTime = formatGhostDateTimeWithJapan(
             run.ghostTargetDateTime || getStoredGhostDateTimeValue()
         );
         const suggested = run.ghostSuggestedCoordinate;
@@ -8244,7 +8310,9 @@
             ? namedLinks.map((entry) => entry.url)
             : normalizedProfileId === 13
             ? normalizeAttackTargetLinks(storedLinks).slice(0, maximum)
-            : storedLinks.slice(0, maximum);
+            : Array.isArray(stored.links)
+            ? stored.links.filter((value) => typeof value === 'string').slice(0, maximum)
+            : [];
         const startUrl = normalizedProfileId === 2 || normalizedProfileId === 13
             ? validateHttpUrl(stored.startUrl) || ''
             : '';
@@ -8316,12 +8384,9 @@
             return;
         }
         if (normalizedProfileId === 13) {
+            const links = normalizeAttackTargetLinks(config.links).slice(0, getProfileLinkLimit(13));
             const stored = GM_getValue(CONFIG_KEYS[13], null);
-            const previousLinks = stored && Array.isArray(stored.links)
-                ? stored.links
-                : [];
-            const links = normalizeAttackTargetLinks(config.links)
-                .slice(0, getProfileLinkLimit(13));
+            const previousLinks = stored && Array.isArray(stored.links) ? stored.links : [];
             const sourceCounters = config.attackCounters && typeof config.attackCounters === 'object'
                 ? config.attackCounters
                 : stored && typeof stored === 'object'
@@ -8401,9 +8466,7 @@
     }
 
     function createAttackFleetDispatchUrl(coordinates, origin = window.location.origin) {
-        if (!isValidAttackCoordinates(coordinates)) {
-            throw new Error('Coordonnées invalides pour Attaques.');
-        }
+        if (!isValidAttackCoordinates(coordinates)) throw new Error('Coordonnées invalides pour Attaques.');
         const url = new URL('/game/index.php', origin);
         url.searchParams.set('page', 'ingame');
         url.searchParams.set('component', 'fleetdispatch');
@@ -8449,9 +8512,7 @@
         const previousByIdentity = new Map();
         for (const url of Array.isArray(previousLinks) ? previousLinks : []) {
             const countValue = Math.floor(Number(source[url]));
-            const count = Number.isSafeInteger(countValue) && countValue >= 0
-                ? countValue
-                : 0;
+            const count = Number.isSafeInteger(countValue) && countValue >= 0 ? countValue : 0;
             const identity = getAttackTargetIdentity(url);
             if (!previousByIdentity.has(identity) || count < previousByIdentity.get(identity)) {
                 previousByIdentity.set(identity, count);
@@ -8462,9 +8523,7 @@
             : 0;
         return (Array.isArray(links) ? links : []).reduce((result, url) => {
             const identity = getAttackTargetIdentity(url);
-            result[url] = previousByIdentity.has(identity)
-                ? previousByIdentity.get(identity)
-                : baseline;
+            result[url] = previousByIdentity.has(identity) ? previousByIdentity.get(identity) : baseline;
             return result;
         }, {});
     }
