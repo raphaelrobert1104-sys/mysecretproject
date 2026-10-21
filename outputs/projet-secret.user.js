@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Projet secret — boucle multi-liens
 // @namespace    local.projet-secret
-// @version      6.23.12
+// @version      6.23.13
 // @updateURL    https://cdn.jsdelivr.net/gh/raphaelrobert1104-sys/mysecretproject@main/outputs/projet-secret.user.js
 // @downloadURL  https://cdn.jsdelivr.net/gh/raphaelrobert1104-sys/mysecretproject@main/outputs/projet-secret.user.js
 // @description  Automatise Ressources, Expédition V2, Attaques, Forme de vie, Import, Constructions, Ghost, Rappatriement, Bâtiments Mecha et Switch FDV avec configurations privées.
@@ -381,32 +381,76 @@
 
     function installAttackReportControls() {
         if (!/\/game\/index\.php(?:$|\/)/i.test(window.location.pathname) ||
-            !document.body || document.body.dataset.secretAttackReportObserverV2 === 'true') return;
-        document.body.dataset.secretAttackReportObserverV2 = 'true';
+            !document.body || document.body.dataset.secretAttackReportObserverV3 === 'true') return;
+        document.body.dataset.secretAttackReportObserverV3 = 'true';
         // Empêche une ancienne instance de cette fonctionnalité, encore active
         // pendant une mise à jour de page, de rajouter ses propres boutons.
         document.body.dataset.secretAttackReportObserver = 'true';
 
         const syncReportButtons = () => {
             const reports = new Map();
-            for (const dialog of document.querySelectorAll('.ui-dialog')) {
-                const report = dialog.querySelector('.material.spy');
-                if (!report) continue;
-                const coordinates = getAttackCoordinatesFromReport(report);
+            const reportSelector = [
+                '.ui-dialog', '.ui-dialog-content', '.material.spy', '.showmessage',
+                '[class*="spy"]', '[class*="espion"]', '[id*="spy"]', '[id*="espion"]',
+                '[data-msg-type]', '[data-message-type]', '.msg', '.message',
+            ].join(',');
+            const candidates = new Set(document.querySelectorAll(reportSelector));
+            for (const node of document.querySelectorAll('body *')) {
+                if (node.children.length > 12) continue;
+                const text = String(node.innerText || node.textContent || '');
+                if (text.length <= 12000 && /\[?\s*\d{1,2}\s*:\s*\d{1,3}\s*:\s*\d{1,2}\s*\]?/.test(text)) {
+                    candidates.add(node);
+                }
+            }
+
+            const boundarySelector = [
+                '.material.spy', '.showmessage', '[class*="spy"]', '[class*="espion"]',
+                '[id*="spy"]', '[id*="espion"]', '[data-msg-type]', '[data-message-type]',
+                '.msg', '.message', '.ui-dialog-content', '.ui-dialog',
+            ].join(',');
+            const spySelector = '.material.spy, [class*="spy"], [class*="espion"], [id*="spy"], [id*="espion"]';
+
+            for (const candidate of candidates) {
+                if (!candidate?.isConnected || candidate.closest('.secret-attack-report-toggle')) continue;
+                const coordinates = getAttackCoordinatesFromReport(candidate);
                 if (!coordinates) continue;
-                reports.set(getAttackCoordinateKey(coordinates), report);
+                const dialogTitle = candidate.closest('.ui-dialog')?.querySelector('.ui-dialog-title')?.textContent || '';
+                const metadata = [
+                    typeof candidate.className === 'string' ? candidate.className : '',
+                    candidate.id,
+                    candidate.getAttribute('data-msg-type'),
+                    candidate.getAttribute('data-message-type'),
+                    candidate.getAttribute('aria-label'),
+                    dialogTitle,
+                ].join(' ');
+                const spyAncestor = candidate.matches(spySelector) ? candidate : candidate.closest(spySelector);
+                const hasSpySignal = Boolean(spyAncestor) ||
+                    /(?:^|[\s_-])(?:spy|espion\w*|espionage)(?:$|[\s_-])/i.test(metadata) ||
+                    /rapport\s+d['’`]?espionnage|espionage\s+report|espionnage/i.test(
+                        `${metadata} ${String(candidate.innerText || candidate.textContent || '')}`
+                    );
+                if (!hasSpySignal) continue;
+
+                const boundary = spyAncestor || candidate.closest(boundarySelector) || candidate;
+                const reportContent = boundary.matches('.ui-dialog, .ui-dialog-content')
+                    ? boundary.querySelector('.material.spy, .showmessage, .ui-dialog-content') || boundary
+                    : boundary;
+                const key = getAttackCoordinateKey(coordinates);
+                const existing = reports.get(key);
+                const score = (reportContent.matches('.material.spy') ? 100 : 0) +
+                    (reportContent.matches('.showmessage') ? 50 : 0) +
+                    (reportContent.closest('.ui-dialog') ? 10 : 0);
+                if (!existing || score > existing.score ||
+                    (score === existing.score && reportContent.querySelectorAll('*').length < existing.content.querySelectorAll('*').length)) {
+                    reports.set(key, { content: reportContent, score });
+                }
             }
 
-            const activeReports = new Set(reports.values());
-            // Nettoie les anciens boutons placés en dehors du rapport ou en double.
-            for (const existing of document.querySelectorAll('.secret-attack-report-toggle')) {
-                const owner = existing.closest('.material.spy');
-                if (!owner || !activeReports.has(owner)) existing.remove();
-            }
-
-            for (const [coordinateKey, report] of reports) {
-                const content = report.querySelector('.showmessage') || report;
-                const buttons = [...report.querySelectorAll('.secret-attack-report-toggle')];
+            const activeButtons = new Set();
+            for (const [coordinateKey, entry] of reports) {
+                const content = entry.content;
+                const buttons = [...document.querySelectorAll('.secret-attack-report-toggle')]
+                    .filter((candidate) => candidate.dataset.coordinates === coordinateKey);
                 let button = buttons.shift();
                 for (const duplicate of buttons) duplicate.remove();
                 if (!button) {
@@ -447,9 +491,10 @@
                     });
                 }
                 button.dataset.coordinates = coordinateKey;
-                // Le bouton est enfant du texte du rapport, jamais un bouton
-                // flottant ou un contrôle ajouté à la boîte de dialogue.
+                // Un seul contrôle est conservé et déplacé dans le rapport choisi,
+                // y compris si une ancienne version l'avait placé ailleurs.
                 if (button.parentElement !== content) content.appendChild(button);
+                activeButtons.add(button);
 
                 const coordinates = coordinateKey.split(':').map(Number);
                 const isConfigured = getStoredConfig(13).links.some((url) => {
@@ -465,6 +510,9 @@
                     ? 'linear-gradient(135deg,#16a34a,#15803d)'
                     : 'linear-gradient(135deg,#2563eb,#1d4ed8)';
                 button.style.borderColor = isConfigured ? '#86efac' : '#93c5fd';
+            }
+            for (const stale of document.querySelectorAll('.secret-attack-report-toggle')) {
+                if (!activeButtons.has(stale)) stale.remove();
             }
         };
 
