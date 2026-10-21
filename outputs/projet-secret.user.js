@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name         Projet secret — boucle multi-liens
 // @namespace    local.projet-secret
-// @version      6.23.9
-// @updateURL    https://github.com/raphaelrobert1104-sys/mysecretproject/raw/refs/heads/main/outputs/projet-secret.user.js
-// @downloadURL  https://github.com/raphaelrobert1104-sys/mysecretproject/raw/refs/heads/main/outputs/projet-secret.user.js
+// @version      6.23.10
+// @updateURL    https://raw.githubusercontent.com/raphaelrobert1104-sys/mysecretproject/main/outputs/projet-secret.user.js?v=6.23.10
+// @downloadURL  https://raw.githubusercontent.com/raphaelrobert1104-sys/mysecretproject/main/outputs/projet-secret.user.js?v=6.23.10
 // @description  Automatise Ressources, Expédition V2, Attaques, Forme de vie, Import, Constructions, Ghost, Rappatriement, Bâtiments Mecha et Switch FDV avec configurations privées.
 // @author       Vous
 // @match        http://*/*
@@ -22,7 +22,7 @@
 (function () {
     'use strict';
 
-    const SCRIPT_VERSION = '6.23.9';
+    const SCRIPT_VERSION = '6.23.10';
     const CONFIG_KEYS = {
         1: 'secretMultiLinkConfig',
         2: 'secretMultiLinkConfig2',
