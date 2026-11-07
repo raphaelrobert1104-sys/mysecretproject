@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Projet secret — boucle multi-liens
 // @namespace    local.projet-secret
-// @version      6.23.17
+// @version      6.23.18
 // @updateURL    https://github.com/raphaelrobert1104-sys/mysecretproject/releases/latest/download/projet-secret.user.js
 // @downloadURL  https://github.com/raphaelrobert1104-sys/mysecretproject/releases/latest/download/projet-secret.user.js
 // @description  Automatise Ressources, Expédition V2, Attaques, Forme de vie, Import, Constructions, Ghost, Rappatriement, Bâtiments Mecha et Switch FDV avec configurations privées.
@@ -384,147 +384,108 @@
             !document.body || document.body.dataset.secretAttackReportObserverV4 === 'true') return;
         document.body.dataset.secretAttackReportObserverV4 = 'true';
         document.body.dataset.secretAttackReportObserver = 'true';
-        // Nettoie les boutons injectés par les anciennes versions dans la liste
-        // des messages. La liste elle-même ne reçoit plus de bouton.
         document.querySelectorAll('.secret-attack-report-toggle').forEach((button) => button.remove());
-
-        const isStandaloneReportPage = new URLSearchParams(window.location.search).get('page') === 'bericht';
-        // Le détail dédié utilise `page=bericht`. Dans la messagerie moderne, un
-        // détail peut aussi s'ouvrir dans une fenêtre modale. On ne cherche que
-        // dans ces vues détaillées, jamais dans les lignes de la liste.
-        const reportSelectors = [
-            '.material.spy', '.showmessage', '#bericht', '#berichtContent',
-            '#report', '#reportContent', '.report-content', '.bericht',
-        ];
-        const findReport = () => {
-            if (isStandaloneReportPage) {
-                for (const selector of reportSelectors) {
-                    for (const candidate of document.querySelectorAll(selector)) {
-                        const coordinates = getAttackCoordinatesFromReport(candidate);
-                        if (coordinates) return { content: candidate, coordinates };
-                    }
-                }
-                const coordinates = getAttackCoordinatesFromReport(document.body);
-                if (coordinates) {
-                    const content = document.querySelector('#content, #pageContent, main') || document.body;
-                    return { content, coordinates };
-                }
-            }
-
-            const dialogSelector = '.ui-dialog, [role="dialog"], [aria-modal="true"]';
-            for (const dialog of document.querySelectorAll(dialogSelector)) {
-                const style = window.getComputedStyle(dialog);
-                if (style.display === 'none' || style.visibility === 'hidden' || dialog.getClientRects().length === 0) continue;
-                const content = dialog.querySelector(
-                    '.material.spy, .showmessage, #bericht, #berichtContent, #reportContent, .report-content, .bericht, .ui-dialog-content'
-                ) || dialog;
-                const coordinates = getAttackCoordinatesFromReport(content);
-                if (!coordinates) continue;
-                const metadata = [
-                    typeof dialog.className === 'string' ? dialog.className : '',
-                    dialog.id,
-                    dialog.getAttribute('aria-label'),
-                    dialog.querySelector('.ui-dialog-title')?.textContent,
-                    String(content.innerText || content.textContent || ''),
-                ].join(' ');
-                const explicitSpyReport = content.matches('.material.spy, [class*="spy"], [class*="espion"], [id*="spy"], [id*="espion"]') ||
-                    /espionnage|espionage|spy report|rapport d['’`]?espionnage/i.test(metadata);
-                if (explicitSpyReport) return { content, coordinates };
-            }
-            return null;
+        const matchesOutboundSpyReport = (text) => {
+            return /rapport\s+d[\s'’`]?espionnage/i.test(text) &&
+                /\bjoueur\s*:/i.test(text) &&
+                /\bressources\s*:/i.test(text) &&
+                /\bactivit[ée]\s*:/i.test(text) &&
+                !/flotte\s+étrangère.{0,160}repérée\s+à\s+proximité\s+de\s+votre\s+planète/i.test(text);
         };
 
-        let observer = null;
-        let observerTimeout = 0;
-        const syncReportButton = () => {
-            const report = findReport();
-            if (!report) return false;
-            if (isStandaloneReportPage) {
-                observer?.disconnect();
-                if (observerTimeout) window.clearTimeout(observerTimeout);
+        const findOutboundSpyReports = () => {
+            const candidates = [];
+            for (const element of document.querySelectorAll('div, section, article, li')) {
+                const text = String(element.innerText || element.textContent || '').trim();
+                if (text.length < 80 || text.length > 18000 || !matchesOutboundSpyReport(text)) continue;
+                const coordinates = getAttackCoordinatesFromReport(element);
+                if (coordinates) candidates.push({ element, coordinates, textLength: text.length });
             }
 
-            const coordinateKey = getAttackCoordinateKey(report.coordinates);
-            let button = document.querySelector('.secret-attack-report-toggle');
-            document.querySelectorAll('.secret-attack-report-toggle').forEach((existing) => {
-                if (existing !== button) existing.remove();
+            // Ne garder que le plus petit bloc complet par rapport : les parents
+            // de la messagerie contiennent le texte de plusieurs rapports.
+            return candidates.filter((candidate) => !candidates.some((other) => {
+                if (candidate === other || !candidate.element.contains(other.element)) return false;
+                return other.textLength <= candidate.textLength;
+            }));
+        };
+
+        const createAttackReportButton = () => {
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.className = 'secret-attack-report-toggle';
+            button.style.cssText = [
+                'all:unset', 'box-sizing:border-box', 'display:inline-flex',
+                'align-items:center', 'gap:5px', 'margin:8px 0 2px',
+                'padding:6px 9px', 'border:1px solid rgba(210,235,255,.34)',
+                'border-radius:999px', 'background:rgba(170,205,230,.12)',
+                'color:#e8f3fc', 'font:600 11px/1.2 system-ui,sans-serif',
+                'letter-spacing:.01em', 'cursor:pointer',
+                'box-shadow:0 2px 8px rgba(3,12,22,.16)',
+                'backdrop-filter:blur(8px) saturate(125%)',
+                '-webkit-backdrop-filter:blur(8px) saturate(125%)',
+            ].join(';');
+            button.addEventListener('click', (event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                try {
+                    const [galaxy, system, position] = button.dataset.coordinates.split(':').map(Number);
+                    toggleAttackReportTarget({ galaxy, system, position });
+                    attackReportButtonsRefresh?.();
+                } catch (error) {
+                    button.textContent = '⚠ Réessayer';
+                    button.title = error instanceof Error ? error.message : String(error);
+                }
             });
-            if (!button) {
-                button = document.createElement('button');
-                button.type = 'button';
-                button.className = 'secret-attack-report-toggle';
-                button.style.cssText = [
-                    'all:unset', 'box-sizing:border-box', 'display:inline-flex',
-                    'align-items:center', 'gap:5px', 'margin:8px 0 2px',
-                    'padding:6px 9px', 'border:1px solid rgba(210,235,255,.34)',
-                    'border-radius:999px', 'background:rgba(170,205,230,.12)',
-                    'color:#e8f3fc', 'font:600 11px/1.2 system-ui,sans-serif',
-                    'letter-spacing:.01em', 'cursor:pointer',
-                    'box-shadow:0 2px 8px rgba(3,12,22,.16)',
-                    'backdrop-filter:blur(8px) saturate(125%)',
-                    '-webkit-backdrop-filter:blur(8px) saturate(125%)',
-                ].join(';');
-                button.addEventListener('click', (event) => {
-                    event.preventDefault();
-                    event.stopPropagation();
-                    try {
-                        const [galaxy, system, position] = button.dataset.coordinates.split(':').map(Number);
-                        toggleAttackReportTarget({ galaxy, system, position });
-                        syncReportButton();
-                    } catch (error) {
-                        button.textContent = '⚠ Réessayer';
-                        button.title = error instanceof Error ? error.message : String(error);
-                    }
+            return button;
+        };
+
+        const syncReportButtons = () => {
+            const reports = findOutboundSpyReports();
+            const activeButtons = new Set();
+            for (const report of reports) {
+                const coordinateKey = getAttackCoordinateKey(report.coordinates);
+                let button = [...report.element.querySelectorAll('.secret-attack-report-toggle')]
+                    .find((existing) => existing.dataset.coordinates === coordinateKey);
+                if (!button) button = createAttackReportButton();
+                button.dataset.coordinates = coordinateKey;
+                if (button.parentElement !== report.element) report.element.appendChild(button);
+                activeButtons.add(button);
+
+                const isConfigured = getStoredConfig(13).links.some((url) => {
+                    return getAttackCoordinateKey(parseAttackCoordinatesFromUrl(url)) === coordinateKey;
                 });
+                const coordinatesLabel = coordinateKey.replace(/:/g, ' : ');
+                const label = isConfigured ? '✓ Vu · retirer' : '＋ Ajouter';
+                if (button.textContent !== label) button.textContent = label;
+                button.setAttribute('aria-pressed', String(isConfigured));
+                button.title = isConfigured
+                    ? `Cible ${coordinatesLabel} déjà dans Attaques — cliquer pour retirer.`
+                    : `Ajouter la cible ${coordinatesLabel} à Attaques.`;
+                button.style.background = isConfigured
+                    ? 'rgba(34,197,94,.20)'
+                    : 'rgba(170,205,230,.12)';
+                button.style.borderColor = isConfigured
+                    ? 'rgba(134,239,172,.46)'
+                    : 'rgba(210,235,255,.34)';
             }
-            button.dataset.coordinates = coordinateKey;
-            if (button.parentElement !== report.content) report.content.appendChild(button);
-
-            const isConfigured = getStoredConfig(13).links.some((url) => {
-                return getAttackCoordinateKey(parseAttackCoordinatesFromUrl(url)) === coordinateKey;
-            });
-            const coordinatesLabel = coordinateKey.replaceAll(':', ' : ');
-            button.textContent = isConfigured ? '✓ Vu · retirer' : '＋ Ajouter';
-            button.setAttribute('aria-pressed', String(isConfigured));
-            button.title = isConfigured
-                ? `Cible ${coordinatesLabel} déjà dans Attaques — cliquer pour retirer.`
-                : `Ajouter la cible ${coordinatesLabel} à Attaques.`;
-            button.style.background = isConfigured
-                ? 'rgba(34,197,94,.20)'
-                : 'rgba(170,205,230,.12)';
-            button.style.borderColor = isConfigured
-                ? 'rgba(134,239,172,.46)'
-                : 'rgba(210,235,255,.34)';
-
-            attackReportButtonsRefresh = syncReportButton;
-            return true;
+            for (const stale of document.querySelectorAll('.secret-attack-report-toggle')) {
+                if (!activeButtons.has(stale)) stale.remove();
+            }
         };
 
-        attackReportButtonsRefresh = syncReportButton;
-        if (syncReportButton() && isStandaloneReportPage) return;
-        const dialogSelector = '.ui-dialog, [role="dialog"], [aria-modal="true"]';
-        const mutationTouchesDialog = (mutation) => {
-            const target = mutation.target.nodeType === Node.ELEMENT_NODE
-                ? mutation.target
-                : mutation.target.parentElement;
-            if (target?.closest?.(dialogSelector)) return true;
-            return [...mutation.addedNodes, ...mutation.removedNodes].some((node) => {
-                return node.nodeType === Node.ELEMENT_NODE &&
-                    (node.matches(dialogSelector) || node.querySelector(dialogSelector));
+        attackReportButtonsRefresh = syncReportButtons;
+        syncReportButtons();
+        let refreshScheduled = false;
+        const observer = new MutationObserver(() => {
+            if (refreshScheduled) return;
+            refreshScheduled = true;
+            requestAnimationFrame(() => {
+                refreshScheduled = false;
+                syncReportButtons();
             });
-        };
-        observer = new MutationObserver((mutations) => {
-            if (!isStandaloneReportPage && !mutations.some(mutationTouchesDialog)) return;
-            if (syncReportButton() && isStandaloneReportPage) observer?.disconnect();
         });
-        observer.observe(document.body, {
-            childList: true,
-            subtree: true,
-            characterData: isStandaloneReportPage,
-            attributes: true,
-            attributeFilter: ['class', 'style', 'aria-hidden'],
-        });
-        if (isStandaloneReportPage) observerTimeout = window.setTimeout(() => observer?.disconnect(), 8000);
+        observer.observe(document.body, { childList: true, subtree: true, characterData: true });
     }
 
     function getAttackCoordinatesFromReport(reportNode) {
