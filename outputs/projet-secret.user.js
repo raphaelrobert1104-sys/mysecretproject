@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Projet secret — boucle multi-liens
 // @namespace    local.projet-secret
-// @version      6.23.15
+// @version      6.23.16
 // @updateURL    https://github.com/raphaelrobert1104-sys/mysecretproject/releases/latest/download/projet-secret.user.js
 // @downloadURL  https://github.com/raphaelrobert1104-sys/mysecretproject/releases/latest/download/projet-secret.user.js
 // @description  Automatise Ressources, Expédition V2, Attaques, Forme de vie, Import, Constructions, Ghost, Rappatriement, Bâtiments Mecha et Switch FDV avec configurations privées.
@@ -1324,6 +1324,7 @@
                     font: 750 12px/1.45 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
                     text-shadow: 0 1px 3px rgba(0, 0, 0, .95);
                     pointer-events: auto;
+                    cursor: pointer;
                     backdrop-filter: blur(12px) saturate(135%);
                     -webkit-backdrop-filter: blur(12px) saturate(135%);
                     transition: border-color .2s ease, background .2s ease, box-shadow .2s ease;
@@ -2176,7 +2177,7 @@
         });
         refs.ghostJapanDateTime.addEventListener('input', updateGhostTimePreview);
         refs.ghostJapanDateTime.addEventListener('change', updateGhostTimePreview);
-        refs.debugProgressClose.addEventListener('click', () => {
+        refs.debugProgress.addEventListener('click', () => {
             const run = getRunState();
             if (run.runId) {
                 GM_setValue(DEBUG_DISMISSED_RUN_KEY, run.runId);
