@@ -64,6 +64,7 @@ function harness(available = () => [...priorities, ...priorities2], options = {}
         },
         GM_getValue: (key, fallback) => storage.has(key) ? structuredClone(storage.get(key)) : fallback,
         GM_setValue: (key, value) => storage.set(key, structuredClone(value)),
+        GM_deleteValue: (key) => storage.delete(key),
     };
     vm.createContext(sandbox);
     vm.runInContext(testSource, sandbox);

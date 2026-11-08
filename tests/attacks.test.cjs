@@ -10,6 +10,7 @@ assert.equal(source.split(bootstrap).length, 2);
 const testSource = source.replace(bootstrap, `
     globalThis.attackApi = {
         resumeAttackAutomation, chooseLeastUsedAttackTarget, formatAttackDebugProgress,
+        toggleAttackReportTarget, getStoredConfig,
         hooks(h) {
             navigateToUrl = h.navigateToUrl;
             clearThisTabRunId = async () => {};
@@ -45,7 +46,7 @@ function harness(options = {}) {
         URL, Date: class extends Date { static now() { return now; } },
         console: { error: (...args) => errors.push(args) },
         window: {
-            location: { href: 'https://example.test/send' },
+            location: { href: 'https://example.test/send', origin: 'https://example.test' },
             getComputedStyle: () => ({ display: 'block', visibility: 'visible', opacity: '1' }),
         },
         document: {
@@ -57,6 +58,7 @@ function harness(options = {}) {
         },
         GM_getValue: (key, fallback) => storage.has(key) ? structuredClone(storage.get(key)) : fallback,
         GM_setValue: (key, value) => storage.set(key, structuredClone(value)),
+        GM_deleteValue: (key) => storage.delete(key),
     };
     vm.createContext(sandbox);
     vm.runInContext(testSource, sandbox);
@@ -103,6 +105,29 @@ function harness(options = {}) {
         async resume() { await api.resumeAttackAutomation('test'); },
     };
 }
+
+test('attack targets can be removed and new targets inherit the lowest counter', () => {
+    const h = harness();
+    const first = 'https://example.test/game/index.php?page=ingame&component=fleetdispatch&galaxy=5&system=126&position=11&type=1&mission=1';
+    const second = 'https://example.test/game/index.php?page=ingame&component=fleetdispatch&galaxy=5&system=159&position=12&type=1&mission=1';
+    h.storage.set('secretAttacksConfig', {
+        startUrl: 'https://example.test/start',
+        links: [first, second],
+        attackCounters: { [first]: 8, [second]: 3 },
+    });
+
+    h.api.toggleAttackReportTarget({ galaxy: 5, system: 126, position: 11 });
+    let config = h.api.getStoredConfig(13);
+    assert.deepEqual(Array.from(config.links), [second]);
+    assert.equal(config.attackCounters[second], 3);
+
+    h.api.toggleAttackReportTarget({ galaxy: 5, system: 109, position: 14 });
+    config = h.api.getStoredConfig(13);
+    assert.equal(config.links.length, 2);
+    assert.equal(config.attackCounters[second], 3);
+    const addedUrl = config.links.find((url) => url.includes('system=109'));
+    assert.equal(config.attackCounters[addedUrl], 3);
+});
 
 test('first successful send advances without any retry', async () => {
     const h = harness({ succeedOn: 1 });

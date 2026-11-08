@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Projet secret — boucle multi-liens
 // @namespace    local.projet-secret
-// @version      6.23.23
+// @version      6.23.24
 // @updateURL    https://github.com/raphaelrobert1104-sys/mysecretproject/releases/latest/download/projet-secret.user.js
 // @downloadURL  https://github.com/raphaelrobert1104-sys/mysecretproject/releases/latest/download/projet-secret.user.js
 // @description  Automatise Ressources, Expédition V2, Attaques, Forme de vie, Import, Constructions, Ghost, Rappatriement, Bâtiments Mecha et Switch FDV avec configurations privées.
@@ -22,7 +22,7 @@
 (function () {
     'use strict';
 
-    const SCRIPT_VERSION = '6.23.23';
+    const SCRIPT_VERSION = '6.23.24';
     const CONFIG_KEYS = {
         1: 'secretMultiLinkConfig',
         2: 'secretMultiLinkConfig2',
@@ -412,14 +412,46 @@
                 !/flotte\s+étrangère.{0,160}repérée\s+à\s+proximité\s+de\s+votre\s+planète/i.test(text);
         };
 
+        const isExpandedReportVisible = (element) => {
+            if (!element.getClientRects().length) return false;
+            const rect = element.getBoundingClientRect();
+            // La ligne compacte fait généralement moins de 60 px ; un rapport
+            // réellement déplié contient le détail et occupe nettement plus.
+            if (rect.width < 2 || rect.height < 60) return false;
+
+            let visibleTop = rect.top;
+            let visibleBottom = rect.bottom;
+            let visibleLeft = rect.left;
+            let visibleRight = rect.right;
+            for (let current = element; current && current !== document.body; current = current.parentElement) {
+                const style = window.getComputedStyle(current);
+                if (style.display === 'none' || style.visibility === 'hidden' ||
+                    Number(style.opacity) === 0) return false;
+
+                if (current === element) continue;
+                const clipsX = /^(?:hidden|clip|auto|scroll)$/.test(style.overflowX || style.overflow || '');
+                const clipsY = /^(?:hidden|clip|auto|scroll)$/.test(style.overflowY || style.overflow || '');
+                if (!clipsX && !clipsY) continue;
+                const clip = current.getBoundingClientRect();
+                if (clipsX) {
+                    visibleLeft = Math.max(visibleLeft, clip.left);
+                    visibleRight = Math.min(visibleRight, clip.right);
+                }
+                if (clipsY) {
+                    visibleTop = Math.max(visibleTop, clip.top);
+                    visibleBottom = Math.min(visibleBottom, clip.bottom);
+                }
+                if (visibleRight - visibleLeft < 2 || visibleBottom - visibleTop < 60) return false;
+            }
+            return visibleRight - visibleLeft >= 2 && visibleBottom - visibleTop >= 60;
+        };
+
         const findOutboundSpyReports = () => {
             const candidates = [];
             for (const element of document.querySelectorAll('div, section, article, li')) {
-                // Certains rapports restent dans le DOM lorsqu'un message est replié.
-                // innerText peut alors encore fournir leur contenu : ne pas les traiter
-                // comme des rapports ouverts, sinon le bouton de la ligne est masqué.
-                if (!element.getClientRects().length ||
-                    window.getComputedStyle(element).visibility === 'hidden') continue;
+                // Le rapport replié peut conserver une boîte et du texte dans le DOM.
+                // Vérifier aussi le clipping des parents avant de le considérer ouvert.
+                if (!isExpandedReportVisible(element)) continue;
                 const text = String(element.innerText || element.textContent || '').trim();
                 if (text.length < 80 || text.length > 18000 || !matchesOutboundSpyReport(text)) continue;
                 const coordinates = getAttackCoordinatesFromReport(element);
@@ -450,6 +482,7 @@
             return [
                 'all:unset', 'box-sizing:border-box', 'display:inline-flex',
                 'align-items:center', 'justify-content:center', 'flex:0 0 auto',
+                'position:relative', 'z-index:4', 'visibility:visible', 'opacity:1',
                 compact ? 'width:21px' : 'min-width:25px',
                 compact ? 'height:21px' : 'min-height:25px',
                 compact ? 'margin:0 6px 0 2px' : 'margin:8px 0 2px',
@@ -1369,7 +1402,7 @@
                 }
                 .attack-target-entry {
                     display: grid;
-                    grid-template-columns: minmax(0, 1fr) auto;
+                    grid-template-columns: 28px minmax(0, 1fr) auto;
                     align-items: center;
                     gap: 10px;
                     min-height: 36px;
@@ -1378,6 +1411,29 @@
                     border-radius: 9px;
                     background: linear-gradient(100deg, rgba(15, 23, 42, .72), rgba(30, 41, 59, .48));
                 }
+                .attack-target-remove {
+                    display: inline-grid;
+                    place-items: center;
+                    width: 27px;
+                    min-width: 27px;
+                    height: 27px;
+                    min-height: 27px;
+                    padding: 0;
+                    border: 1px solid rgba(252, 165, 165, .56);
+                    border-radius: 8px;
+                    background: linear-gradient(145deg, rgba(185, 28, 28, .52), rgba(127, 29, 29, .42));
+                    color: #fee2e2;
+                    font: 800 17px/1 system-ui, -apple-system, "Segoe UI", sans-serif;
+                    box-shadow: inset 0 1px 0 rgba(255,255,255,.19), 0 2px 8px rgba(2,6,23,.24);
+                    backdrop-filter: blur(8px) saturate(130%);
+                    -webkit-backdrop-filter: blur(8px) saturate(130%);
+                    transition: transform .14s ease, filter .14s ease, box-shadow .14s ease;
+                }
+                .attack-target-remove:hover {
+                    filter: brightness(1.18);
+                    box-shadow: inset 0 1px 0 rgba(255,255,255,.23), 0 0 13px rgba(239,68,68,.22);
+                }
+                .attack-target-remove:active { transform: translateY(1px) scale(.96); }
                 .attack-target-coordinate {
                     overflow: hidden;
                     color: #e0f2fe;
@@ -2889,15 +2945,36 @@
                 row.className = 'attack-target-entry';
                 row.setAttribute('role', 'listitem');
 
+                const remove = document.createElement('button');
+                remove.type = 'button';
+                remove.className = 'attack-target-remove';
+                remove.textContent = '−';
+                const coordinateText = `${target.coordinates.galaxy}:${target.coordinates.system}:${target.coordinates.position}`;
+                remove.title = `Retirer ${coordinateText} de la liste Attaques`;
+                remove.setAttribute('aria-label', remove.title);
+                remove.addEventListener('click', (event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    try {
+                        toggleAttackReportTarget(target.coordinates);
+                        showError('');
+                        const updated = getStoredConfig(13);
+                        refs.status.textContent =
+                            `Attaques : ${updated.links.length} coordonnée(s) suivie(s) après suppression.`;
+                    } catch (error) {
+                        showError(error instanceof Error ? error.message : String(error));
+                    }
+                });
+
                 const coordinates = document.createElement('span');
                 coordinates.className = 'attack-target-coordinate';
-                coordinates.textContent = `${target.coordinates.galaxy}:${target.coordinates.system}:${target.coordinates.position}`;
+                coordinates.textContent = coordinateText;
 
                 const counter = document.createElement('span');
                 counter.className = 'attack-target-count';
                 counter.textContent = `Compteur ${formatInteger(target.count)}`;
 
-                row.append(coordinates, counter);
+                row.append(remove, coordinates, counter);
                 fragment.appendChild(row);
             }
             refs.attackTargetsList.appendChild(fragment);
