@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Projet secret — boucle multi-liens
 // @namespace    local.projet-secret
-// @version      6.23.24
+// @version      6.23.25
 // @updateURL    https://github.com/raphaelrobert1104-sys/mysecretproject/releases/latest/download/projet-secret.user.js
 // @downloadURL  https://github.com/raphaelrobert1104-sys/mysecretproject/releases/latest/download/projet-secret.user.js
 // @description  Automatise Ressources, Expédition V2, Attaques, Forme de vie, Import, Constructions, Ghost, Rappatriement, Bâtiments Mecha et Switch FDV avec configurations privées.
@@ -22,7 +22,7 @@
 (function () {
     'use strict';
 
-    const SCRIPT_VERSION = '6.23.24';
+    const SCRIPT_VERSION = '6.23.25';
     const CONFIG_KEYS = {
         1: 'secretMultiLinkConfig',
         2: 'secretMultiLinkConfig2',
@@ -667,14 +667,13 @@
                     row.classList.remove('secret-attack-row-targeted');
                 }
 
+                const rowMessage = row.closest('.message-item') || row;
                 const isOpen = reports.some((report) => {
                     if (getAttackCoordinateKey(report.coordinates) !== coordinateKey) return false;
-                    let container = row;
-                    for (let depth = 0; container && container !== document.body && depth < 12; depth += 1) {
-                        if (container.contains(report.element)) return true;
-                        container = container.parentElement;
-                    }
-                    return false;
+                    const reportMessage = report.element.closest('.message-item');
+                    return reportMessage
+                        ? reportMessage === rowMessage
+                        : rowMessage.contains(report.element);
                 });
                 if (isOpen) {
                     row.querySelectorAll('.secret-attack-row-toggle').forEach((control) => control.remove());
@@ -738,16 +737,24 @@
 
         attackReportButtonsRefresh = syncAttackControls;
         syncAttackControls();
-        let refreshScheduled = false;
-        const observer = new MutationObserver(() => {
-            if (refreshScheduled) return;
-            refreshScheduled = true;
-            requestAnimationFrame(() => {
-                refreshScheduled = false;
+        let refreshTimer = 0;
+        const scheduleAttackControlsRefresh = () => {
+            if (refreshTimer) window.clearTimeout(refreshTimer);
+            refreshTimer = window.setTimeout(() => {
+                refreshTimer = 0;
                 syncAttackControls();
-            });
+            }, 180);
+        };
+        const observer = new MutationObserver(scheduleAttackControlsRefresh);
+        observer.observe(document.body, {
+            childList: true,
+            subtree: true,
+            characterData: true,
+            attributes: true,
+            attributeFilter: ['class', 'aria-expanded'],
         });
-        observer.observe(document.body, { childList: true, subtree: true, characterData: true });
+        document.body.addEventListener('transitionend', scheduleAttackControlsRefresh, true);
+        document.body.addEventListener('animationend', scheduleAttackControlsRefresh, true);
     }
 
     function getAttackCoordinatesFromReport(reportNode) {
