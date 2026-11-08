@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Projet secret — boucle multi-liens
 // @namespace    local.projet-secret
-// @version      6.23.21
+// @version      6.23.23
 // @updateURL    https://github.com/raphaelrobert1104-sys/mysecretproject/releases/latest/download/projet-secret.user.js
 // @downloadURL  https://github.com/raphaelrobert1104-sys/mysecretproject/releases/latest/download/projet-secret.user.js
 // @description  Automatise Ressources, Expédition V2, Attaques, Forme de vie, Import, Constructions, Ghost, Rappatriement, Bâtiments Mecha et Switch FDV avec configurations privées.
@@ -22,7 +22,7 @@
 (function () {
     'use strict';
 
-    const SCRIPT_VERSION = '6.23.21';
+    const SCRIPT_VERSION = '6.23.23';
     const CONFIG_KEYS = {
         1: 'secretMultiLinkConfig',
         2: 'secretMultiLinkConfig2',
@@ -40,6 +40,7 @@
     const RUN_KEY = 'secretMultiLinkRun';
     const ACTION_SEQUENCE_KEY = 'secretMultiLinkActionSequence';
     let attackReportButtonsRefresh = null;
+    let attackTargetsPanelRefresh = null;
     const TAB_RUN_ID_KEY = 'secretMultiLinkRunId';
     const DEBUG_DISMISSED_RUN_KEY = 'secretMultiLinkDebugDismissedRunId';
     const GHOST_TIME_KEY = 'secretMultiLinkGhostTime';
@@ -414,6 +415,11 @@
         const findOutboundSpyReports = () => {
             const candidates = [];
             for (const element of document.querySelectorAll('div, section, article, li')) {
+                // Certains rapports restent dans le DOM lorsqu'un message est replié.
+                // innerText peut alors encore fournir leur contenu : ne pas les traiter
+                // comme des rapports ouverts, sinon le bouton de la ligne est masqué.
+                if (!element.getClientRects().length ||
+                    window.getComputedStyle(element).visibility === 'hidden') continue;
                 const text = String(element.innerText || element.textContent || '').trim();
                 if (text.length < 80 || text.length > 18000 || !matchesOutboundSpyReport(text)) continue;
                 const coordinates = getAttackCoordinatesFromReport(element);
@@ -436,7 +442,9 @@
 
         const getAttackButtonStyle = (kind, isConfigured) => {
             const compact = kind === 'row';
-            const color = isConfigured
+            const color = compact && isConfigured
+                ? { foreground: '#bbf7d0', border: 'rgba(134,239,172,.66)', background: 'rgba(34,197,94,.2)' }
+                : isConfigured
                 ? { foreground: '#fecaca', border: 'rgba(252,165,165,.58)', background: 'rgba(239,68,68,.19)' }
                 : { foreground: '#bbf7d0', border: 'rgba(134,239,172,.58)', background: 'rgba(34,197,94,.17)' };
             return [
@@ -649,20 +657,29 @@
                     control = createAttackControl('row', coordinateKey, isConfigured);
                 }
                 control.dataset.coordinates = coordinateKey;
-                const sender = findRowSender(row);
-                if (sender?.parentElement) {
-                    if (control.parentElement !== sender.parentElement || control.nextElementSibling !== sender) {
-                        sender.parentElement.insertBefore(control, sender);
+                control.textContent = isConfigured ? '✓' : '+';
+                control.style.cssText = getAttackButtonStyle('row', isConfigured);
+                control.title = isConfigured
+                    ? `Vu — ${coordinateKey.replace(/:/g, ' : ')} est déjà dans Attaques.`
+                    : `Ajouter ${coordinateKey.replace(/:/g, ' : ')} à la liste Attaques.`;
+                control.setAttribute('aria-label', control.title);
+
+                const header = row.querySelector('.message-head') || row;
+                const deleteControl = header.querySelector(
+                    '.message-delete, .delete, [class*="delete"], [aria-label*="supprimer" i], [title*="supprimer" i]'
+                );
+                if (deleteControl?.parentElement) {
+                    // La ligne compacte doit afficher l'icône immédiatement après
+                    // Supprimer et avant le pseudo (la coche reste non cliquable).
+                    const next = deleteControl.nextSibling;
+                    if (control.parentElement !== deleteControl.parentElement || control.previousSibling !== deleteControl) {
+                        deleteControl.parentElement.insertBefore(control, next);
                     }
                 } else {
-                    const header = row.querySelector('.message-head') || row;
-                    const deleteControl = header.querySelector(
-                        '.message-delete, .delete, [class*="delete"], [aria-label*="supprimer" i], [title*="supprimer" i]'
-                    );
-                    if (deleteControl?.parentElement) {
-                        const next = deleteControl.nextSibling;
-                        if (control.parentElement !== deleteControl.parentElement || control.previousSibling !== deleteControl) {
-                            deleteControl.parentElement.insertBefore(control, next);
+                    const sender = findRowSender(row);
+                    if (sender?.parentElement) {
+                        if (control.parentElement !== sender.parentElement || control.nextElementSibling !== sender) {
+                            sender.parentElement.insertBefore(control, sender);
                         }
                     } else {
                         const leftHeader = header.querySelector('.head-left') || header;
@@ -723,6 +740,12 @@
             throw new Error('La liste Attaques contient déjà 200 coordonnées.');
         }
         const targetUrl = createAttackFleetDispatchUrl(coordinates, window.location.origin);
+        const startCoordinatesKey = getAttackCoordinateKey(
+            parseAttackCoordinatesFromUrl(config.startUrl)
+        );
+        if (!alreadyConfigured && startCoordinatesKey && startCoordinatesKey === targetKey) {
+            throw new Error('La Page de départ fixe ne peut pas aussi être une coordonnée cible.');
+        }
         const links = alreadyConfigured
             ? config.links.filter((url) => getAttackCoordinateKey(parseAttackCoordinatesFromUrl(url)) !== targetKey)
             : [...config.links, targetUrl];
@@ -1315,6 +1338,74 @@
                 }
                 .start-url:focus, .small-vehicle-count:focus, .repatriation-completion-delay:focus { border-color: #60a5fa; box-shadow: 0 0 0 2px rgba(96, 165, 250, .25); }
                 .field-help { margin: 5px 0 0; color: #94a3b8; font-size: 11px; line-height: 1.4; }
+                .attack-targets-group { display: none; margin: 0 0 13px; }
+                .attack-targets-heading {
+                    display: flex;
+                    align-items: flex-start;
+                    justify-content: space-between;
+                    gap: 10px;
+                    margin-bottom: 9px;
+                }
+                .attack-targets-heading label { margin: 0; }
+                .attack-targets-total {
+                    flex: 0 0 auto;
+                    padding: 4px 8px;
+                    border: 1px solid rgba(96, 165, 250, .3);
+                    border-radius: 999px;
+                    background: rgba(37, 99, 235, .16);
+                    color: #bfdbfe;
+                    font-size: 10px;
+                    font-weight: 800;
+                    font-variant-numeric: tabular-nums;
+                }
+                .attack-targets-list {
+                    display: grid;
+                    gap: 5px;
+                    max-height: min(360px, calc(100vh - 370px));
+                    min-height: 54px;
+                    overflow: auto;
+                    padding: 2px 4px 2px 1px;
+                    overscroll-behavior: contain;
+                }
+                .attack-target-entry {
+                    display: grid;
+                    grid-template-columns: minmax(0, 1fr) auto;
+                    align-items: center;
+                    gap: 10px;
+                    min-height: 36px;
+                    padding: 7px 10px;
+                    border: 1px solid rgba(148, 163, 184, .17);
+                    border-radius: 9px;
+                    background: linear-gradient(100deg, rgba(15, 23, 42, .72), rgba(30, 41, 59, .48));
+                }
+                .attack-target-coordinate {
+                    overflow: hidden;
+                    color: #e0f2fe;
+                    font: 750 12px/1.2 ui-monospace, SFMono-Regular, Consolas, monospace;
+                    font-variant-numeric: tabular-nums;
+                    text-overflow: ellipsis;
+                    white-space: nowrap;
+                }
+                .attack-target-count {
+                    padding: 3px 7px;
+                    border: 1px solid rgba(134, 239, 172, .2);
+                    border-radius: 999px;
+                    background: rgba(22, 101, 52, .18);
+                    color: #bbf7d0;
+                    font-size: 10px;
+                    font-weight: 720;
+                    font-variant-numeric: tabular-nums;
+                    white-space: nowrap;
+                }
+                .attack-target-empty {
+                    padding: 13px 11px;
+                    border: 1px dashed rgba(148, 163, 184, .25);
+                    border-radius: 10px;
+                    color: #aab8ca;
+                    font-size: 11px;
+                    line-height: 1.45;
+                    text-align: center;
+                }
                 .combined-config {
                     display: none;
                     grid-template-columns: 1fr 1fr;
@@ -1973,6 +2064,16 @@
                         <input id="secret-start-url-2" class="start-url" type="url" spellcheck="false" autocomplete="off" placeholder="Lien chargé avant la première action">
                         <p class="field-help start-url-help">Chargé une seule fois avant le lien choisi aléatoirement.</p>
                     </div>
+                    <div class="attack-targets-group">
+                        <div class="attack-targets-heading">
+                            <div>
+                                <label>Coordonnées configurées</label>
+                                <p class="field-help">Ajoutez/retirez avec +/− dans un rapport envoyé. Le compteur équilibre les sélections ; tri par galaxie, système et position.</p>
+                            </div>
+                            <span class="attack-targets-total">0 / 200</span>
+                        </div>
+                        <div class="attack-targets-list" role="list" aria-live="polite"></div>
+                    </div>
                     <div class="small-vehicle-group">
                         <label for="secret-small-vehicle-count">Nombre de petites voitures</label>
                         <input id="secret-small-vehicle-count" class="small-vehicle-count" type="number" min="0" step="1" inputmode="numeric" value="6400">
@@ -2181,6 +2282,9 @@
             startUrlLabel: shadow.querySelector('.start-url-label'),
             startUrl: shadow.querySelector('.start-url'),
             startUrlHelp: shadow.querySelector('.start-url-help'),
+            attackTargetsGroup: shadow.querySelector('.attack-targets-group'),
+            attackTargetsList: shadow.querySelector('.attack-targets-list'),
+            attackTargetsTotal: shadow.querySelector('.attack-targets-total'),
             smallVehicleGroup: shadow.querySelector('.small-vehicle-group'),
             smallVehicleCount: shadow.querySelector('.small-vehicle-count'),
             repatriationDelayGroup: shadow.querySelector('.repatriation-delay-group'),
@@ -2755,6 +2859,54 @@
             refs.switchFdvRunner.classList.remove('open');
         }
 
+        function renderAttackTargetsList() {
+            const config = getStoredConfig(13);
+            const targets = config.links
+                .map((url) => ({
+                    coordinates: parseAttackCoordinatesFromUrl(url),
+                    count: Math.max(0, Math.floor(Number(config.attackCounters[url]) || 0)),
+                }))
+                .filter((target) => target.coordinates)
+                .sort((left, right) =>
+                    left.coordinates.galaxy - right.coordinates.galaxy ||
+                    left.coordinates.system - right.coordinates.system ||
+                    left.coordinates.position - right.coordinates.position
+                );
+
+            refs.attackTargetsTotal.textContent = `${targets.length} / ${getProfileLinkLimit(13)}`;
+            refs.attackTargetsList.replaceChildren();
+            if (targets.length === 0) {
+                const empty = document.createElement('div');
+                empty.className = 'attack-target-empty';
+                empty.textContent = 'Aucune coordonnée pour le moment. Dans un rapport d’espionnage envoyé, cliquez sur + pour l’ajouter.';
+                refs.attackTargetsList.appendChild(empty);
+                return;
+            }
+
+            const fragment = document.createDocumentFragment();
+            for (const target of targets) {
+                const row = document.createElement('div');
+                row.className = 'attack-target-entry';
+                row.setAttribute('role', 'listitem');
+
+                const coordinates = document.createElement('span');
+                coordinates.className = 'attack-target-coordinate';
+                coordinates.textContent = `${target.coordinates.galaxy}:${target.coordinates.system}:${target.coordinates.position}`;
+
+                const counter = document.createElement('span');
+                counter.className = 'attack-target-count';
+                counter.textContent = `Compteur ${formatInteger(target.count)}`;
+
+                row.append(coordinates, counter);
+                fragment.appendChild(row);
+            }
+            refs.attackTargetsList.appendChild(fragment);
+        }
+
+        attackTargetsPanelRefresh = () => {
+            if (editingProfileId === 13) renderAttackTargetsList();
+        };
+
         function loadProfileIntoPanel(profileId) {
             editingProfileId = normalizeEditorProfileId(profileId);
             refs.mechaLinks2Group.style.display = editingProfileId === 12 ? 'block' : 'none';
@@ -2786,6 +2938,7 @@
                 refs.panelTitle.textContent = combinedDetails.title;
                 refs.help.textContent = combinedDetails.help;
                 refs.startUrlGroup.style.display = 'none';
+                refs.attackTargetsGroup.style.display = 'none';
                 refs.smallVehicleGroup.style.display = 'none';
                 refs.linksFieldGroup.style.display = 'none';
                 refs.namedLinksFieldGroup.style.display = 'none';
@@ -2830,12 +2983,13 @@
                           : editingProfileId === 12
                             ? 'Configurez deux listes de 13 liens. Premier passage : les 9 bâtiments prioritaires. Second passage : les 3 technologies de Liens à traiter 2. Un seul clic par page ; sans bouton disponible, le lien est passé.'
                           : editingProfileId === 13
-                            ? 'Configurez une Page de départ fixe et jusqu’à 200 URL cibles. Les compteurs de sélection sont équilibrés et conservés dans Tampermonkey.'
+                            ? 'Configurez la Page de départ fixe ici. Ajoutez et retirez les coordonnées depuis les boutons +/− des rapports d’espionnage envoyés ; la liste ci-dessous est triée et affiche le nombre de chargements.'
                           : editingProfileId === 15
                             ? '13 URL, une par ligne, conservées uniquement dans Tampermonkey. Switch vers Roctas désactive puis sélectionne Roctas sur chaque page, dans l’ordre. Le choix humains est indisponible.'
                     : 'Un lien par ligne. Les adresses sont conservées dans le stockage privé de Tampermonkey, jamais dans le code du script.';
             const usesStartUrl = editingProfileId === 2 || editingProfileId === 13;
             refs.startUrlGroup.style.display = usesStartUrl ? 'block' : 'none';
+            refs.attackTargetsGroup.style.display = editingProfileId === 13 ? 'block' : 'none';
             refs.startUrlLabel.textContent = editingProfileId === 13
                 ? 'Page de départ fixe'
                 : 'Lien de départ';
@@ -2850,7 +3004,7 @@
             refs.repatriationCompletionDelay.value = String(
                 editingProfileId === 11 ? config.repatriationCompletionDelaySeconds : 0
             );
-            refs.linksFieldGroup.style.display = editingProfileId === 7 ? 'none' : 'block';
+            refs.linksFieldGroup.style.display = [7, 13].includes(editingProfileId) ? 'none' : 'block';
             refs.namedLinksFieldGroup.style.display = editingProfileId === 7 ? 'block' : 'none';
             refs.constructionLoadingUrl.value =
                 editingProfileId === 7 ? config.constructionLoadingUrl : '';
@@ -2863,7 +3017,7 @@
             refs.combinedConfig.style.display = 'none';
             const usesSingleUrl = [6, 8, 9, 11].includes(editingProfileId);
             refs.linksLabel.textContent = usesSingleUrl ? 'URL à ouvrir' : 'Liens à traiter';
-            refs.textarea.value = links.join('\n');
+            refs.textarea.value = editingProfileId === 13 ? '' : links.join('\n');
             refs.mechaLinks2.value = editingProfileId === 12 ? config.mechaLinks2.join('\n') : '';
             refs.textarea.placeholder = usesSingleUrl ? 'https://…' : 'Lien 1\nLien 2\n…';
             refs.textarea.style.minHeight = usesSingleUrl ? '58px' : '';
@@ -2880,8 +3034,16 @@
             updateCounter();
         }
 
+        function updateAttackTargetsList() {
+            renderAttackTargetsList();
+        }
+
         function updateCounter() {
             if ([3, 10, 14].includes(editingProfileId)) return;
+            if (editingProfileId === 13) {
+                updateAttackTargetsList();
+                return;
+            }
             if (editingProfileId === 12) {
                 const count2 = refs.mechaLinks2.value.split(/\r?\n/).map((line) => line.trim()).filter(Boolean).length;
                 refs.mechaLinks2Counter.textContent = `${count2} / 13`;
@@ -2968,6 +3130,37 @@
                     'Constructions : Page de chargement et ' +
                     parsedNamedLinks.namedLinks.length +
                     ' destination(s) enregistrées dans Tampermonkey.';
+                return;
+            }
+
+            if (editingProfileId === 13) {
+                const startUrl = validateHttpUrl(refs.startUrl.value);
+                if (!startUrl) {
+                    showError('Ajoutez une Page de départ fixe valide commençant par http:// ou https://.');
+                    refs.startUrl.focus();
+                    return;
+                }
+                const config = getStoredConfig(13);
+                const startCoordinatesKey = getAttackCoordinateKey(
+                    parseAttackCoordinatesFromUrl(startUrl)
+                );
+                if (config.links.some((url) => url === startUrl || (
+                    startCoordinatesKey &&
+                    getAttackCoordinateKey(parseAttackCoordinatesFromUrl(url)) === startCoordinatesKey
+                ))) {
+                    showError('La Page de départ fixe ne doit pas figurer dans les coordonnées cibles.');
+                    refs.startUrl.focus();
+                    return;
+                }
+
+                showError('');
+                saveConfig(13, {
+                    links: config.links,
+                    startUrl,
+                    attackCounters: config.attackCounters,
+                });
+                refs.status.textContent =
+                    `Attaques : Page de départ enregistrée · ${config.links.length} coordonnée(s) suivie(s).`;
                 return;
             }
 
@@ -3140,6 +3333,12 @@
             } else if (editingProfileId === 12) {
                 refs.status.textContent = `Bâtiments Mecha : liste 1 — ${config.links.length}/13 liens ; ` +
                     `Liens à traiter 2 — ${config.mechaLinks2.length}/13 liens.`;
+            } else if (editingProfileId === 13) {
+                refs.status.textContent = !config.startUrl
+                    ? 'Attaques : configurez la Page de départ fixe.'
+                    : config.links.length > 0
+                      ? `Attaques : ${config.links.length}/200 coordonnées suivies · Page de départ prête.`
+                      : 'Attaques : ajoutez une coordonnée depuis le bouton + d’un rapport d’espionnage envoyé.';
             } else if (config.links.length > 0) {
                 refs.status.textContent =
                     `${getProfileLabel(editingProfileId)} : ${config.links.length} lien(s) prêt(s).`;
@@ -3173,7 +3372,9 @@
             const ui = await ensureUi();
             ui.open(normalizedProfileId);
             ui.showError(
-                `Enregistrez au moins un lien pour ${getProfileLabel(normalizedProfileId)} avant de lancer.`
+                normalizedProfileId === 13
+                    ? 'Ajoutez au moins une coordonnée avec le bouton + d’un rapport d’espionnage envoyé avant de lancer Attaques.'
+                    : `Enregistrez au moins un lien pour ${getProfileLabel(normalizedProfileId)} avant de lancer.`
             );
             ui.refresh();
             return;
@@ -3303,7 +3504,7 @@
         if (profileId === 13) {
             return config.startUrl && config.links.length > 0
                 ? ''
-                : 'Configurez la Page de départ fixe et au moins une URL cible dans Attaques.';
+                : 'Configurez la Page de départ fixe et ajoutez au moins une coordonnée depuis un rapport d’espionnage dans Attaques.';
         }
         if (profileId === 15) {
             return config.links.length === 13
@@ -3506,7 +3707,7 @@
             errors.push('Ajoutez la Page de départ fixe dans Attaques.');
         }
         if (attacksConfig.links.length === 0) {
-            errors.push('Ajoutez au moins une URL cible dans Attaques.');
+            errors.push('Ajoutez au moins une coordonnée avec le bouton + d’un rapport d’espionnage envoyé dans Attaques.');
         }
 
         if (errors.length > 0) {
@@ -4708,7 +4909,7 @@
             const ui = await ensureUi();
             ui.open(13);
             ui.showError(
-                'Configurez la Page de départ fixe et au moins une URL cible pour Attaques.'
+                'Configurez la Page de départ fixe et ajoutez au moins une coordonnée depuis un rapport d’espionnage envoyé.'
             );
             ui.refresh();
             return;
@@ -8602,6 +8803,7 @@
                 attackCounters: normalizeAttackCounters(links, sourceCounters, previousLinks),
             });
             attackReportButtonsRefresh?.();
+            attackTargetsPanelRefresh?.();
             return;
         }
 
