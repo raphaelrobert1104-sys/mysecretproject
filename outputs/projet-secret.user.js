@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Projet secret — boucle multi-liens
 // @namespace    local.projet-secret
-// @version      6.23.20
+// @version      6.23.21
 // @updateURL    https://github.com/raphaelrobert1104-sys/mysecretproject/releases/latest/download/projet-secret.user.js
 // @downloadURL  https://github.com/raphaelrobert1104-sys/mysecretproject/releases/latest/download/projet-secret.user.js
 // @description  Automatise Ressources, Expédition V2, Attaques, Forme de vie, Import, Constructions, Ghost, Rappatriement, Bâtiments Mecha et Switch FDV avec configurations privées.
@@ -22,7 +22,7 @@
 (function () {
     'use strict';
 
-    const SCRIPT_VERSION = '6.23.20';
+    const SCRIPT_VERSION = '6.23.21';
     const CONFIG_KEYS = {
         1: 'secretMultiLinkConfig',
         2: 'secretMultiLinkConfig2',
@@ -387,6 +387,22 @@
         document.body.dataset.secretAttackReportObserver = 'true';
         document.querySelectorAll('.secret-attack-report-toggle, .secret-attack-row-toggle')
             .forEach((button) => button.remove());
+        const highlightStyleId = 'secret-attack-target-row-style';
+        if (!document.getElementById(highlightStyleId)) {
+            const style = document.createElement('style');
+            style.id = highlightStyleId;
+            style.textContent = `
+                .secret-attack-row-targeted {
+                    background:linear-gradient(90deg,rgba(22,101,52,.38),rgba(20,83,45,.2)) !important;
+                    box-shadow:inset 4px 0 0 rgba(74,222,128,.95),inset 0 0 0 1px rgba(74,222,128,.18) !important;
+                    transition:background .16s ease;
+                }
+                .secret-attack-row-targeted > * {
+                    background-color:rgba(34,197,94,.10) !important;
+                }
+            `;
+            (document.head || document.documentElement).appendChild(style);
+        }
         const matchesOutboundSpyReport = (text) => {
             return /rapport\s+d[\s'’`]?espionnage/i.test(text) &&
                 /\bjoueur\s*:/i.test(text) &&
@@ -514,16 +530,58 @@
             return null;
         };
 
-        const isCollapsedOutboundSummary = (row) => {
-            const text = String(row.innerText || row.textContent || '').trim();
-            if (!text || /flotte\s+étrangère.{0,160}repérée\s+à\s+proximité\s+de\s+votre\s+planète/i.test(text)) {
+        const isOutboundAttackSummary = (value) => {
+            const text = String(value || '').trim();
+            if (!text || text.length > 280 ||
+                /flotte\s+étrangère.{0,160}repérée\s+à\s+proximité\s+de\s+votre\s+planète/i.test(text)) {
                 return false;
             }
-            const header = row.querySelector('.message-head') || row;
-            const summary = String(header.innerText || header.textContent || text);
-            const hasResourceTotal = /\b\d+(?:[.,]\d+)?\s*[KMB]\b|\b\d{1,3}(?:[.,]\d{3})+\b/i.test(summary);
-            const hasActivityColumn = /(?:>\s*)?\d+(?:[.,]\d+)?\s*(?:min(?:ute)?s?)\b/i.test(summary);
-            return hasResourceTotal && hasActivityColumn;
+            const hasCoordinates = /\[\s*\d{1,2}\s*:\s*\d{1,3}\s*:\s*\d{1,2}\s*\]/.test(text);
+            const hasResourceTotal = /\b\d+(?:[.,]\d+)?\s*[KMB]\b|\b\d{1,3}(?:[.,]\d{3})+\b/i.test(text);
+            const hasActivityColumn = /(?:>\s*)?\d+(?:[.,]\d+)?\s*(?:min(?:ute)?s?)\b/i.test(text);
+            return hasCoordinates && hasResourceTotal && hasActivityColumn;
+        };
+
+        const findAttackSummaryRows = () => {
+            const rows = [];
+            const seenRows = new Set();
+            const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+            let textNode;
+            while ((textNode = walker.nextNode())) {
+                if (!/\[\s*\d{1,2}\s*:\s*\d{1,3}\s*:\s*\d{1,2}\s*\]/.test(textNode.nodeValue || '') ||
+                    !textNode.parentElement?.getClientRects().length) continue;
+
+                let summary = null;
+                let current = textNode.parentElement;
+                for (let depth = 0; current && current !== document.body && depth < 14; depth += 1) {
+                    const text = String(current.innerText || current.textContent || '').trim();
+                    if (isOutboundAttackSummary(text)) {
+                        summary = current;
+                        break;
+                    }
+                    current = current.parentElement;
+                }
+                if (!summary) continue;
+
+                // Grow from the smallest summary block to the visible full-width row,
+                // but stop before the expanded report body or a containing message list.
+                let row = summary;
+                for (let depth = 0; depth < 6; depth += 1) {
+                    const parent = row.parentElement;
+                    if (!parent || parent === document.body) break;
+                    const parentText = String(parent.innerText || parent.textContent || '').trim();
+                    const parentRect = parent.getBoundingClientRect();
+                    if (!isOutboundAttackSummary(parentText) || parentRect.height > 100) break;
+                    row = parent;
+                }
+
+                const coordinates = getAttackCoordinatesFromReport(row);
+                const key = getAttackCoordinateKey(coordinates);
+                if (!key || seenRows.has(row)) continue;
+                seenRows.add(row);
+                rows.push({ row, coordinates, coordinateKey: key });
+            }
+            return rows;
         };
 
         const syncReportButtons = (reports, configuredKeys) => {
@@ -557,16 +615,31 @@
 
         const syncRowButtons = (reports, configuredKeys) => {
             const activeButtons = new Set();
-            for (const row of document.querySelectorAll('.message-item')) {
-                const coordinateKey = getAttackCoordinateKey(getAttackCoordinatesFromReport(row));
-                if (!coordinateKey) continue;
-                if (reports.some((report) => row.contains(report.element))) {
+            const activeRows = new Set();
+            for (const summary of findAttackSummaryRows()) {
+                const { row, coordinates, coordinateKey } = summary;
+                const isConfigured = configuredKeys.has(coordinateKey);
+                if (isConfigured) {
+                    row.classList.add('secret-attack-row-targeted');
+                    activeRows.add(row);
+                } else {
+                    row.classList.remove('secret-attack-row-targeted');
+                }
+
+                const isOpen = reports.some((report) => {
+                    if (getAttackCoordinateKey(report.coordinates) !== coordinateKey) return false;
+                    let container = row;
+                    for (let depth = 0; container && container !== document.body && depth < 12; depth += 1) {
+                        if (container.contains(report.element)) return true;
+                        container = container.parentElement;
+                    }
+                    return false;
+                });
+                if (isOpen) {
                     row.querySelectorAll('.secret-attack-row-toggle').forEach((control) => control.remove());
                     continue;
                 }
-                if (!isCollapsedOutboundSummary(row)) continue;
 
-                const isConfigured = configuredKeys.has(coordinateKey);
                 const isPassiveRowCheck = isConfigured;
                 let control = [...row.querySelectorAll('.secret-attack-row-toggle')]
                     .find((existing) => existing.dataset.coordinates === coordinateKey &&
@@ -600,6 +673,9 @@
             }
             for (const stale of document.querySelectorAll('.secret-attack-row-toggle')) {
                 if (!activeButtons.has(stale)) stale.remove();
+            }
+            for (const highlighted of document.querySelectorAll('.secret-attack-row-targeted')) {
+                if (!activeRows.has(highlighted)) highlighted.classList.remove('secret-attack-row-targeted');
             }
         };
 
