@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Projet secret — boucle multi-liens
 // @namespace    local.projet-secret
-// @version      6.23.19
+// @version      6.23.20
 // @updateURL    https://github.com/raphaelrobert1104-sys/mysecretproject/releases/latest/download/projet-secret.user.js
 // @downloadURL  https://github.com/raphaelrobert1104-sys/mysecretproject/releases/latest/download/projet-secret.user.js
 // @description  Automatise Ressources, Expédition V2, Attaques, Forme de vie, Import, Constructions, Ghost, Rappatriement, Bâtiments Mecha et Switch FDV avec configurations privées.
@@ -22,7 +22,7 @@
 (function () {
     'use strict';
 
-    const SCRIPT_VERSION = '6.23.10';
+    const SCRIPT_VERSION = '6.23.20';
     const CONFIG_KEYS = {
         1: 'secretMultiLinkConfig',
         2: 'secretMultiLinkConfig2',
@@ -93,6 +93,7 @@
     const MECHA_DELAY_MAX_MS = POST_ACTION_DELAY_MAX_MS * 1.3;
     const ATTACK_DELAY_MIN_MS = POST_ACTION_DELAY_MIN_MS;
     const ATTACK_DELAY_MAX_MS = POST_ACTION_DELAY_MAX_MS;
+    const ATTACK_RANDOM_DELAY_FACTOR = 0.6;
     const EXPEDITION_V2_LAUNCH_DELAY_MIN_MS = 800;
     const EXPEDITION_V2_LAUNCH_DELAY_MAX_MS = 1400;
     const EXPEDITION_SLOTS_SELECTOR = '#slots > div:nth-child(2) > span';
@@ -4711,10 +4712,7 @@
 
                     updateRun(runId, {
                         phase: 'attack-read-slots',
-                        attackPendingDelayMs: getRandomDelayMs(
-                            ATTACK_DELAY_MIN_MS,
-                            ATTACK_DELAY_MAX_MS
-                        ),
+                        attackPendingDelayMs: getAttackRandomDelayMs(),
                         attackPendingDelayLabel: 'le chargement de la Page de départ fixe',
                         message: 'Attaques — Page de départ chargée, préparation de la lecture des slots…',
                     });
@@ -4742,10 +4740,7 @@
                         phase: 'attack-choose-target',
                         attackTargetExecutions: slots.remaining,
                         attackCompletedExecutions: 0,
-                        attackPendingDelayMs: getRandomDelayMs(
-                            ATTACK_DELAY_MIN_MS,
-                            ATTACK_DELAY_MAX_MS
-                        ),
+                        attackPendingDelayMs: getAttackRandomDelayMs(),
                         attackPendingDelayLabel: 'la lecture des slots de flotte',
                         message:
                             `Attaques — slots ${slots.used}/${slots.maximum} : ` +
@@ -4810,10 +4805,7 @@
                         phase: 'attack-set-transporter',
                         currentLinkIndex: currentIndex,
                         attackCounterIncremented: true,
-                        attackPendingDelayMs: getRandomDelayMs(
-                            ATTACK_DELAY_MIN_MS,
-                            ATTACK_DELAY_MAX_MS
-                        ),
+                        attackPendingDelayMs: getAttackRandomDelayMs(),
                         attackPendingDelayLabel: `le chargement de l’URL ${currentIndex + 1}`,
                         message:
                             `Attaques — URL ${currentIndex + 1}/${config.links.length} chargée ; ` +
@@ -4833,10 +4825,7 @@
                     setFormControlValue(input, String(ATTACK_TRANSPORTER_COUNT));
                     updateRun(runId, {
                         phase: 'attack-continue',
-                        attackPendingDelayMs: getRandomDelayMs(
-                            ATTACK_DELAY_MIN_MS,
-                            ATTACK_DELAY_MAX_MS
-                        ),
+                        attackPendingDelayMs: getAttackRandomDelayMs(),
                         attackPendingDelayLabel: `la saisie de ${ATTACK_TRANSPORTER_COUNT} petits transporteurs`,
                         message:
                             `Attaques — tour ${completedExecutions + 1}/${targetExecutions} : ` +
@@ -4873,10 +4862,7 @@
                     if (!getActiveRun(runId)) return;
                     updateRun(runId, {
                         phase: 'attack-send',
-                        attackPendingDelayMs: getRandomDelayMs(
-                            ATTACK_DELAY_MIN_MS,
-                            ATTACK_DELAY_MAX_MS
-                        ),
+                        attackPendingDelayMs: getAttackRandomDelayMs(),
                         attackPendingDelayLabel: 'le chargement de la page d’envoi',
                         message:
                             `Attaques — tour ${completedExecutions + 1}/${targetExecutions} : ` +
@@ -5026,7 +5012,7 @@
         }
         updateRun(runId, {
             phase: 'attack-choose-target',
-            attackPendingDelayMs: getRandomDelayMs(ATTACK_DELAY_MIN_MS, ATTACK_DELAY_MAX_MS),
+            attackPendingDelayMs: getAttackRandomDelayMs(),
             attackPendingDelayLabel: `le tour ${completed}${skipped ? ' ignoré après deux tentatives' : ''}`,
             message: skipped
                 ? `Attaques — tour ${completed} : deux tentatives non abouties, passage à une autre URL.`
@@ -5054,6 +5040,13 @@
         });
         refreshUi();
         return true;
+    }
+
+    function getAttackRandomDelayMs() {
+        return Math.round(
+            getRandomDelayMs(ATTACK_DELAY_MIN_MS, ATTACK_DELAY_MAX_MS) *
+            ATTACK_RANDOM_DELAY_FACTOR
+        );
     }
 
     async function completeAttackAutomation(runId, message) {
