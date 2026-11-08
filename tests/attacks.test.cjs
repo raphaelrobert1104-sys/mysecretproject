@@ -143,24 +143,23 @@ test('compact-row plus adds once and never toggles an existing coordinate off', 
     assert.equal(config.attackCounters[config.links[0]], 0);
 });
 
-test('closed compact messages remain closed even when the hidden report stays in the DOM', () => {
-    let messageHeight = 38;
+test('expanded spy report is associated with the adjacent compact row, not an open row elsewhere', () => {
+    let reportVisible = true;
     const report = {
-        closest: () => message,
-        getBoundingClientRect: () => ({ height: 260 }),
-    };
-    const message = {
-        contains: (element) => element === report || element === row,
-        getBoundingClientRect: () => ({ height: messageHeight }),
+        getClientRects: () => reportVisible ? [{}] : [],
+        getBoundingClientRect: () => ({ top: 52, bottom: 312, left: 12, right: 780, width: 768, height: 260 }),
     };
     const row = {
-        closest: () => message,
-        getBoundingClientRect: () => ({ height: 38 }),
+        getBoundingClientRect: () => ({ top: 8, bottom: 46, left: 8, right: 790, width: 782, height: 38 }),
+    };
+    const unrelatedClosedRow = {
+        getBoundingClientRect: () => ({ top: 340, bottom: 378, left: 8, right: 790, width: 782, height: 38 }),
     };
 
-    assert.equal(harness().api.isAttackReportOpenForRow(row, report), false);
-    messageHeight = 420;
     assert.equal(harness().api.isAttackReportOpenForRow(row, report), true);
+    assert.equal(harness().api.isAttackReportOpenForRow(unrelatedClosedRow, report), false);
+    reportVisible = false;
+    assert.equal(harness().api.isAttackReportOpenForRow(row, report), false);
 });
 
 test('first successful send advances without any retry', async () => {

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Projet secret — boucle multi-liens
 // @namespace    local.projet-secret
-// @version      6.23.27
+// @version      6.23.28
 // @updateURL    https://github.com/raphaelrobert1104-sys/mysecretproject/releases/latest/download/projet-secret.user.js
 // @downloadURL  https://github.com/raphaelrobert1104-sys/mysecretproject/releases/latest/download/projet-secret.user.js
 // @description  Automatise Ressources, Expédition V2, Attaques, Forme de vie, Import, Constructions, Ghost, Rappatriement, Bâtiments Mecha et Switch FDV avec configurations privées.
@@ -22,7 +22,7 @@
 (function () {
     'use strict';
 
-    const SCRIPT_VERSION = '6.23.27';
+    const SCRIPT_VERSION = '6.23.28';
     const CONFIG_KEYS = {
         1: 'secretMultiLinkConfig',
         2: 'secretMultiLinkConfig2',
@@ -382,24 +382,17 @@
     }
 
     function isAttackReportOpenForRow(row, reportElement) {
-        const rowMessage = row.closest('.message-item') || row;
-        const reportMessage = reportElement.closest('.message-item');
-        let messageRoot = null;
+        if (!row || !reportElement || !reportElement.getClientRects().length) return false;
+        const rowRect = row.getBoundingClientRect();
+        const reportRect = reportElement.getBoundingClientRect();
+        const verticalGap = reportRect.top - rowRect.bottom;
+        const overlapsHorizontally = reportRect.right > rowRect.left && reportRect.left < rowRect.right;
 
-        if (rowMessage === reportMessage || rowMessage.contains(reportElement)) {
-            messageRoot = rowMessage;
-        } else if (reportMessage?.contains(row)) {
-            messageRoot = reportMessage;
-        } else {
-            return false;
-        }
-
-        const rowHeight = row.getBoundingClientRect().height;
-        const messageHeight = messageRoot.getBoundingClientRect().height;
-        const reportHeight = reportElement.getBoundingClientRect().height;
-        // The detail pane may remain in the DOM when collapsed. Only count it as
-        // open when the same message wrapper has actually grown beyond its compact row.
-        return reportHeight >= 60 && messageHeight >= rowHeight + 40;
+        // OGame renders the compact message row and its expanded spy-report body
+        // in separate DOM branches. Associate them by their on-screen adjacency,
+        // not by a shared .message-item ancestor (which may not exist).
+        return reportRect.height >= 60 && reportRect.width >= 2 && overlapsHorizontally &&
+            verticalGap >= -30 && verticalGap <= 140;
     }
 
     function installAttackReportControls() {
