@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Projet secret — boucle multi-liens
 // @namespace    local.projet-secret
-// @version      6.23.18
+// @version      6.23.19
 // @updateURL    https://github.com/raphaelrobert1104-sys/mysecretproject/releases/latest/download/projet-secret.user.js
 // @downloadURL  https://github.com/raphaelrobert1104-sys/mysecretproject/releases/latest/download/projet-secret.user.js
 // @description  Automatise Ressources, Expédition V2, Attaques, Forme de vie, Import, Constructions, Ghost, Rappatriement, Bâtiments Mecha et Switch FDV avec configurations privées.
@@ -384,7 +384,8 @@
             !document.body || document.body.dataset.secretAttackReportObserverV4 === 'true') return;
         document.body.dataset.secretAttackReportObserverV4 = 'true';
         document.body.dataset.secretAttackReportObserver = 'true';
-        document.querySelectorAll('.secret-attack-report-toggle').forEach((button) => button.remove());
+        document.querySelectorAll('.secret-attack-report-toggle, .secret-attack-row-toggle')
+            .forEach((button) => button.remove());
         const matchesOutboundSpyReport = (text) => {
             return /rapport\s+d[\s'’`]?espionnage/i.test(text) &&
                 /\bjoueur\s*:/i.test(text) &&
@@ -410,79 +411,213 @@
             }));
         };
 
-        const createAttackReportButton = () => {
-            const button = document.createElement('button');
-            button.type = 'button';
-            button.className = 'secret-attack-report-toggle';
-            button.style.cssText = [
+        const getConfiguredAttackKeys = () => new Set(
+            getStoredConfig(13).links
+                .map((url) => getAttackCoordinateKey(parseAttackCoordinatesFromUrl(url)))
+                .filter(Boolean)
+        );
+
+        const getAttackButtonStyle = (kind, isConfigured) => {
+            const compact = kind === 'row';
+            const color = isConfigured
+                ? { foreground: '#fecaca', border: 'rgba(252,165,165,.58)', background: 'rgba(239,68,68,.19)' }
+                : { foreground: '#bbf7d0', border: 'rgba(134,239,172,.58)', background: 'rgba(34,197,94,.17)' };
+            return [
                 'all:unset', 'box-sizing:border-box', 'display:inline-flex',
-                'align-items:center', 'gap:5px', 'margin:8px 0 2px',
-                'padding:6px 9px', 'border:1px solid rgba(210,235,255,.34)',
-                'border-radius:999px', 'background:rgba(170,205,230,.12)',
-                'color:#e8f3fc', 'font:600 11px/1.2 system-ui,sans-serif',
-                'letter-spacing:.01em', 'cursor:pointer',
-                'box-shadow:0 2px 8px rgba(3,12,22,.16)',
+                'align-items:center', 'justify-content:center', 'flex:0 0 auto',
+                compact ? 'width:21px' : 'min-width:25px',
+                compact ? 'height:21px' : 'min-height:25px',
+                compact ? 'margin:0 6px 0 2px' : 'margin:8px 0 2px',
+                compact ? 'padding:0' : 'padding:3px 8px',
+                `border:1px solid ${color.border}`,
+                compact ? 'border-radius:7px' : 'border-radius:9px',
+                `background:${color.background}`,
+                `color:${color.foreground}`,
+                'font:700 13px/1 system-ui,-apple-system,"Segoe UI",sans-serif',
+                'text-align:center', 'vertical-align:middle',
+                compact ? '' : 'letter-spacing:.01em',
+                compact ? 'cursor:pointer' : 'cursor:pointer',
+                'box-shadow:inset 0 1px 0 rgba(255,255,255,.16),0 2px 7px rgba(3,12,22,.16)',
                 'backdrop-filter:blur(8px) saturate(125%)',
                 '-webkit-backdrop-filter:blur(8px) saturate(125%)',
-            ].join(';');
-            button.addEventListener('click', (event) => {
+            ].filter(Boolean).join(';');
+        };
+
+        const createAttackControl = (kind, coordinateKey, isConfigured) => {
+            const isPassiveRowCheck = kind === 'row' && isConfigured;
+            const control = document.createElement(isPassiveRowCheck ? 'span' : 'button');
+            if (!isPassiveRowCheck) control.type = 'button';
+            control.className = kind === 'row'
+                ? 'secret-attack-row-toggle'
+                : 'secret-attack-report-toggle';
+            control.dataset.coordinates = coordinateKey;
+            control.textContent = kind === 'row'
+                ? (isConfigured ? '✓' : '+')
+                : (isConfigured ? '−' : '+');
+            control.style.cssText = getAttackButtonStyle(kind, isConfigured);
+            const coordinatesLabel = coordinateKey.replace(/:/g, ' : ');
+            control.title = isConfigured
+                ? (kind === 'row'
+                    ? `Vu — ${coordinatesLabel} est déjà dans Attaques.`
+                    : `Retirer ${coordinatesLabel} de la liste Attaques.`)
+                : `Ajouter ${coordinatesLabel} à la liste Attaques.`;
+            control.setAttribute('aria-label', control.title);
+            if (isPassiveRowCheck) {
+                control.setAttribute('aria-hidden', 'true');
+                control.style.pointerEvents = 'none';
+                return control;
+            }
+
+            control.addEventListener('click', (event) => {
                 event.preventDefault();
                 event.stopPropagation();
                 try {
-                    const [galaxy, system, position] = button.dataset.coordinates.split(':').map(Number);
+                    const [galaxy, system, position] = control.dataset.coordinates.split(':').map(Number);
                     toggleAttackReportTarget({ galaxy, system, position });
                     attackReportButtonsRefresh?.();
                 } catch (error) {
-                    button.textContent = '⚠ Réessayer';
-                    button.title = error instanceof Error ? error.message : String(error);
+                    control.title = error instanceof Error ? error.message : String(error);
+                    control.setAttribute('aria-label', control.title);
                 }
             });
-            return button;
+            return control;
         };
 
-        const syncReportButtons = () => {
-            const reports = findOutboundSpyReports();
+        const findRowSender = (row) => {
+            const header = row.querySelector('.message-head') || row;
+            const preferred = header.querySelector(
+                '.msg-player-status, .message-sender, .sender, [class*="sender"], a[href*="statistics"]'
+            );
+            if (preferred) return preferred;
+
+            const likelyName = [...header.querySelectorAll('a, span, strong')].find((element) => {
+                const text = String(element.innerText || element.textContent || '').trim();
+                return text.length > 1 && text.length < 40 &&
+                    /[\p{L}]/u.test(text) &&
+                    !/\d+\s*(?:h|j|d|sec|min(?:ute)?s?)\b/i.test(text) &&
+                    !/\d\s*:\s*\d/.test(text) &&
+                    !/^(?:supprimer|effacer|delete|remove)$/i.test(text);
+            });
+            if (likelyName) return likelyName;
+
+            const walker = document.createTreeWalker(header, NodeFilter.SHOW_TEXT);
+            let textNode;
+            while ((textNode = walker.nextNode())) {
+                const text = String(textNode.nodeValue || '').trim();
+                if (text.length > 1 && text.length < 40 && /[\p{L}]/u.test(text) &&
+                    !/\d+\s*(?:h|j|d|sec|min(?:ute)?s?)\b/i.test(text) &&
+                    !/\d\s*:\s*\d/.test(text)) {
+                    return textNode.parentElement;
+                }
+            }
+            return null;
+        };
+
+        const isCollapsedOutboundSummary = (row) => {
+            const text = String(row.innerText || row.textContent || '').trim();
+            if (!text || /flotte\s+étrangère.{0,160}repérée\s+à\s+proximité\s+de\s+votre\s+planète/i.test(text)) {
+                return false;
+            }
+            const header = row.querySelector('.message-head') || row;
+            const summary = String(header.innerText || header.textContent || text);
+            const hasResourceTotal = /\b\d+(?:[.,]\d+)?\s*[KMB]\b|\b\d{1,3}(?:[.,]\d{3})+\b/i.test(summary);
+            const hasActivityColumn = /(?:>\s*)?\d+(?:[.,]\d+)?\s*(?:min(?:ute)?s?)\b/i.test(summary);
+            return hasResourceTotal && hasActivityColumn;
+        };
+
+        const syncReportButtons = (reports, configuredKeys) => {
             const activeButtons = new Set();
             for (const report of reports) {
                 const coordinateKey = getAttackCoordinateKey(report.coordinates);
+                if (!coordinateKey) continue;
+                const isConfigured = configuredKeys.has(coordinateKey);
+                const row = report.element.closest('.message-item');
+                // En mode ouvert, le contrôle doit rester dans le rapport, pas dans son en-tête.
+                row?.querySelectorAll('.secret-attack-row-toggle').forEach((control) => control.remove());
                 let button = [...report.element.querySelectorAll('.secret-attack-report-toggle')]
                     .find((existing) => existing.dataset.coordinates === coordinateKey);
-                if (!button) button = createAttackReportButton();
+                if (!button) button = createAttackControl('report', coordinateKey, isConfigured);
                 button.dataset.coordinates = coordinateKey;
+                const label = isConfigured ? '−' : '+';
+                if (button.textContent !== label) button.textContent = label;
+                button.style.cssText = getAttackButtonStyle('report', isConfigured);
+                const coordinatesLabel = coordinateKey.replace(/:/g, ' : ');
+                button.title = isConfigured
+                    ? `Retirer ${coordinatesLabel} de la liste Attaques.`
+                    : `Ajouter ${coordinatesLabel} à la liste Attaques.`;
+                button.setAttribute('aria-label', button.title);
                 if (button.parentElement !== report.element) report.element.appendChild(button);
                 activeButtons.add(button);
-
-                const isConfigured = getStoredConfig(13).links.some((url) => {
-                    return getAttackCoordinateKey(parseAttackCoordinatesFromUrl(url)) === coordinateKey;
-                });
-                const coordinatesLabel = coordinateKey.replace(/:/g, ' : ');
-                const label = isConfigured ? '✓ Vu · retirer' : '＋ Ajouter';
-                if (button.textContent !== label) button.textContent = label;
-                button.setAttribute('aria-pressed', String(isConfigured));
-                button.title = isConfigured
-                    ? `Cible ${coordinatesLabel} déjà dans Attaques — cliquer pour retirer.`
-                    : `Ajouter la cible ${coordinatesLabel} à Attaques.`;
-                button.style.background = isConfigured
-                    ? 'rgba(34,197,94,.20)'
-                    : 'rgba(170,205,230,.12)';
-                button.style.borderColor = isConfigured
-                    ? 'rgba(134,239,172,.46)'
-                    : 'rgba(210,235,255,.34)';
             }
             for (const stale of document.querySelectorAll('.secret-attack-report-toggle')) {
                 if (!activeButtons.has(stale)) stale.remove();
             }
         };
 
-        attackReportButtonsRefresh = syncReportButtons;
-        syncReportButtons();
+        const syncRowButtons = (reports, configuredKeys) => {
+            const activeButtons = new Set();
+            for (const row of document.querySelectorAll('.message-item')) {
+                const coordinateKey = getAttackCoordinateKey(getAttackCoordinatesFromReport(row));
+                if (!coordinateKey) continue;
+                if (reports.some((report) => row.contains(report.element))) {
+                    row.querySelectorAll('.secret-attack-row-toggle').forEach((control) => control.remove());
+                    continue;
+                }
+                if (!isCollapsedOutboundSummary(row)) continue;
+
+                const isConfigured = configuredKeys.has(coordinateKey);
+                const isPassiveRowCheck = isConfigured;
+                let control = [...row.querySelectorAll('.secret-attack-row-toggle')]
+                    .find((existing) => existing.dataset.coordinates === coordinateKey &&
+                        (existing.tagName === 'SPAN') === isPassiveRowCheck);
+                if (!control) {
+                    row.querySelectorAll('.secret-attack-row-toggle').forEach((existing) => existing.remove());
+                    control = createAttackControl('row', coordinateKey, isConfigured);
+                }
+                control.dataset.coordinates = coordinateKey;
+                const sender = findRowSender(row);
+                if (sender?.parentElement) {
+                    if (control.parentElement !== sender.parentElement || control.nextElementSibling !== sender) {
+                        sender.parentElement.insertBefore(control, sender);
+                    }
+                } else {
+                    const header = row.querySelector('.message-head') || row;
+                    const deleteControl = header.querySelector(
+                        '.message-delete, .delete, [class*="delete"], [aria-label*="supprimer" i], [title*="supprimer" i]'
+                    );
+                    if (deleteControl?.parentElement) {
+                        const next = deleteControl.nextSibling;
+                        if (control.parentElement !== deleteControl.parentElement || control.previousSibling !== deleteControl) {
+                            deleteControl.parentElement.insertBefore(control, next);
+                        }
+                    } else {
+                        const leftHeader = header.querySelector('.head-left') || header;
+                        if (control.parentElement !== leftHeader) leftHeader.insertBefore(control, leftHeader.firstChild);
+                    }
+                }
+                activeButtons.add(control);
+            }
+            for (const stale of document.querySelectorAll('.secret-attack-row-toggle')) {
+                if (!activeButtons.has(stale)) stale.remove();
+            }
+        };
+
+        const syncAttackControls = () => {
+            const reports = findOutboundSpyReports();
+            const configuredKeys = getConfiguredAttackKeys();
+            syncReportButtons(reports, configuredKeys);
+            syncRowButtons(reports, configuredKeys);
+        };
+
+        attackReportButtonsRefresh = syncAttackControls;
+        syncAttackControls();
         let refreshScheduled = false;
         const observer = new MutationObserver(() => {
             if (refreshScheduled) return;
             refreshScheduled = true;
             requestAnimationFrame(() => {
                 refreshScheduled = false;
-                syncReportButtons();
+                syncAttackControls();
             });
         });
         observer.observe(document.body, { childList: true, subtree: true, characterData: true });
