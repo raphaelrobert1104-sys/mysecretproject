@@ -10,7 +10,7 @@ assert.equal(source.split(bootstrap).length, 2);
 const testSource = source.replace(bootstrap, `
     globalThis.attackApi = {
         resumeAttackAutomation, chooseLeastUsedAttackTarget, formatAttackDebugProgress,
-        toggleAttackReportTarget, getStoredConfig,
+        toggleAttackReportTarget, addAttackReportTarget, getStoredConfig,
         hooks(h) {
             navigateToUrl = h.navigateToUrl;
             clearThisTabRunId = async () => {};
@@ -127,6 +127,19 @@ test('attack targets can be removed and new targets inherit the lowest counter',
     assert.equal(config.attackCounters[second], 3);
     const addedUrl = config.links.find((url) => url.includes('system=109'));
     assert.equal(config.attackCounters[addedUrl], 3);
+});
+
+test('compact-row plus adds once and never toggles an existing coordinate off', () => {
+    const h = harness();
+    const coordinates = { galaxy: 5, system: 126, position: 11 };
+    h.storage.set('secretAttacksConfig', {
+        startUrl: 'https://example.test/start', links: [], attackCounters: {},
+    });
+    assert.equal(h.api.addAttackReportTarget(coordinates), true);
+    assert.equal(h.api.addAttackReportTarget(coordinates), false);
+    const config = h.api.getStoredConfig(13);
+    assert.equal(config.links.length, 1);
+    assert.equal(config.attackCounters[config.links[0]], 0);
 });
 
 test('first successful send advances without any retry', async () => {

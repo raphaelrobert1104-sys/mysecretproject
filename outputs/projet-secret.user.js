@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Projet secret — boucle multi-liens
 // @namespace    local.projet-secret
-// @version      6.23.25
+// @version      6.23.26
 // @updateURL    https://github.com/raphaelrobert1104-sys/mysecretproject/releases/latest/download/projet-secret.user.js
 // @downloadURL  https://github.com/raphaelrobert1104-sys/mysecretproject/releases/latest/download/projet-secret.user.js
 // @description  Automatise Ressources, Expédition V2, Attaques, Forme de vie, Import, Constructions, Ghost, Rappatriement, Bâtiments Mecha et Switch FDV avec configurations privées.
@@ -22,7 +22,7 @@
 (function () {
     'use strict';
 
-    const SCRIPT_VERSION = '6.23.25';
+    const SCRIPT_VERSION = '6.23.26';
     const CONFIG_KEYS = {
         1: 'secretMultiLinkConfig',
         2: 'secretMultiLinkConfig2',
@@ -502,36 +502,40 @@
         };
 
         const createAttackControl = (kind, coordinateKey, isConfigured) => {
-            const isPassiveRowCheck = kind === 'row' && isConfigured;
-            const control = document.createElement(isPassiveRowCheck ? 'span' : 'button');
-            if (!isPassiveRowCheck) control.type = 'button';
+            const control = document.createElement('button');
+            control.type = 'button';
             control.className = kind === 'row'
                 ? 'secret-attack-row-toggle'
                 : 'secret-attack-report-toggle';
             control.dataset.coordinates = coordinateKey;
             control.textContent = kind === 'row'
-                ? (isConfigured ? '✓' : '+')
+                ? '+'
                 : (isConfigured ? '−' : '+');
-            control.style.cssText = getAttackButtonStyle(kind, isConfigured);
+            control.style.cssText = getAttackButtonStyle(kind, kind === 'row' ? false : isConfigured);
             const coordinatesLabel = coordinateKey.replace(/:/g, ' : ');
-            control.title = isConfigured
-                ? (kind === 'row'
-                    ? `Vu — ${coordinatesLabel} est déjà dans Attaques.`
-                    : `Retirer ${coordinatesLabel} de la liste Attaques.`)
-                : `Ajouter ${coordinatesLabel} à la liste Attaques.`;
+            control.title = kind === 'row'
+                ? isConfigured
+                    ? `${coordinatesLabel} est déjà dans Attaques ; + n’ajoute pas de doublon.`
+                    : `Ajouter ${coordinatesLabel} à la liste Attaques.`
+                : isConfigured
+                    ? `Retirer ${coordinatesLabel} de la liste Attaques.`
+                    : `Ajouter ${coordinatesLabel} à la liste Attaques.`;
             control.setAttribute('aria-label', control.title);
-            if (isPassiveRowCheck) {
-                control.setAttribute('aria-hidden', 'true');
-                control.style.pointerEvents = 'none';
-                return control;
-            }
 
             control.addEventListener('click', (event) => {
                 event.preventDefault();
                 event.stopPropagation();
                 try {
                     const [galaxy, system, position] = control.dataset.coordinates.split(':').map(Number);
-                    toggleAttackReportTarget({ galaxy, system, position });
+                    if (kind === 'row') {
+                        const added = addAttackReportTarget({ galaxy, system, position });
+                        if (!added) {
+                            control.title = `Déjà dans Attaques : ${coordinatesLabel}. Aucun doublon ajouté.`;
+                            control.setAttribute('aria-label', control.title);
+                        }
+                    } else {
+                        toggleAttackReportTarget({ galaxy, system, position });
+                    }
                     attackReportButtonsRefresh?.();
                 } catch (error) {
                     control.title = error instanceof Error ? error.message : String(error);
@@ -671,28 +675,30 @@
                 const isOpen = reports.some((report) => {
                     if (getAttackCoordinateKey(report.coordinates) !== coordinateKey) return false;
                     const reportMessage = report.element.closest('.message-item');
-                    return reportMessage
-                        ? reportMessage === rowMessage
-                        : rowMessage.contains(report.element);
+                    // En cas de wrappers message-item imbriqués, comparer aussi
+                    // leur containment ; ne jamais remonter jusqu'à un parent
+                    // générique de la messagerie qui pourrait cacher d'autres lignes.
+                    return rowMessage.contains(report.element) ||
+                        (reportMessage && reportMessage.contains(row)) ||
+                        reportMessage === rowMessage;
                 });
                 if (isOpen) {
                     row.querySelectorAll('.secret-attack-row-toggle').forEach((control) => control.remove());
                     continue;
                 }
 
-                const isPassiveRowCheck = isConfigured;
                 let control = [...row.querySelectorAll('.secret-attack-row-toggle')]
                     .find((existing) => existing.dataset.coordinates === coordinateKey &&
-                        (existing.tagName === 'SPAN') === isPassiveRowCheck);
+                        existing.tagName === 'BUTTON');
                 if (!control) {
                     row.querySelectorAll('.secret-attack-row-toggle').forEach((existing) => existing.remove());
                     control = createAttackControl('row', coordinateKey, isConfigured);
                 }
                 control.dataset.coordinates = coordinateKey;
-                control.textContent = isConfigured ? '✓' : '+';
-                control.style.cssText = getAttackButtonStyle('row', isConfigured);
+                control.textContent = '+';
+                control.style.cssText = getAttackButtonStyle('row', false);
                 control.title = isConfigured
-                    ? `Vu — ${coordinateKey.replace(/:/g, ' : ')} est déjà dans Attaques.`
+                    ? `${coordinateKey.replace(/:/g, ' : ')} est déjà dans Attaques ; + n’ajoute pas de doublon.`
                     : `Ajouter ${coordinateKey.replace(/:/g, ' : ')} à la liste Attaques.`;
                 control.setAttribute('aria-label', control.title);
 
@@ -770,6 +776,32 @@
             if (coordinates) return coordinates;
         }
         return null;
+    }
+
+    function addAttackReportTarget(coordinates) {
+        const config = getStoredConfig(13);
+        const targetKey = getAttackCoordinateKey(coordinates);
+        if (!targetKey) throw new Error('Coordonnées invalides pour Attaques.');
+        const alreadyConfigured = config.links.some((url) =>
+            getAttackCoordinateKey(parseAttackCoordinatesFromUrl(url)) === targetKey
+        );
+        if (alreadyConfigured) return false;
+        if (config.links.length >= getProfileLinkLimit(13)) {
+            throw new Error('La liste Attaques contient déjà 200 coordonnées.');
+        }
+        const startCoordinatesKey = getAttackCoordinateKey(
+            parseAttackCoordinatesFromUrl(config.startUrl)
+        );
+        if (startCoordinatesKey && startCoordinatesKey === targetKey) {
+            throw new Error('La Page de départ fixe ne peut pas aussi être une coordonnée cible.');
+        }
+        const targetUrl = createAttackFleetDispatchUrl(coordinates, window.location.origin);
+        saveConfig(13, {
+            links: [...config.links, targetUrl],
+            startUrl: config.startUrl,
+            attackCounters: config.attackCounters,
+        });
+        return true;
     }
 
     function toggleAttackReportTarget(coordinates) {
