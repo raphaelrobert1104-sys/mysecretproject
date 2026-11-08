@@ -11,6 +11,7 @@ const testSource = source.replace(bootstrap, `
     globalThis.attackApi = {
         resumeAttackAutomation, chooseLeastUsedAttackTarget, formatAttackDebugProgress,
         toggleAttackReportTarget, addAttackReportTarget, getStoredConfig,
+        isAttackReportOpenForRow,
         hooks(h) {
             navigateToUrl = h.navigateToUrl;
             clearThisTabRunId = async () => {};
@@ -140,6 +141,26 @@ test('compact-row plus adds once and never toggles an existing coordinate off', 
     const config = h.api.getStoredConfig(13);
     assert.equal(config.links.length, 1);
     assert.equal(config.attackCounters[config.links[0]], 0);
+});
+
+test('closed compact messages remain closed even when the hidden report stays in the DOM', () => {
+    let messageHeight = 38;
+    const report = {
+        closest: () => message,
+        getBoundingClientRect: () => ({ height: 260 }),
+    };
+    const message = {
+        contains: (element) => element === report || element === row,
+        getBoundingClientRect: () => ({ height: messageHeight }),
+    };
+    const row = {
+        closest: () => message,
+        getBoundingClientRect: () => ({ height: 38 }),
+    };
+
+    assert.equal(harness().api.isAttackReportOpenForRow(row, report), false);
+    messageHeight = 420;
+    assert.equal(harness().api.isAttackReportOpenForRow(row, report), true);
 });
 
 test('first successful send advances without any retry', async () => {

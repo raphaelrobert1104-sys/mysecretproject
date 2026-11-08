@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Projet secret — boucle multi-liens
 // @namespace    local.projet-secret
-// @version      6.23.26
+// @version      6.23.27
 // @updateURL    https://github.com/raphaelrobert1104-sys/mysecretproject/releases/latest/download/projet-secret.user.js
 // @downloadURL  https://github.com/raphaelrobert1104-sys/mysecretproject/releases/latest/download/projet-secret.user.js
 // @description  Automatise Ressources, Expédition V2, Attaques, Forme de vie, Import, Constructions, Ghost, Rappatriement, Bâtiments Mecha et Switch FDV avec configurations privées.
@@ -22,7 +22,7 @@
 (function () {
     'use strict';
 
-    const SCRIPT_VERSION = '6.23.26';
+    const SCRIPT_VERSION = '6.23.27';
     const CONFIG_KEYS = {
         1: 'secretMultiLinkConfig',
         2: 'secretMultiLinkConfig2',
@@ -381,6 +381,27 @@
         await resumeQueuedActionSequence();
     }
 
+    function isAttackReportOpenForRow(row, reportElement) {
+        const rowMessage = row.closest('.message-item') || row;
+        const reportMessage = reportElement.closest('.message-item');
+        let messageRoot = null;
+
+        if (rowMessage === reportMessage || rowMessage.contains(reportElement)) {
+            messageRoot = rowMessage;
+        } else if (reportMessage?.contains(row)) {
+            messageRoot = reportMessage;
+        } else {
+            return false;
+        }
+
+        const rowHeight = row.getBoundingClientRect().height;
+        const messageHeight = messageRoot.getBoundingClientRect().height;
+        const reportHeight = reportElement.getBoundingClientRect().height;
+        // The detail pane may remain in the DOM when collapsed. Only count it as
+        // open when the same message wrapper has actually grown beyond its compact row.
+        return reportHeight >= 60 && messageHeight >= rowHeight + 40;
+    }
+
     function installAttackReportControls() {
         if (!/\/game\/index\.php(?:$|\/)/i.test(window.location.pathname) ||
             !document.body || document.body.dataset.secretAttackReportObserverV4 === 'true') return;
@@ -502,25 +523,31 @@
         };
 
         const createAttackControl = (kind, coordinateKey, isConfigured) => {
-            const control = document.createElement('button');
-            control.type = 'button';
+            const isPassiveRowCheck = kind === 'row' && isConfigured;
+            const control = document.createElement(isPassiveRowCheck ? 'span' : 'button');
+            if (!isPassiveRowCheck) control.type = 'button';
             control.className = kind === 'row'
                 ? 'secret-attack-row-toggle'
                 : 'secret-attack-report-toggle';
             control.dataset.coordinates = coordinateKey;
             control.textContent = kind === 'row'
-                ? '+'
+                ? (isConfigured ? '✓' : '+')
                 : (isConfigured ? '−' : '+');
-            control.style.cssText = getAttackButtonStyle(kind, kind === 'row' ? false : isConfigured);
+            control.style.cssText = getAttackButtonStyle(kind, isConfigured);
             const coordinatesLabel = coordinateKey.replace(/:/g, ' : ');
             control.title = kind === 'row'
                 ? isConfigured
-                    ? `${coordinatesLabel} est déjà dans Attaques ; + n’ajoute pas de doublon.`
+                    ? `Vu — ${coordinatesLabel} est déjà dans Attaques.`
                     : `Ajouter ${coordinatesLabel} à la liste Attaques.`
                 : isConfigured
                     ? `Retirer ${coordinatesLabel} de la liste Attaques.`
                     : `Ajouter ${coordinatesLabel} à la liste Attaques.`;
             control.setAttribute('aria-label', control.title);
+            if (isPassiveRowCheck) {
+                control.setAttribute('role', 'img');
+                control.style.pointerEvents = 'none';
+                return control;
+            }
 
             control.addEventListener('click', (event) => {
                 event.preventDefault();
@@ -528,7 +555,7 @@
                 try {
                     const [galaxy, system, position] = control.dataset.coordinates.split(':').map(Number);
                     if (kind === 'row') {
-                        const added = addAttackReportTarget({ galaxy, system, position });
+                    const added = addAttackReportTarget({ galaxy, system, position });
                         if (!added) {
                             control.title = `Déjà dans Attaques : ${coordinatesLabel}. Aucun doublon ajouté.`;
                             control.setAttribute('aria-label', control.title);
@@ -671,36 +698,37 @@
                     row.classList.remove('secret-attack-row-targeted');
                 }
 
-                const rowMessage = row.closest('.message-item') || row;
                 const isOpen = reports.some((report) => {
                     if (getAttackCoordinateKey(report.coordinates) !== coordinateKey) return false;
-                    const reportMessage = report.element.closest('.message-item');
-                    // En cas de wrappers message-item imbriqués, comparer aussi
-                    // leur containment ; ne jamais remonter jusqu'à un parent
-                    // générique de la messagerie qui pourrait cacher d'autres lignes.
-                    return rowMessage.contains(report.element) ||
-                        (reportMessage && reportMessage.contains(row)) ||
-                        reportMessage === rowMessage;
+                    return isAttackReportOpenForRow(row, report.element);
                 });
                 if (isOpen) {
                     row.querySelectorAll('.secret-attack-row-toggle').forEach((control) => control.remove());
                     continue;
                 }
 
+                const isPassiveRowCheck = isConfigured;
                 let control = [...row.querySelectorAll('.secret-attack-row-toggle')]
                     .find((existing) => existing.dataset.coordinates === coordinateKey &&
-                        existing.tagName === 'BUTTON');
+                        (existing.tagName === 'SPAN') === isPassiveRowCheck);
                 if (!control) {
                     row.querySelectorAll('.secret-attack-row-toggle').forEach((existing) => existing.remove());
                     control = createAttackControl('row', coordinateKey, isConfigured);
                 }
                 control.dataset.coordinates = coordinateKey;
-                control.textContent = '+';
-                control.style.cssText = getAttackButtonStyle('row', false);
+                control.textContent = isConfigured ? '✓' : '+';
+                control.style.cssText = getAttackButtonStyle('row', isConfigured);
                 control.title = isConfigured
-                    ? `${coordinateKey.replace(/:/g, ' : ')} est déjà dans Attaques ; + n’ajoute pas de doublon.`
+                    ? `Vu — ${coordinateKey.replace(/:/g, ' : ')} est déjà dans Attaques.`
                     : `Ajouter ${coordinateKey.replace(/:/g, ' : ')} à la liste Attaques.`;
                 control.setAttribute('aria-label', control.title);
+                if (isPassiveRowCheck) {
+                    control.setAttribute('role', 'img');
+                    control.style.pointerEvents = 'none';
+                } else {
+                    control.removeAttribute('role');
+                    control.style.pointerEvents = '';
+                }
 
                 const header = row.querySelector('.message-head') || row;
                 const deleteControl = header.querySelector(
