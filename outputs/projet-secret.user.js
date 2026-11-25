@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Projet secret — boucle multi-liens
 // @namespace    local.projet-secret
-// @version      6.23.28
+// @version      6.23.29
 // @updateURL    https://github.com/raphaelrobert1104-sys/mysecretproject/releases/latest/download/projet-secret.user.js
 // @downloadURL  https://github.com/raphaelrobert1104-sys/mysecretproject/releases/latest/download/projet-secret.user.js
 // @description  Automatise Ressources, Expédition V2, Attaques, Forme de vie, Import, Constructions, Ghost, Rappatriement, Bâtiments Mecha et Switch FDV avec configurations privées.
@@ -22,7 +22,7 @@
 (function () {
     'use strict';
 
-    const SCRIPT_VERSION = '6.23.28';
+    const SCRIPT_VERSION = '6.23.29';
     const CONFIG_KEYS = {
         1: 'secretMultiLinkConfig',
         2: 'secretMultiLinkConfig2',
@@ -36,7 +36,10 @@
         13: 'secretAttacksConfig',
         15: 'secretSwitchFdvConfig',
     };
-    const ACTION_SEQUENCE_PROFILES = [1, 9, 4, 6, 7, 8, 11, 12, 13, 15];
+    const ACTION_SEQUENCE_PROFILES = [9, 13, 1, 11, 8, 6, 7, 4, 12, 15];
+    const ACTION_SEQUENCE_PRESETS = {
+        'exp-atk-rap-ghost': [9, 13, 11, 8],
+    };
     const RUN_KEY = 'secretMultiLinkRun';
     const ACTION_SEQUENCE_KEY = 'secretMultiLinkActionSequence';
     let attackReportButtonsRefresh = null;
@@ -2120,47 +2123,50 @@
                     <div class="menu-group simple-menu-group">
                         <button type="button" class="menu-toggle simple-menu-toggle" aria-expanded="false">Actions simples</button>
                         <div class="dropdown-menu simple-menu">
-                            <div class="control-group resources">
-                                <button type="button" class="quick quick-1" title="Lancer Ressources">Ressources</button>
-                                <button type="button" class="settings settings-1" title="Configurer Ressources" aria-label="Configurer Ressources">⚙</button>
-                            </div>
                             <div class="control-group expeditions-v2">
                                 <button type="button" class="quick quick-9" title="Lancer Expédition V2">Expédition V2</button>
                                 <button type="button" class="settings settings-9" title="Configurer Expédition V2" aria-label="Configurer Expédition V2">⚙</button>
                             </div>
-                            <div class="control-group lifeform">
-                                <button type="button" class="quick quick-4" title="Lancer Forme de vie">Forme de vie</button>
-                                <button type="button" class="settings settings-4" title="Configurer Forme de vie" aria-label="Configurer Forme de vie">⚙</button>
+                            <div class="control-group attacks">
+                                <button type="button" class="quick quick-13" title="Lancer Attaques">Attaques</button>
+                                <button type="button" class="settings settings-13" title="Configurer Attaques" aria-label="Configurer Attaques">⚙</button>
+                            </div>
+                            <div class="control-group resources">
+                                <button type="button" class="quick quick-1" title="Lancer Ressources">Ressources</button>
+                                <button type="button" class="settings settings-1" title="Configurer Ressources" aria-label="Configurer Ressources">⚙</button>
+                            </div>
+                            <div class="control-group combined exp-atk-rap-ghost">
+                                <button type="button" class="quick quick-preset" data-sequence-preset="exp-atk-rap-ghost" title="Ajouter Expédition V2, Attaques, Rappatriement et Ghost à la séquence">EXP/ATK/RAP/GHOST</button>
+                            </div>
+                            <div class="control-group repatriation">
+                                <button type="button" class="quick quick-11" title="Lancer Rappatriement">Rappatriement</button>
+                                <button type="button" class="settings settings-11" title="Configurer Rappatriement" aria-label="Configurer Rappatriement">⚙</button>
+                            </div>
+                            <div class="control-group ghost">
+                                <button type="button" class="quick quick-8" title="Ouvrir Ghost">Ghost</button>
+                                <button type="button" class="settings settings-8" title="Configurer Ghost" aria-label="Configurer Ghost">⚙</button>
                             </div>
                             <div class="control-group import">
                                 <button type="button" class="quick quick-6" title="Lancer Import">Import</button>
                                 <button type="button" class="settings settings-6" title="Configurer Import" aria-label="Configurer Import">⚙</button>
                             </div>
                             <div class="control-group constructions">
-                                <button type="button" class="quick quick-7" title="Lancer Constructions">Constructions</button>
+                                <button type="button" class="quick quick-7" title="Lancer Construction">Construction</button>
                                 <button type="button" class="settings settings-7" title="Configurer Constructions" aria-label="Configurer Constructions">⚙</button>
                             </div>
-                            <div class="control-group ghost">
-                                <button type="button" class="quick quick-8" title="Ouvrir Ghost">Ghost</button>
-                                <button type="button" class="settings settings-8" title="Configurer Ghost" aria-label="Configurer Ghost">⚙</button>
-                            </div>
-                            <div class="control-group repatriation">
-                                <button type="button" class="quick quick-11" title="Lancer Rappatriement">Rappatriement</button>
-                                <button type="button" class="settings settings-11" title="Configurer Rappatriement" aria-label="Configurer Rappatriement">⚙</button>
+                            <div class="control-group lifeform">
+                                <button type="button" class="quick quick-4" title="Lancer Forme de vie">Forme de vie</button>
+                                <button type="button" class="settings settings-4" title="Configurer Forme de vie" aria-label="Configurer Forme de vie">⚙</button>
                             </div>
                             <div class="control-group mecha-buildings">
                                 <button type="button" class="quick quick-12" title="Lancer Bâtiments Mecha">Bâtiments Mecha</button>
                                 <button type="button" class="settings settings-12" title="Configurer Bâtiments Mecha" aria-label="Configurer Bâtiments Mecha">⚙</button>
                             </div>
-                            <div class="control-group attacks">
-                                <button type="button" class="quick quick-13" title="Lancer Attaques">Attaques</button>
-                                <button type="button" class="settings settings-13" title="Configurer Attaques" aria-label="Configurer Attaques">⚙</button>
-                            </div>
                             <div class="control-group lifeform">
                                 <button type="button" class="quick quick-15" title="Lancer Switch FDV">Switch FDV</button>
                                 <button type="button" class="settings settings-15" title="Configurer Switch FDV" aria-label="Configurer Switch FDV">⚙</button>
                             </div>
-                            <p class="sequence-hint">Cliquez sur les actions pour les numéroter, puis lancez-les dans cet ordre.</p>
+                            <p class="sequence-hint">Cliquez sur les actions pour les numéroter, puis lancez-les dans cet ordre. EXP/ATK/RAP/GHOST ajoute quatre étapes.</p>
                             <button type="button" class="execute-actions" disabled>Exécuter</button>
                         </div>
                     </div>
@@ -2490,9 +2496,15 @@
             void stopAutomation('Arrêt demandé depuis le panneau.');
         });
         refs.actionButtons.forEach((button) => {
-            button.addEventListener('click', () => toggleActionSelection(Number(
-                [...button.classList].find((className) => /^quick-\d+$/.test(className))?.slice(6)
-            )));
+            button.addEventListener('click', () => {
+                if (button.dataset.sequencePreset) {
+                    toggleActionPreset(button.dataset.sequencePreset);
+                    return;
+                }
+                toggleActionSelection(Number(
+                    [...button.classList].find((className) => /^quick-\d+$/.test(className))?.slice(6)
+                ));
+            });
         });
         refs.executeActions.addEventListener('click', () => {
             const requestedActions = selectedActionIds.slice();
@@ -2595,8 +2607,51 @@
             updateActionSelectionUi();
         }
 
+        function findActionPresetIndex(presetId) {
+            const preset = ACTION_SEQUENCE_PRESETS[presetId];
+            if (!preset) return -1;
+            for (let index = 0; index <= selectedActionIds.length - preset.length; index += 1) {
+                if (preset.every((profileId, offset) => selectedActionIds[index + offset] === profileId)) {
+                    return index;
+                }
+            }
+            return -1;
+        }
+
+        function toggleActionPreset(presetId) {
+            const preset = ACTION_SEQUENCE_PRESETS[presetId];
+            if (!preset || getRunState().status === 'running' || GM_getValue(ACTION_SEQUENCE_KEY, null)) return;
+            const existingIndex = findActionPresetIndex(presetId);
+            if (existingIndex >= 0) {
+                selectedActionIds.splice(existingIndex, preset.length);
+            } else {
+                selectedActionIds.push(...preset);
+            }
+            updateActionSelectionUi();
+        }
+
         function updateActionSelectionUi() {
             refs.actionButtons.forEach((button) => {
+                const presetId = button.dataset.sequencePreset;
+                if (presetId) {
+                    const preset = ACTION_SEQUENCE_PRESETS[presetId] || [];
+                    const sequenceNumber = findActionPresetIndex(presetId);
+                    const selected = sequenceNumber >= 0;
+                    button.classList.toggle('selected', selected);
+                    button.setAttribute('aria-pressed', selected ? 'true' : 'false');
+                    if (selected) {
+                        button.dataset.sequenceNumber =
+                            `${sequenceNumber + 1}–${sequenceNumber + preset.length}`;
+                        button.title =
+                            `EXP/ATK/RAP/GHOST — étapes ${sequenceNumber + 1} à ` +
+                            `${sequenceNumber + preset.length} (recliquer pour retirer)`;
+                    } else {
+                        delete button.dataset.sequenceNumber;
+                        button.title =
+                            'Ajouter Expédition V2, Attaques, Rappatriement et Ghost à la séquence';
+                    }
+                    return;
+                }
                 const className = [...button.classList].find((name) => /^quick-\d+$/.test(name));
                 const profileId = Number(className?.slice(6));
                 const sequenceNumber = selectedActionIds.indexOf(profileId);
@@ -5526,6 +5581,7 @@
 
         GM_setValue(RUN_KEY, run);
         await setThisTabRunId(runId);
+        await associateQueuedActionWithCurrentRun(8);
         refreshUi();
         navigateToUrl(config.links[0], true);
     }
