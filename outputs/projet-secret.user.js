@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Projet secret — boucle multi-liens
 // @namespace    local.projet-secret
-// @version      6.23.29
+// @version      6.23.30
 // @updateURL    https://github.com/raphaelrobert1104-sys/mysecretproject/releases/latest/download/projet-secret.user.js
 // @downloadURL  https://github.com/raphaelrobert1104-sys/mysecretproject/releases/latest/download/projet-secret.user.js
 // @description  Automatise Ressources, Expédition V2, Attaques, Forme de vie, Import, Constructions, Ghost, Rappatriement, Bâtiments Mecha et Switch FDV avec configurations privées.
@@ -22,7 +22,7 @@
 (function () {
     'use strict';
 
-    const SCRIPT_VERSION = '6.23.29';
+    const SCRIPT_VERSION = '6.23.30';
     const CONFIG_KEYS = {
         1: 'secretMultiLinkConfig',
         2: 'secretMultiLinkConfig2',
@@ -98,6 +98,7 @@
     const ATTACK_DELAY_MIN_MS = POST_ACTION_DELAY_MIN_MS;
     const ATTACK_DELAY_MAX_MS = POST_ACTION_DELAY_MAX_MS;
     const ATTACK_RANDOM_DELAY_FACTOR = 0.6;
+    const ATTACK_NEW_TARGET_ORIGIN = 'https://s287-fr.ogame.gameforge.com';
     const EXPEDITION_V2_LAUNCH_DELAY_MIN_MS = 800;
     const EXPEDITION_V2_LAUNCH_DELAY_MAX_MS = 1400;
     const EXPEDITION_SLOTS_SELECTOR = '#slots > div:nth-child(2) > span';
@@ -819,7 +820,7 @@
         if (startCoordinatesKey && startCoordinatesKey === targetKey) {
             throw new Error('La Page de départ fixe ne peut pas aussi être une coordonnée cible.');
         }
-        const targetUrl = createAttackFleetDispatchUrl(coordinates, window.location.origin);
+        const targetUrl = createAttackFleetDispatchUrl(coordinates, ATTACK_NEW_TARGET_ORIGIN);
         saveConfig(13, {
             links: [...config.links, targetUrl],
             startUrl: config.startUrl,
@@ -835,7 +836,7 @@
         if (!alreadyConfigured && config.links.length >= getProfileLinkLimit(13)) {
             throw new Error('La liste Attaques contient déjà 200 coordonnées.');
         }
-        const targetUrl = createAttackFleetDispatchUrl(coordinates, window.location.origin);
+        const targetUrl = createAttackFleetDispatchUrl(coordinates, ATTACK_NEW_TARGET_ORIGIN);
         const startCoordinatesKey = getAttackCoordinateKey(
             parseAttackCoordinatesFromUrl(config.startUrl)
         );

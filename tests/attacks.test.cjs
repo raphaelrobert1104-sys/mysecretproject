@@ -127,6 +127,10 @@ test('attack targets can be removed and new targets inherit the lowest counter',
     assert.equal(config.links.length, 2);
     assert.equal(config.attackCounters[second], 3);
     const addedUrl = config.links.find((url) => url.includes('system=109'));
+    assert.equal(
+        addedUrl,
+        'https://s287-fr.ogame.gameforge.com/game/index.php?page=ingame&component=fleetdispatch&galaxy=5&system=109&position=14&type=1&mission=1'
+    );
     assert.equal(config.attackCounters[addedUrl], 3);
 });
 
@@ -140,6 +144,10 @@ test('compact-row plus adds once and never toggles an existing coordinate off', 
     assert.equal(h.api.addAttackReportTarget(coordinates), false);
     const config = h.api.getStoredConfig(13);
     assert.equal(config.links.length, 1);
+    assert.equal(
+        config.links[0],
+        'https://s287-fr.ogame.gameforge.com/game/index.php?page=ingame&component=fleetdispatch&galaxy=5&system=126&position=11&type=1&mission=1'
+    );
     assert.equal(config.attackCounters[config.links[0]], 0);
 });
 
