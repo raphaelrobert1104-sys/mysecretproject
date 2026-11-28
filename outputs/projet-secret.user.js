@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Projet secret — boucle multi-liens
 // @namespace    local.projet-secret
-// @version      6.23.30
+// @version      6.23.31
 // @updateURL    https://github.com/raphaelrobert1104-sys/mysecretproject/releases/latest/download/projet-secret.user.js
 // @downloadURL  https://github.com/raphaelrobert1104-sys/mysecretproject/releases/latest/download/projet-secret.user.js
 // @description  Automatise Ressources, Expédition V2, Attaques, Forme de vie, Import, Constructions, Ghost, Rappatriement, Bâtiments Mecha et Switch FDV avec configurations privées.
@@ -22,7 +22,7 @@
 (function () {
     'use strict';
 
-    const SCRIPT_VERSION = '6.23.30';
+    const SCRIPT_VERSION = '6.23.31';
     const CONFIG_KEYS = {
         1: 'secretMultiLinkConfig',
         2: 'secretMultiLinkConfig2',
@@ -52,7 +52,7 @@
     const GHOST_SLOWEST_SPEED_KEY = 'secretMultiLinkGhostSlowestSpeed';
     const GHOST_JAPAN_TIME_ZONE = 'Asia/Tokyo';
     const GHOST_FRANCE_TIME_ZONE = 'Europe/Paris';
-    const GHOST_ORIGIN_COORDINATES = Object.freeze({ galaxy: 5, system: 109, position: 15 });
+    const GHOST_ORIGIN_COORDINATES = Object.freeze({ galaxy: 6, system: 109, position: 15 });
     const GHOST_UNIVERSE_SPEED = 2;
     const GHOST_TARGET_POSITION = 16;
     const GHOST_SLOWEST_SPEED_DEFAULT = 550;
@@ -2354,7 +2354,7 @@
                         </div>
                     </div>
                     <div class="ghost-time-preview">Conversion automatique : <span class="ghost-time-value">—</span></div>
-                    <div class="ghost-origin-note">Départ fixe : <strong>5:109:15 (lune)</strong> · retour à cette lune · destination en position 16 · pré-calcul Hercules x2. Le jeu peut raccourcir la distance sur les systèmes vides/inactifs : Ghost recale donc le système sur l’heure de retour réelle affichée par OGame, à ±15 min avant l’envoi.</div>
+                    <div class="ghost-origin-note">Départ fixe : <strong>6:109:15 (lune)</strong> · retour à cette lune · destination en position 16 · pré-calcul Hercules x2. Le jeu peut raccourcir la distance sur les systèmes vides/inactifs : Ghost recale donc le système sur l’heure de retour réelle affichée par OGame, à ±15 min avant l’envoi.</div>
                     <div class="ghost-coordinate-suggestions" aria-live="polite">
                         <div class="ghost-coordinate-suggestion"><strong>Vitesse minimale</strong><span class="ghost-coordinate-100">Saisissez la vitesse du vaisseau et l’horaire pour calculer.</span></div>
                     </div>
